@@ -4,6 +4,13 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
+## 0. Read Docs First
+
+**Before touching any code, read the `docs/` directory.**
+
+- Understand the project's architecture, conventions, and decisions before making changes.
+- If `docs/` doesn't exist or is empty, ask the user for context.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
