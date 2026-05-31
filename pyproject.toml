@@ -1,0 +1,36 @@
+[project]
+name = "literature-review-backend"
+version = "0.1.0"
+description = "FastAPI backend for the AI Literature Review Assistant."
+readme = "BACKEND.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi==0.136.3",
+    "pydantic-settings==2.14.1",
+    "uvicorn[standard]==0.48.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.2.0",
+    "pytest==9.0.3",
+    "ruff==0.15.15",
+    "ty==0.0.40",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+
+[tool.ty.rules]
+all = "error"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+filterwarnings = ["error"]

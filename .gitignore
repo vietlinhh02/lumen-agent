@@ -1,5 +1,7 @@
 # Environment
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -7,13 +9,37 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+dist/
 build/
 *.egg-info/
+.eggs/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.ty/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / frontend
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Local AI tool state
+.opencode/
+.omx/
+.commandcode/
 
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
