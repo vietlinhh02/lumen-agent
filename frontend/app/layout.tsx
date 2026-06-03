@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Inter, Inter_Tight } from "next/font/google";
+import { Geist_Mono, Inter, Inter_Tight, Geist } from "next/font/google";
 import localFont from "next/font/local";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const googleSans = localFont({
   src: "../public/Google_Sans/GoogleSans-VariableFont_GRAD,opsz,wght.ttf",
@@ -38,7 +41,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${googleSans.variable} ${inter.variable} ${interTight.variable} ${geistMono.variable} h-full antialiased`}
+      className={cn("h-full", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>
