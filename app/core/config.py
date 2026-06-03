@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    # Database
+    database_url: str = "postgresql+asyncpg://litreview:litreview@localhost:5434/litreview"
+
+    # JWT
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24  # 24 hours
+
 
 @lru_cache
 def get_settings() -> Settings:
