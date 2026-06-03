@@ -83,6 +83,23 @@ saved project papers before export.
 | CI/CD (GHCR) | Not started | 0% |
 | Tests | Health check only | ~5% |
 
+## Team Dependency Flow
+
+The 3-person team follows a strict dependency chain:
+
+```
+A builds first → B layers AI on top → C tests and deploys
+```
+
+- **Member A (Full-stack Lead, ~45%):** Builds DB models, Pydantic schemas,
+  CRUD APIs, auth, all frontend pages, integration. A is the critical path —
+  B cannot start AI work until A delivers models and schemas.
+- **Member B (AI/ML Engineer, ~30%):** Builds on A's foundation — source
+  adapters, LangGraph, matrix extraction, gap detection, citation guardrails,
+  hybrid RAG, knowledge graph.
+- **Member C (DevOps + QA, ~25%):** Docker, CI/CD, Coolify, testing, demo
+  prep, documentation.
+
 ## Key Risks for 3-Person Team
 
 1. **Scope vs time** — 8 weeks with 3 people is tight for the full MVP.
@@ -93,7 +110,9 @@ saved project papers before export.
    This is the core differentiator.
 4. **API source reliability** — Academic APIs may be rate-limited or
    return inconsistent data. Use partial results and seeded demo data.
-5. **Integration latency** — With 3 people working in parallel,
+5. **A bottleneck risk** — A is on the critical path. If A is delayed,
+   B and C are blocked. A must deliver DB models by Week 2.
+6. **Integration latency** — With 3 people working in parallel,
    API contract changes must be communicated immediately.
 
 ## Demo Strategy
