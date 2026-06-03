@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "xiaomi/mimo-2.5-pro",
+  "formatter": true,
+  "lsp": true,
+  "snapshot": true,
+  "autoupdate": true,
+  "permission": "allow",
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      ".venv/**",
+      "__pycache__/**",
+      ".git/**",
+      ".ai-log/**",
+      ".ruff_cache/**",
+      ".pytest_cache/**",
+      "*.pyc"
+    ]
+  },
+  "instructions": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "BACKEND.md",
+    "docs/**/*.md"
+  ]
+}
