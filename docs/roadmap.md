@@ -2,14 +2,18 @@
 
 ## Timeline Overview
 
-The roadmap covers eight weeks. It is designed for a two-person team and keeps
-the MVP scope focused. The highest-risk work is paper source integration,
-structured AI extraction, and citation validation. These should be implemented
-before optional visual polish or stretch features.
+The roadmap covers eight weeks with three members. Member A owns the
+full-stack critical path (DB + APIs + all frontend screens + integration).
+Member B owns the AI/ML layer (paper sources, LangGraph, RAG, citation
+guardrails). Member C owns infrastructure, testing, and demo polish.
+
+The highest-risk work is paper source integration, structured AI extraction,
+and citation validation. These should be implemented before optional visual
+polish or stretch features.
 
 ```mermaid
 gantt
-    title AI Literature Review Assistant 8-Week Roadmap
+    title AI Literature Review Assistant 8-Week Roadmap (3 Members)
     dateFormat  YYYY-MM-DD
     axisFormat  Week %W
     section Planning

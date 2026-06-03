@@ -12,7 +12,7 @@ important.
 
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
-| Scope becomes too large | High | High | Freeze MVP to seven features and move graph/chat/PDF to stretch |
+| Scope becomes too large | High | High | Freeze MVP to eight features and move graph/chat/PDF to stretch |
 | Paper APIs are slow or rate-limited | Medium | High | Use partial results, source diagnostics, and seeded demo data |
 | Search returns irrelevant papers | High | Medium | Add user screening and relevance labels |
 | Duplicate papers across sources | High | Medium | Deduplicate by DOI, arXiv ID, source IDs, and normalized title |
@@ -27,6 +27,7 @@ important.
 | Auth ownership bug leaks data | Low | High | Test project ownership checks on every project endpoint |
 | Coolify or GHCR deploy breaks near demo | Medium | High | Build GHCR images by Week 6 and rehearse Coolify deploys |
 | DeepSeek V4 or opencode-go becomes unavailable | Low | High | Define backend AIProvider interface so OpenAI or Claude can replace it without changing workflow code |
+| Coordination overhead with 3 people | Medium | Medium | Daily sync, API contracts written down, parallelizable ownership |
 
 ## Scope Risk
 
@@ -142,14 +143,16 @@ Mitigation:
 
 ## Feasibility Risk
 
-Two people can build the MVP in eight weeks, but only with strict scope control.
-If the team adds contradiction detection, PDF parsing, and graph visualization
-before the core workflow works, the project becomes risky.
+Three people can build the MVP in eight weeks, but only with strict scope control
+and clear ownership. If the team adds contradiction detection, PDF parsing,
+and graph visualization before the core workflow works, the project becomes
+risky.
 
 Mitigation:
 
 - Member A owns frontend workflow.
 - Member B owns backend and AI workflows.
+- Member C owns infrastructure and testing.
 - Define API contracts early.
 - Test the evidence chain, not just UI rendering.
 
