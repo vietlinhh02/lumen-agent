@@ -308,8 +308,8 @@ export default function ReportsPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <div className="mx-auto max-w-[1500px] px-6 py-8">
-        <div className="flex flex-col gap-6">
+      <div className="px-4 sm:px-6 py-6">
+        <div className="flex flex-col gap-5">
           {/* Header */}
           <div>
             <h1
@@ -341,13 +341,13 @@ export default function ReportsPage() {
             className="flex gap-0 rounded-[12px] overflow-hidden"
             style={{
               border: "1px solid var(--hairline)",
-              height: "calc(100vh - 240px)",
-              minHeight: "600px",
+              height: "calc(100vh - 200px)",
+              minHeight: "650px",
             }}
           >
             {/* ── Left Panel: Report List ── */}
             <div
-              className="w-[260px] shrink-0 bg-surface-card flex flex-col"
+              className="w-[240px] shrink-0 bg-surface-card flex flex-col"
               style={{ borderRight: "1px solid var(--hairline)" }}
             >
               <div
@@ -534,7 +534,7 @@ export default function ReportsPage() {
                       ref={scrollRef}
                       className="flex-1 overflow-y-auto"
                     >
-                      <div className="max-w-[800px] mx-auto px-8 py-6 space-y-6">
+                      <div className="max-w-[900px] mx-auto px-10 py-8 space-y-6">
                         {/* Citation Audit */}
                         <div className="flex items-center gap-5 flex-wrap">
                           <AuditPill
@@ -608,10 +608,10 @@ export default function ReportsPage() {
                             ref={(el) => {
                               if (el) sectionRefs.current[section.id] = el;
                             }}
-                            className={`rounded-[10px] bg-surface-card transition-all ${
+                            className={`rounded-[12px] bg-surface-card transition-all ${
                               activeSection === section.id
-                                ? "ring-2 ring-primary/20"
-                                : ""
+                                ? "ring-2 ring-primary/20 shadow-sm"
+                                : "hover:shadow-sm"
                             }`}
                             style={{
                               border: "1px solid var(--hairline)",
@@ -620,28 +620,29 @@ export default function ReportsPage() {
                           >
                             {section.heading && (
                               <div
-                                className="px-6 pt-5 pb-2"
+                                className="px-8 pt-6 pb-3"
                                 style={{
                                   borderBottom: "1px solid var(--hairline)",
                                 }}
                               >
-                                <h2 className="font-display text-[18px] font-bold text-ink tracking-tight">
+                                <h2 className="font-display text-[20px] font-bold text-ink tracking-tight">
                                   {section.heading}
                                 </h2>
                               </div>
                             )}
                             <div
-                              className={`prose prose-sm max-w-none px-6 ${section.heading ? "py-4" : "py-5"}
-                                prose-p:text-ink prose-p:leading-[1.75] prose-p:text-[14px] prose-p:mb-3
+                              className={`prose max-w-none px-8 ${section.heading ? "py-5" : "py-6"}
+                                prose-p:text-ink prose-p:leading-[1.85] prose-p:text-[15px] prose-p:mb-4
                                 prose-strong:text-ink prose-strong:font-semibold
                                 prose-em:text-charcoal
-                                prose-li:text-ink prose-li:text-[14px] prose-li:leading-[1.7]
-                                prose-ol:my-3 prose-ul:my-3
-                                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                                prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-4
-                                prose-table:text-[13px]
-                                prose-th:text-left prose-th:font-semibold prose-th:text-ink
-                                prose-td:py-1`}
+                                prose-li:text-ink prose-li:text-[15px] prose-li:leading-[1.8] prose-li:mb-1
+                                prose-ol:my-4 prose-ul:my-4
+                                prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium
+                                prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-5 prose-blockquote:my-4
+                                prose-hr:my-6 prose-hr:border-[var(--hairline)]
+                                prose-table:text-[14px] prose-table:my-4
+                                prose-th:text-left prose-th:font-semibold prose-th:text-ink prose-th:pb-2 prose-th:border-b prose-th:border-[var(--hairline)]
+                                prose-td:py-2 prose-td:border-b prose-td:border-[var(--hairline)]`}
                             >
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {section.content}
@@ -655,7 +656,7 @@ export default function ReportsPage() {
                     {/* ── TOC Sidebar (right rail) ── */}
                     {toc.length > 2 && (
                       <div
-                        className="hidden lg:block w-[200px] shrink-0 bg-surface-card/50 overflow-y-auto"
+                        className="hidden lg:block w-[220px] shrink-0 bg-surface-card/50 overflow-y-auto"
                         style={{
                           borderLeft: "1px solid var(--hairline)",
                         }}

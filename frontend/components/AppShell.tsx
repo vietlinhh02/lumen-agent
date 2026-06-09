@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Mobile drawer */}
       <SidebarMobile open={mobileOpen} onClose={() => setMobileOpen(false)} />
       <main className="min-h-[calc(100vh-60px)] px-4 sm:px-8 pt-8 pb-12 ml-0 xl:ml-[56px]">
-        <div className="mx-auto max-w-[1500px]">{children}</div>
+        {children}
       </main>
     </SidebarContext.Provider>
   );
