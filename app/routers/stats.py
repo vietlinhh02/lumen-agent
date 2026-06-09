@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user
 from app.db.models import (
     LiteratureMatrixRow,
+    Paper,
     Project,
     ProjectPaper,
     ResearchGap,
@@ -100,3 +101,54 @@ async def get_stats(
             for p in recent_projects
         ],
     }
+
+
+@router.get("/papers/all")
+async def list_all_papers(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """List all saved papers across all projects for the current user."""
+    stmt = (
+        select(ProjectPaper, Paper, Project)
+        .join(Paper, ProjectPaper.paper_id == Paper.id)
+        .join(Project, Project.id == ProjectPaper.project_id)
+        .where(
+            Project.owner_id == user.id,
+            ProjectPaper.status == "saved",
+        )
+        .order_by(ProjectPaper.saved_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    items = []
+    for pp, paper, project in rows:
+        authors = []
+        for a in paper.authors or []:
+            if isinstance(a, dict):
+                authors.append(a.get("name", str(a)))
+            else:
+                authors.append(str(a))
+
+        items.append(
+            {
+                "id": str(pp.id),
+                "paper_id": str(paper.id),
+                "project_id": str(project.id),
+                "project_title": project.title,
+                "title": paper.title,
+                "abstract": paper.abstract,
+                "authors": authors,
+                "year": paper.year,
+                "venue": paper.venue,
+                "doi": paper.doi,
+                "arxiv_id": paper.arxiv_id,
+                "url": paper.url,
+                "citation_count": paper.citation_count,
+                "source_names": paper.source_names or [],
+                "saved_at": str(pp.saved_at),
+                "relevance_label": pp.relevance_label,
+            }
+        )
+
+    return {"items": items, "total": len(items)}
