@@ -6,6 +6,9 @@
   "snapshot": true,
   "autoupdate": true,
   "permission": "allow",
+  "plugin": [
+    ".opencode/plugin/ai-log.ts"
+  ],
   "watcher": {
     "ignore": [
       "node_modules/**",
