@@ -23,6 +23,7 @@ from app.routers.matrix import router as matrix_router
 from app.routers.gaps import router as gaps_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.reports import router as reports_router
+from app.routers.admin import router as admin_router
 
 
 @asynccontextmanager
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(gaps_router, prefix="/api/projects")
     app.include_router(conflicts_router, prefix="/api/projects")
     app.include_router(reports_router, prefix="/api/projects")
+    app.include_router(admin_router, prefix="/api/admin")
 
     # Serve PDF files statically
     from fastapi.staticfiles import StaticFiles

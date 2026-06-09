@@ -48,3 +48,34 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse(id=str(user.id), email=user.email, role=user.role, is_active=user.is_active)
+
+
+@router.patch("/password")
+async def change_password(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Change the current user's password."""
+    current = body.get("current_password")
+    new = body.get("new_password")
+
+    if not current or not new:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both current_password and new_password are required",
+        )
+    if len(new) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 6 characters",
+        )
+    if not verify_password(current, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current password is incorrect",
+        )
+
+    user.password_hash = hash_password(new)
+    await db.commit()
+    return {"message": "Password updated"}
