@@ -59,7 +59,7 @@ done
 # ── 2. Backend (FastAPI) ──
 log "${BLUE}[api]${NC}" "Starting FastAPI on port $BACKEND_PORT..."
 cd "$PROJECT_DIR"
-uv run uvicorn app.main:app \
+"$PROJECT_DIR/.venv/bin/uvicorn" app.main:app \
   --reload \
   --host 0.0.0.0 \
   --port "$BACKEND_PORT" \
