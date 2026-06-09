@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
@@ -19,10 +19,76 @@ import {
   ArrowCounterClockwise,
   FileText,
   ArrowLeft,
+  MagnifyingGlass,
+  List,
 } from "@phosphor-icons/react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+/* ── Types ── */
+
+interface TocEntry {
+  id: string;
+  text: string;
+  level: number;
+}
+
+interface ParsedSection {
+  id: string;
+  heading: string;
+  level: number;
+  content: string;
+}
+
+/* ── Helpers ── */
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function parseSections(markdown: string): ParsedSection[] {
+  const lines = markdown.split("\n");
+  const sections: ParsedSection[] = [];
+  let current: ParsedSection | null = null;
+
+  for (const line of lines) {
+    const match = line.match(/^(#{1,3})\s+(.+)$/);
+    if (match) {
+      if (current) sections.push(current);
+      const heading = match[2].replace(/\*+/g, "").trim();
+      current = {
+        id: slugify(heading),
+        heading,
+        level: match[1].length,
+        content: "",
+      };
+    } else if (current) {
+      current.content += line + "\n";
+    } else {
+      // Content before first heading — create implicit section
+      current = {
+        id: "_intro",
+        heading: "",
+        level: 1,
+        content: line + "\n",
+      };
+    }
+  }
+  if (current) sections.push(current);
+  return sections;
+}
+
+function buildToc(sections: ParsedSection[]): TocEntry[] {
+  return sections
+    .filter((s) => s.heading)
+    .map((s) => ({ id: s.id, text: s.heading, level: s.level }));
+}
+
+/* ── Main Page ── */
 
 export default function ReportsPage() {
   const { token } = useAuth();
@@ -32,10 +98,15 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  // Selected report detail
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ReportDetailResponse | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Search within review
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<Record<string, HTMLElement>>({});
 
   // Load projects
   useEffect(() => {
@@ -74,29 +145,58 @@ export default function ReportsPage() {
     setDetail(null);
   }, [fetchReports]);
 
-  // Load detail when selecting a report
-  const fetchDetail = useCallback(async (reportId: string) => {
-    if (!token || !selectedProjectId) return;
-    setLoadingDetail(true);
-    try {
-      const d = await apiFetch<ReportDetailResponse>(
-        `/projects/${selectedProjectId}/reports/${reportId}`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setDetail(d);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load report");
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, [token, selectedProjectId]);
+  // Load detail
+  const fetchDetail = useCallback(
+    async (reportId: string) => {
+      if (!token || !selectedProjectId) return;
+      setLoadingDetail(true);
+      try {
+        const d = await apiFetch<ReportDetailResponse>(
+          `/projects/${selectedProjectId}/reports/${reportId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setDetail(d);
+        setActiveSection(null);
+        setSearchQuery("");
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to load report",
+        );
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [token, selectedProjectId],
+  );
 
   useEffect(() => {
     if (selectedId) fetchDetail(selectedId);
     else setDetail(null);
   }, [selectedId, fetchDetail]);
 
-  // Generate report
+  // Track active section on scroll
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        }
+      },
+      { root: container, rootMargin: "-80px 0px -60% 0px", threshold: 0 },
+    );
+
+    const sections = container.querySelectorAll("[data-section]");
+    sections.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, [detail]);
+
+  // Generate
   async function handleGenerate() {
     if (!token || !selectedProjectId) return;
     setGenerating(true);
@@ -117,7 +217,6 @@ export default function ReportsPage() {
         toast.info("Generating literature review...");
         await pollReportJob(result.job_id);
       }
-
       await fetchReports();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
@@ -127,13 +226,17 @@ export default function ReportsPage() {
   }
 
   async function pollReportJob(jobId: string) {
-    const maxAttempts = 120;
-    for (let i = 0; i < maxAttempts; i++) {
+    const max = 120;
+    for (let i = 0; i < max; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
         const job = await apiFetch<{
           status: string;
-          result?: { report_id?: string; validation_status?: string; total_citations?: number };
+          result?: {
+            report_id?: string;
+            validation_status?: string;
+            total_citations?: number;
+          };
           error_message?: string;
         }>(`/papers/search/jobs/${jobId}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -141,71 +244,86 @@ export default function ReportsPage() {
         if (job.status === "completed") {
           const vs = job.result?.validation_status;
           const tc = job.result?.total_citations ?? 0;
-          if (vs === "valid") {
-            toast.success(`Report generated — ${tc} citations, all valid`);
-          } else {
-            toast.warning(`Report generated — ${tc} citations, some invalid`);
-          }
-          if (job.result?.report_id) {
-            setSelectedId(job.result.report_id);
-          }
+          vs === "valid"
+            ? toast.success(`${tc} citations, all valid`)
+            : toast.warning(`${tc} citations, some invalid`);
+          if (job.result?.report_id) setSelectedId(job.result.report_id);
           return;
         }
         if (job.status === "failed") {
-          toast.error(job.error_message || "Report generation failed");
+          toast.error(job.error_message || "Failed");
           return;
         }
       } catch {
-        // Ignore polling errors
+        /* ignore */
       }
     }
-    toast.warning("Report is still generating. Check back later.");
   }
 
   // Export
   async function handleExport() {
     if (!token || !selectedProjectId || !selectedId) return;
     try {
-      const result = await apiFetch<{ title: string; content: string }>(
+      const r = await apiFetch<{ title: string; content: string }>(
         `/projects/${selectedProjectId}/reports/${selectedId}/export`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      const blob = new Blob([result.content], { type: "text/markdown" });
+      const blob = new Blob([r.content], { type: "text/markdown" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${result.title.replace(/[^a-zA-Z0-9]/g, "_")}.md`;
+      a.download = `${r.title.replace(/[^a-zA-Z0-9]/g, "_")}.md`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success("Markdown exported");
+      toast.success("Exported");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Export failed");
     }
   }
+
+  // Scroll to section
+  function scrollToSection(id: string) {
+    const el = sectionRefs.current[id];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setActiveSection(id);
+    }
+  }
+
+  // Filter sections by search
+  function matchesSearch(section: ParsedSection): boolean {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      section.heading.toLowerCase().includes(q) ||
+      section.content.toLowerCase().includes(q)
+    );
+  }
+
+  const parsedSections = detail ? parseSections(detail.content_markdown) : [];
+  const toc = detail ? buildToc(parsedSections) : [];
+  const filteredSections = parsedSections.filter(matchesSearch);
 
   return (
     <div className="min-h-screen bg-canvas">
       <div className="mx-auto max-w-[1500px] px-6 py-8">
         <div className="flex flex-col gap-6">
           {/* Header */}
-          <div className="flex items-end justify-between">
-            <div>
-              <h1
-                className="font-display text-[32px] font-bold leading-[1.0] text-ink"
-                style={{ letterSpacing: "-1px" }}
-              >
-                Literature Reviews
-              </h1>
-              <p className="mt-2 text-sm text-charcoal">
-                Generate citation-safe literature review drafts from your
-                matrix and research gaps.
-              </p>
-            </div>
+          <div>
+            <h1
+              className="font-display text-[32px] font-bold leading-[1.0] text-ink"
+              style={{ letterSpacing: "-1px" }}
+            >
+              Literature Reviews
+            </h1>
+            <p className="mt-2 text-sm text-charcoal">
+              Generate citation-safe literature review drafts from your matrix
+              and research gaps.
+            </p>
           </div>
 
-          {/* Project Selector */}
           <Dropdown
             options={projects.map((p) => ({
               value: p.id,
@@ -219,81 +337,87 @@ export default function ReportsPage() {
           />
 
           {/* Split View */}
-          <div className="flex gap-0 rounded-[12px] overflow-hidden" style={{ border: "1px solid var(--hairline)", height: "calc(100vh - 240px)", minHeight: "600px" }}>
-            {/* Left Panel — Report List */}
-            <div className="w-[280px] shrink-0 bg-surface-card flex flex-col" style={{ borderRight: "1px solid var(--hairline)" }}>
-              {/* List Header */}
-              <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--hairline)" }}>
-                <span className="font-ui text-[12px] font-semibold text-ash uppercase tracking-wide">
+          <div
+            className="flex gap-0 rounded-[12px] overflow-hidden"
+            style={{
+              border: "1px solid var(--hairline)",
+              height: "calc(100vh - 240px)",
+              minHeight: "600px",
+            }}
+          >
+            {/* ── Left Panel: Report List ── */}
+            <div
+              className="w-[260px] shrink-0 bg-surface-card flex flex-col"
+              style={{ borderRight: "1px solid var(--hairline)" }}
+            >
+              <div
+                className="px-4 py-3 flex items-center justify-between"
+                style={{ borderBottom: "1px solid var(--hairline)" }}
+              >
+                <span className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide">
                   Reports ({reports.length})
                 </span>
                 <button
                   onClick={handleGenerate}
                   disabled={!selectedProjectId || generating}
-                  className="focus-ring font-ui inline-flex items-center gap-1.5 h-[32px] rounded-full bg-primary px-3 text-[12px] font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50"
+                  className="focus-ring font-ui inline-flex items-center gap-1.5 h-[28px] rounded-full bg-primary px-2.5 text-[11px] font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50"
                 >
                   {generating ? (
-                    <>
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
-                      …
-                    </>
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
                   ) : (
-                    <>
-                      <PencilLine size={12} />
-                      New
-                    </>
+                    <PencilLine size={11} />
                   )}
+                  New
                 </button>
               </div>
 
-              {/* List Items */}
               <div className="flex-1 overflow-y-auto">
                 {loading ? (
-                  <div className="p-4 space-y-3">
+                  <div className="p-3 space-y-2">
                     {[1, 2].map((i) => (
-                      <div key={i} className="h-16 rounded-[8px] bg-surface-bone animate-pulse" />
+                      <div
+                        key={i}
+                        className="h-14 rounded bg-surface-bone animate-pulse"
+                      />
                     ))}
                   </div>
                 ) : reports.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-                    <FileText size={32} className="text-stone mb-3" />
-                    <p className="font-ui text-sm font-medium text-ink">No reports</p>
-                    <p className="font-ui text-[12px] text-charcoal mt-1">
-                      Generate a review to get started
+                  <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+                    <FileText size={28} className="text-stone mb-2" />
+                    <p className="font-ui text-[13px] font-medium text-ink">
+                      No reports
                     </p>
                   </div>
                 ) : (
-                  <div className="p-2 space-y-1">
+                  <div className="p-1.5 space-y-0.5">
                     {reports.map((r) => (
                       <button
                         key={r.id}
                         onClick={() => setSelectedId(r.id)}
-                        className={`w-full text-left rounded-[8px] px-3 py-3 transition-colors ${
+                        className={`w-full text-left rounded-[8px] px-3 py-2.5 transition-colors ${
                           selectedId === r.id
                             ? "bg-primary/10"
                             : "hover:bg-surface-bone"
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                              r.validation_status === "valid"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-red-50 text-red-700"
-                            }`}
-                          >
-                            {r.validation_status === "valid" ? (
-                              <CheckCircle size={10} />
-                            ) : (
-                              <XCircle size={10} />
-                            )}
-                            {r.validation_status === "valid" ? "Valid" : "Invalid"}
-                          </span>
-                        </div>
-                        <p className="font-ui text-[13px] font-medium text-ink mt-1 line-clamp-2">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                            r.validation_status === "valid"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-red-50 text-red-700"
+                          }`}
+                        >
+                          {r.validation_status === "valid" ? (
+                            <CheckCircle size={9} />
+                          ) : (
+                            <XCircle size={9} />
+                          )}
+                          {r.validation_status === "valid" ? "Valid" : "Bad"}
+                        </span>
+                        <p className="font-ui text-[12px] font-medium text-ink mt-1 line-clamp-2">
                           {r.title}
                         </p>
-                        <p className="font-ui text-[11px] text-ash mt-1">
+                        <p className="font-ui text-[10px] text-ash mt-0.5">
                           {r.citation_audit.total_citations} citations
                         </p>
                       </button>
@@ -302,156 +426,264 @@ export default function ReportsPage() {
                 )}
               </div>
 
-              {/* Regenerate button at bottom */}
               {reports.length > 0 && (
-                <div className="px-4 py-3" style={{ borderTop: "1px solid var(--hairline)" }}>
+                <div
+                  className="px-3 py-2.5"
+                  style={{ borderTop: "1px solid var(--hairline)" }}
+                >
                   <button
                     onClick={handleGenerate}
                     disabled={generating}
-                    className="font-ui w-full inline-flex items-center justify-center gap-2 h-[36px] rounded-full bg-primary/10 text-[12px] font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+                    className="font-ui w-full inline-flex items-center justify-center gap-1.5 h-[32px] rounded-full bg-primary/10 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
                   >
-                    <ArrowCounterClockwise size={14} />
+                    <ArrowCounterClockwise size={12} />
                     Regenerate
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Right Panel — Preview */}
+            {/* ── Right Panel: Preview ── */}
             <div className="flex-1 bg-canvas flex flex-col min-w-0">
               {!selectedId ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                  <PencilLine size={48} className="text-stone/40 mb-4" />
-                  <p className="font-ui text-base font-semibold text-charcoal">
+                  <PencilLine size={40} className="text-stone/40 mb-3" />
+                  <p className="font-ui text-sm font-semibold text-charcoal">
                     Select a report
-                  </p>
-                  <p className="font-ui text-sm text-ash mt-1 max-w-sm">
-                    Choose a report from the list to preview its content,
-                    references, and citation audit.
                   </p>
                 </div>
               ) : loadingDetail ? (
                 <div className="flex-1 p-8 space-y-4">
                   <div className="h-8 w-2/3 rounded bg-surface-bone animate-pulse" />
-                  <div className="h-4 w-1/2 rounded bg-surface-bone animate-pulse" />
                   <div className="h-64 rounded bg-surface-bone animate-pulse" />
                 </div>
               ) : detail ? (
                 <>
-                  {/* Preview Toolbar */}
+                  {/* ── Toolbar ── */}
                   <div
-                    className="flex items-center justify-between px-6 py-3 bg-surface-card shrink-0"
-                    style={{ borderBottom: "1px solid var(--hairline)" }}
+                    className="flex items-center gap-3 px-4 py-2.5 bg-surface-card shrink-0"
+                    style={{
+                      borderBottom: "1px solid var(--hairline)",
+                    }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <button
-                        onClick={() => { setSelectedId(null); setDetail(null); }}
-                        className="flex items-center gap-1 font-ui text-[12px] text-charcoal hover:text-ink transition-colors"
-                      >
-                        <ArrowLeft size={14} />
-                        Back
-                      </button>
-                      <div className="h-4 w-px bg-[var(--hairline)]" />
-                      <h2 className="font-ui text-sm font-semibold text-ink truncate">
-                        {detail.title}
-                      </h2>
-                      <span
-                        className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          detail.validation_status === "valid"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-red-50 text-red-700"
-                        }`}
-                      >
-                        {detail.validation_status === "valid" ? (
-                          <CheckCircle size={12} />
-                        ) : (
-                          <XCircle size={12} />
-                        )}
-                        {detail.validation_status === "valid" ? "All citations valid" : "Invalid citations"}
-                      </span>
+                    <button
+                      onClick={() => {
+                        setSelectedId(null);
+                        setDetail(null);
+                      }}
+                      className="flex items-center gap-1 font-ui text-[12px] text-charcoal hover:text-ink transition-colors shrink-0"
+                    >
+                      <ArrowLeft size={14} />
+                    </button>
+                    <div className="h-4 w-px bg-[var(--hairline)] shrink-0" />
+                    <span
+                      className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        detail.validation_status === "valid"
+                          ? "bg-green-50 text-green-700"
+                          : "bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {detail.validation_status === "valid" ? (
+                        <CheckCircle size={10} />
+                      ) : (
+                        <XCircle size={10} />
+                      )}
+                      {detail.validation_status === "valid" ? "Valid" : "Invalid"}
+                    </span>
+
+                    {/* Search */}
+                    <div className="flex-1 max-w-xs relative">
+                      <MagnifyingGlass
+                        size={14}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-ash"
+                      />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search in review…"
+                        className="focus-ring h-[30px] w-full rounded-full bg-surface-bone pl-8 pr-3 font-ui text-[12px] text-ink outline-none"
+                        style={{ border: "1px solid var(--hairline)" }}
+                      />
                     </div>
+
+                    {/* TOC dropdown */}
+                    {toc.length > 0 && (
+                      <TocDropdown
+                        toc={toc}
+                        activeId={activeSection}
+                        onSelect={scrollToSection}
+                      />
+                    )}
+
+                    <div className="flex-1" />
+
                     <button
                       onClick={handleExport}
-                      className="flex items-center gap-1.5 h-[32px] rounded-full bg-primary px-3 font-ui text-[12px] font-semibold text-on-primary hover:bg-primary-deep transition-colors"
+                      className="flex items-center gap-1.5 h-[28px] rounded-full bg-primary px-3 font-ui text-[11px] font-semibold text-on-primary hover:bg-primary-deep transition-colors shrink-0"
                     >
-                      <Download size={14} />
-                      Export .md
+                      <Download size={12} />
+                      Export
                     </button>
                   </div>
 
-                  {/* Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="max-w-[1000px] mx-auto px-10 py-8 space-y-8">
-                      {/* Citation Audit Bar */}
-                      <div className="flex items-center gap-4 flex-wrap">
-                        <AuditPill label="Citations" value={detail.citation_audit.total_citations} />
-                        <AuditPill label="Valid" value={detail.citation_audit.valid_citations} color="text-green-700" />
-                        {detail.citation_audit.invalid_citations > 0 && (
-                          <AuditPill label="Invalid" value={detail.citation_audit.invalid_citations} color="text-red-700" />
+                  {/* ── Content with TOC sidebar ── */}
+                  <div className="flex-1 overflow-hidden flex">
+                    {/* Main scroll area */}
+                    <div
+                      ref={scrollRef}
+                      className="flex-1 overflow-y-auto"
+                    >
+                      <div className="max-w-[800px] mx-auto px-8 py-6 space-y-6">
+                        {/* Citation Audit */}
+                        <div className="flex items-center gap-5 flex-wrap">
+                          <AuditPill
+                            label="Citations"
+                            value={detail.citation_audit.total_citations}
+                          />
+                          <AuditPill
+                            label="Valid"
+                            value={detail.citation_audit.valid_citations}
+                            color="text-green-700"
+                          />
+                          {detail.citation_audit.invalid_citations > 0 && (
+                            <AuditPill
+                              label="Invalid"
+                              value={detail.citation_audit.invalid_citations}
+                              color="text-red-700"
+                            />
+                          )}
+                        </div>
+
+                        {/* References */}
+                        {detail.references.length > 0 && (
+                          <details className="group">
+                            <summary className="font-ui text-[12px] font-semibold text-ash uppercase tracking-wide cursor-pointer hover:text-ink transition-colors list-none flex items-center gap-2">
+                              <List size={14} />
+                              References ({detail.references.length})
+                              <span className="text-[10px] text-ash group-open:rotate-90 transition-transform">
+                                ▸
+                              </span>
+                            </summary>
+                            <div className="mt-3 grid gap-1.5">
+                              {detail.references.map((ref) => (
+                                <div
+                                  key={ref.project_paper_id}
+                                  className="rounded-[6px] bg-surface-card px-3 py-2"
+                                  style={{
+                                    border: "1px solid var(--hairline)",
+                                  }}
+                                >
+                                  <p className="font-ui text-[13px] text-ink">
+                                    <span className="font-semibold text-primary mr-1">
+                                      {ref.citation_label}
+                                    </span>
+                                    {ref.title}
+                                  </p>
+                                  <p className="font-ui text-[11px] text-charcoal mt-0.5">
+                                    {ref.authors.slice(0, 3).join(", ")}
+                                    {ref.authors.length > 3 && " et al."}
+                                    {ref.year && ` (${ref.year})`}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
                         )}
-                        <AuditPill label="Uncited" value={detail.citation_audit.uncited_saved_papers} color="text-ash" />
-                      </div>
 
-                      {/* References */}
-                      {detail.references.length > 0 && (
-                        <div>
-                          <h3 className="font-ui text-[12px] font-semibold text-ash uppercase tracking-wide mb-3">
-                            References ({detail.references.length})
-                          </h3>
-                          <div className="grid gap-2">
-                            {detail.references.map((ref) => (
+                        {/* Section Cards */}
+                        {searchQuery.trim() && (
+                          <p className="font-ui text-[12px] text-ash">
+                            {filteredSections.length} of{" "}
+                            {parsedSections.length} sections match &quot;
+                            {searchQuery}&quot;
+                          </p>
+                        )}
+
+                        {filteredSections.map((section) => (
+                          <div
+                            key={section.id}
+                            id={section.id}
+                            data-section
+                            ref={(el) => {
+                              if (el) sectionRefs.current[section.id] = el;
+                            }}
+                            className={`rounded-[10px] bg-surface-card transition-all ${
+                              activeSection === section.id
+                                ? "ring-2 ring-primary/20"
+                                : ""
+                            }`}
+                            style={{
+                              border: "1px solid var(--hairline)",
+                              scrollMarginTop: "80px",
+                            }}
+                          >
+                            {section.heading && (
                               <div
-                                key={ref.project_paper_id}
-                                className="rounded-[8px] bg-surface-card px-4 py-3"
-                                style={{ border: "1px solid var(--hairline)" }}
+                                className="px-6 pt-5 pb-2"
+                                style={{
+                                  borderBottom: "1px solid var(--hairline)",
+                                }}
                               >
-                                <p className="font-ui text-sm text-ink">
-                                  <span className="font-semibold text-primary">
-                                    {ref.citation_label}
-                                  </span>{" "}
-                                  {ref.title}
-                                </p>
-                                <p className="font-ui text-[12px] text-charcoal mt-0.5">
-                                  {ref.authors.slice(0, 3).join(", ")}
-                                  {ref.authors.length > 3 && " et al."}
-                                  {ref.year && ` (${ref.year})`}
-                                </p>
+                                <h2 className="font-display text-[18px] font-bold text-ink tracking-tight">
+                                  {section.heading}
+                                </h2>
                               </div>
-                            ))}
+                            )}
+                            <div
+                              className={`prose prose-sm max-w-none px-6 ${section.heading ? "py-4" : "py-5"}
+                                prose-p:text-ink prose-p:leading-[1.75] prose-p:text-[14px] prose-p:mb-3
+                                prose-strong:text-ink prose-strong:font-semibold
+                                prose-em:text-charcoal
+                                prose-li:text-ink prose-li:text-[14px] prose-li:leading-[1.7]
+                                prose-ol:my-3 prose-ul:my-3
+                                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                                prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-4
+                                prose-table:text-[13px]
+                                prose-th:text-left prose-th:font-semibold prose-th:text-ink
+                                prose-td:py-1`}
+                            >
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {section.content}
+                              </ReactMarkdown>
+                            </div>
                           </div>
-                        </div>
-                      )}
-
-                      {/* Markdown Content */}
-                      <div>
-                        <h3 className="font-ui text-[12px] font-semibold text-ash uppercase tracking-wide mb-3">
-                          Literature Review
-                        </h3>
-                        <div
-                          className="rounded-[12px] bg-surface-card px-12 py-10 prose prose-base max-w-none
-                            prose-headings:font-display prose-headings:text-ink prose-headings:tracking-tight prose-headings:font-bold
-                            prose-h1:text-[28px] prose-h1:mt-10 prose-h1:mb-4 prose-h1:border-b prose-h1:pb-3
-                            prose-h2:text-[22px] prose-h2:mt-8 prose-h2:mb-3
-                            prose-h3:text-[17px] prose-h3:mt-6 prose-h3:mb-2
-                            prose-p:text-ink prose-p:leading-[1.8] prose-p:text-[15px] prose-p:mb-4
-                            prose-strong:text-ink prose-strong:font-semibold
-                            prose-em:text-charcoal
-                            prose-li:text-ink prose-li:text-[15px] prose-li:leading-[1.7]
-                            prose-ol:my-4 prose-ul:my-4
-                            prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium
-                            prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-5
-                            prose-hr:my-8 prose-hr:border-[var(--hairline)]
-                            prose-table:text-[14px]
-                            prose-th:text-left prose-th:font-semibold prose-th:text-ink prose-th:pb-2
-                            prose-td:py-1.5"
-                          style={{ border: "1px solid var(--hairline)", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
-                        >
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {detail.content_markdown}
-                          </ReactMarkdown>
-                        </div>
+                        ))}
                       </div>
                     </div>
+
+                    {/* ── TOC Sidebar (right rail) ── */}
+                    {toc.length > 2 && (
+                      <div
+                        className="hidden lg:block w-[200px] shrink-0 bg-surface-card/50 overflow-y-auto"
+                        style={{
+                          borderLeft: "1px solid var(--hairline)",
+                        }}
+                      >
+                        <div className="px-3 py-4 sticky top-0">
+                          <p className="font-ui text-[10px] font-semibold text-ash uppercase tracking-wide mb-2 px-1">
+                            Contents
+                          </p>
+                          <nav className="space-y-0.5">
+                            {toc.map((entry) => (
+                              <button
+                                key={entry.id}
+                                onClick={() => scrollToSection(entry.id)}
+                                className={`block w-full text-left font-ui text-[12px] px-2 py-1 rounded transition-colors ${
+                                  entry.level === 3 ? "pl-5" : ""
+                                } ${
+                                  activeSection === entry.id
+                                    ? "text-primary font-semibold bg-primary/5"
+                                    : "text-charcoal hover:text-ink hover:bg-surface-bone"
+                                }`}
+                              >
+                                {entry.text}
+                              </button>
+                            ))}
+                          </nav>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : null}
@@ -463,10 +695,83 @@ export default function ReportsPage() {
   );
 }
 
-function AuditPill({ label, value, color = "text-ink" }: { label: string; value: number; color?: string }) {
+/* ── Components ── */
+
+function TocDropdown({
+  toc,
+  activeId,
+  onSelect,
+}: {
+  toc: TocEntry[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
   return (
-    <span className="font-ui inline-flex items-center gap-1.5 text-[12px] text-charcoal">
-      <span className={`font-display text-[16px] font-bold ${color}`}>{value}</span>
+    <div ref={ref} className="relative shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 h-[30px] rounded-full bg-surface-bone px-3 font-ui text-[11px] text-charcoal hover:text-ink transition-colors"
+        style={{ border: "1px solid var(--hairline)" }}
+      >
+        <List size={12} />
+        Sections
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-[36px] z-50 w-[220px] rounded-[10px] bg-surface-card p-1 shadow-lg max-h-[300px] overflow-y-auto"
+          style={{ border: "1px solid var(--hairline)" }}
+        >
+          {toc.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => {
+                onSelect(entry.id);
+                setOpen(false);
+              }}
+              className={`block w-full text-left font-ui text-[12px] px-3 py-2 rounded-[6px] transition-colors ${
+                entry.level === 3 ? "pl-6" : ""
+              } ${
+                activeId === entry.id
+                  ? "bg-primary/10 text-primary font-semibold"
+                  : "text-ink hover:bg-surface-bone"
+              }`}
+            >
+              {entry.text}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuditPill({
+  label,
+  value,
+  color = "text-ink",
+}: {
+  label: string;
+  value: number;
+  color?: string;
+}) {
+  return (
+    <span className="font-ui inline-flex items-center gap-1.5 text-[11px] text-charcoal">
+      <span className={`font-display text-[15px] font-bold ${color}`}>
+        {value}
+      </span>
       {label}
     </span>
   );
