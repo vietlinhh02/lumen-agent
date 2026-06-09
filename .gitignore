@@ -44,3 +44,33 @@ Thumbs.db
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+
+# Local dev database
+db.sqlite
+*.sqlite
+
+# Local dev data
+data/
+
+# Session artifacts
+*-this-session-is-being-continued-from-a-previous-c.txt
+
+# IDE / agent configs (frontend)
+frontend/.adal/
+frontend/.agents/
+frontend/.augment/
+frontend/.claude/
+frontend/.codebuddy/
+frontend/.commandcode/
+frontend/.continue/
+frontend/.crush/
+frontend/.neovate/
+frontend/.openhands/
+frontend/.vscode/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
