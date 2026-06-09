@@ -680,7 +680,6 @@ export default function ReportsPage() {
               ) : null}
             </div>
           </div>
-        </div>
     </div>
   );
 }
