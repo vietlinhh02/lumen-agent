@@ -1,14 +1,14 @@
 import { LoginGuard } from "@/components/LoginGuard";
 import BrandPanel from "@/components/BrandPanel";
-import LoginForm from "@/components/LoginForm";
+import RegisterForm from "@/components/RegisterForm";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <LoginGuard>
       <div className="flex min-h-screen">
         <BrandPanel />
         <div className="flex flex-1 flex-col items-center justify-center bg-canvas px-6 lg:px-16">
-          <LoginForm />
+          <RegisterForm />
         </div>
       </div>
     </LoginGuard>

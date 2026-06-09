@@ -6,21 +6,35 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
-export default function LoginForm() {
-  const { login } = useAuth();
+export default function RegisterForm() {
+  const { register, login } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      await register(email, password);
+      toast.success("Account created. Signing you in…");
       await login(email, password);
       router.push("/");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Login failed");
+      toast.error(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -39,10 +53,10 @@ export default function LoginForm() {
           className="font-display mt-2 text-[40px] font-bold leading-[1.0] text-ink lg:mt-0 animate-slide-up"
           style={{ letterSpacing: "-1px" }}
         >
-          Sign in
+          Create account
         </h1>
         <p className="mt-2 text-base leading-[1.5] text-charcoal animate-slide-up delay-100">
-          Welcome back. Enter your credentials to continue.
+          Start your AI-powered literature review journey.
         </p>
       </div>
 
@@ -82,8 +96,29 @@ export default function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete="current-password"
-            placeholder="••••••••"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            className="focus-ring h-[48px] w-full rounded-full bg-surface-card px-5 text-base text-ink placeholder:text-ash outline-none transition-shadow"
+            style={{ border: "1px solid var(--hairline)" }}
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="confirmPassword"
+            className="font-ui mb-1.5 block text-sm font-semibold text-ink"
+            style={{ letterSpacing: "-0.3px" }}
+          >
+            Confirm password
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder="Repeat your password"
             className="focus-ring h-[48px] w-full rounded-full bg-surface-card px-5 text-base text-ink placeholder:text-ash outline-none transition-shadow"
             style={{ border: "1px solid var(--hairline)" }}
           />
@@ -94,14 +129,14 @@ export default function LoginForm() {
           disabled={isSubmitting}
           className="font-ui h-[48px] w-full rounded-full bg-primary text-base font-semibold leading-[1.0] text-on-primary transition-colors hover:bg-primary-deep active:bg-primary-deep disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isSubmitting ? "Signing in…" : "Sign In"}
+          {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </form>
 
       <p className="mt-6 text-center text-sm text-charcoal animate-fade-in delay-300">
-        Don&apos;t have an account?{" "}
-        <Link href="/login/register" className="font-semibold text-primary hover:text-primary-deep underline underline-offset-2">
-          Create one
+        Already have an account?{" "}
+        <Link href="/login" className="font-semibold text-primary hover:text-primary-deep underline underline-offset-2">
+          Sign in
         </Link>
       </p>
     </div>
