@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Inter, Inter_Tight, Geist } from "next/font/google";
 import localFont from "next/font/local";
 import { AuthProvider } from "@/lib/auth";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +45,10 @@ export default function RootLayout({
       className={cn("h-full", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          <Toaster position="top-right" toastOptions={{ style: { fontFamily: "var(--font-body)" } }} />
+        </AuthProvider>
       </body>
     </html>
   );
