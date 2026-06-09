@@ -307,9 +307,9 @@ export default function ReportsPage() {
   const filteredSections = parsedSections.filter(matchesSearch);
 
   return (
-    <div className="h-screen bg-canvas flex flex-col overflow-hidden">
+    <div className="h-[calc(100vh-60px)] bg-canvas flex flex-col overflow-hidden -m-8 -mx-4 sm:-mx-8">
       {/* Compact Header — fixed */}
-      <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
+      <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2.5 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
         <h1
           className="font-display text-[20px] font-bold leading-none text-ink shrink-0"
           style={{ letterSpacing: "-0.5px" }}
@@ -524,7 +524,7 @@ export default function ReportsPage() {
                       ref={scrollRef}
                       className="flex-1 overflow-y-auto scrollbar-hide"
                     >
-                      <div className="max-w-[900px] mx-auto px-10 py-8 space-y-6">
+                      <div className="px-10 py-8 space-y-6">
                         {/* Citation Audit */}
                         <div className="flex items-center gap-5 flex-wrap">
                           <AuditPill

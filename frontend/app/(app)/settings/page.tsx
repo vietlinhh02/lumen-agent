@@ -49,7 +49,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <div className="mx-auto max-w-[900px] px-6 py-8">
+      <div className="px-4 sm:px-6 py-6">
         <div className="flex flex-col gap-6">
           {/* Header */}
           <div>
