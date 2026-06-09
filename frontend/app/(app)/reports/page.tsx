@@ -219,9 +219,9 @@ export default function ReportsPage() {
           />
 
           {/* Split View */}
-          <div className="flex gap-0 rounded-[12px] overflow-hidden" style={{ border: "1px solid var(--hairline)", height: "calc(100vh - 280px)", minHeight: "500px" }}>
+          <div className="flex gap-0 rounded-[12px] overflow-hidden" style={{ border: "1px solid var(--hairline)", height: "calc(100vh - 240px)", minHeight: "600px" }}>
             {/* Left Panel — Report List */}
-            <div className="w-[320px] shrink-0 bg-surface-card flex flex-col" style={{ borderRight: "1px solid var(--hairline)" }}>
+            <div className="w-[280px] shrink-0 bg-surface-card flex flex-col" style={{ borderRight: "1px solid var(--hairline)" }}>
               {/* List Header */}
               <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--hairline)" }}>
                 <span className="font-ui text-[12px] font-semibold text-ash uppercase tracking-wide">
@@ -381,7 +381,7 @@ export default function ReportsPage() {
 
                   {/* Scrollable Content */}
                   <div className="flex-1 overflow-y-auto">
-                    <div className="max-w-[900px] mx-auto px-8 py-6 space-y-8">
+                    <div className="max-w-[1000px] mx-auto px-10 py-8 space-y-8">
                       {/* Citation Audit Bar */}
                       <div className="flex items-center gap-4 flex-wrap">
                         <AuditPill label="Citations" value={detail.citation_audit.total_citations} />
@@ -428,15 +428,23 @@ export default function ReportsPage() {
                           Literature Review
                         </h3>
                         <div
-                          className="rounded-[12px] bg-surface-card p-8 prose prose-sm max-w-none
-                            prose-headings:font-display prose-headings:text-ink prose-headings:tracking-tight
-                            prose-h2:text-[20px] prose-h2:mt-8 prose-h2:mb-3
-                            prose-p:text-ink prose-p:leading-[1.7] prose-p:text-[14px]
+                          className="rounded-[12px] bg-surface-card px-12 py-10 prose prose-base max-w-none
+                            prose-headings:font-display prose-headings:text-ink prose-headings:tracking-tight prose-headings:font-bold
+                            prose-h1:text-[28px] prose-h1:mt-10 prose-h1:mb-4 prose-h1:border-b prose-h1:pb-3
+                            prose-h2:text-[22px] prose-h2:mt-8 prose-h2:mb-3
+                            prose-h3:text-[17px] prose-h3:mt-6 prose-h3:mb-2
+                            prose-p:text-ink prose-p:leading-[1.8] prose-p:text-[15px] prose-p:mb-4
                             prose-strong:text-ink prose-strong:font-semibold
-                            prose-li:text-ink prose-li:text-[14px]
-                            prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                            prose-blockquote:border-l-primary prose-blockquote:text-charcoal"
-                          style={{ border: "1px solid var(--hairline)" }}
+                            prose-em:text-charcoal
+                            prose-li:text-ink prose-li:text-[15px] prose-li:leading-[1.7]
+                            prose-ol:my-4 prose-ul:my-4
+                            prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium
+                            prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-5
+                            prose-hr:my-8 prose-hr:border-[var(--hairline)]
+                            prose-table:text-[14px]
+                            prose-th:text-left prose-th:font-semibold prose-th:text-ink prose-th:pb-2
+                            prose-td:py-1.5"
+                          style={{ border: "1px solid var(--hairline)", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
                         >
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {detail.content_markdown}
