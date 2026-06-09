@@ -12,6 +12,7 @@ import {
   SortAscending,
   SortDescending,
 } from "@phosphor-icons/react";
+import { Dropdown } from "@/components/ui/Dropdown";
 
 interface PaperItem {
   id: string;
@@ -155,19 +156,20 @@ export default function PapersPage() {
           </div>
 
           {/* Project filter */}
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="focus-ring h-[38px] rounded-full bg-surface-card px-4 font-ui text-sm text-ink outline-none cursor-pointer"
-            style={{ border: "1px solid var(--hairline)" }}
-          >
-            <option value="">All projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
+          <div className="min-w-[200px]">
+            <Dropdown
+              options={[
+                { value: "", label: "All projects" },
+                ...projects.map((p) => ({
+                  value: p.id,
+                  label: p.title,
+                })),
+              ]}
+              value={projectFilter}
+              onChange={setProjectFilter}
+              placeholder="All projects"
+            />
+          </div>
         </div>
 
         {/* Table */}
