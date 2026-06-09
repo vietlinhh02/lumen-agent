@@ -307,9 +307,9 @@ export default function ReportsPage() {
   const filteredSections = parsedSections.filter(matchesSearch);
 
   return (
-    <div className="h-[calc(100vh-60px)] bg-canvas flex flex-col overflow-hidden -m-8 -mx-4 sm:-mx-8">
+    <div className="fixed inset-0 top-[60px] bg-canvas flex flex-col overflow-hidden z-10 ml-0 xl:ml-[56px]">
       {/* Compact Header — fixed */}
-      <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2.5 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
+      <div className="shrink-0 px-6 pt-3 pb-2.5 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
         <h1
           className="font-display text-[20px] font-bold leading-none text-ink shrink-0"
           style={{ letterSpacing: "-0.5px" }}
