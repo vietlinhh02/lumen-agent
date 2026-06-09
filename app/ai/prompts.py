@@ -183,6 +183,36 @@ Venue: {venue}
 Extract the literature matrix row for this paper.
 """
 
+MATRIX_EXTRACTION_CHUNK_SYSTEM = """\
+You are a systematic literature review assistant. Extract structured information
+from the paper metadata and relevant full-text sections provided.
+
+Rules:
+- Use only the information given. Do not invent details.
+- Full-text sections provide richer context than the abstract alone — use them
+  for method, dataset, key_result, and limitation fields.
+- If a field cannot be determined from the available text, return "not specified".
+- Set confidence to "high" only if the abstract AND sections clearly support all fields.
+- Set confidence to "low" if critical fields like method or result are missing.
+- Keep each field concise: 1 to 3 sentences maximum.
+- The relevance field must connect the paper to the specific project topic.
+"""
+
+MATRIX_EXTRACTION_CHUNK_USER = """\
+Project topic: {project_topic}
+
+Paper title: {title}
+Authors: {authors}
+Year: {year}
+Abstract: {abstract}
+Venue: {venue}
+
+Relevant sections from the full text:
+{chunk_context}
+
+Extract the literature matrix row for this paper.
+"""
+
 
 # ── Gap Analysis ──────────────────────────────────────────────────────────────
 
@@ -209,6 +239,37 @@ Saved paper IDs available for evidence (use only these):
 
 Literature matrix rows:
 {matrix_rows_json}
+
+Identify evidence-backed research gaps.
+"""
+
+GAP_ANALYSIS_CHUNK_SYSTEM = """\
+You are a research gap analyst. Identify genuine research gaps by comparing
+the literature matrix rows AND the relevant full-text sections provided.
+
+Rules:
+- A gap must be supported by specific papers from the matrix. Empty evidence is not allowed.
+- Full-text sections provide richer context for identifying limitations and missing work.
+- Compare methods, datasets, domains, results, and limitations across papers.
+- Do not produce generic "future work" gaps. Each gap must explain what specific
+  papers reveal about the absence or limitation.
+- Look for: datasets not studied, languages not covered, methods not compared,
+  populations not included, metrics not reported.
+- Return between 2 and 5 gaps. Quality over quantity.
+- evidence_paper_ids must contain only project_paper_ids from the input list.
+"""
+
+GAP_ANALYSIS_CHUNK_USER = """\
+Project topic: {project_topic}
+
+Saved paper IDs available for evidence (use only these):
+{paper_ids_json}
+
+Literature matrix rows:
+{matrix_rows_json}
+
+Relevant sections from full-text papers:
+{chunk_context}
 
 Identify evidence-backed research gaps.
 """
@@ -267,6 +328,43 @@ Available evidence (cite only project_paper_ids from this list):
 
 Selected research gaps to address:
 {gaps_json}
+
+Write the literature review. Return structured sections with cited paragraphs.
+"""
+
+REVIEW_WRITER_CHUNK_SYSTEM = """\
+You are a literature review writer. Write a structured academic literature
+review from the evidence provided, including full-text sections from papers.
+
+Rules:
+- Every paragraph that makes a claim MUST include citation_paper_ids.
+- Only cite papers whose project_paper_id appears in the provided evidence list.
+- Do not invent citations. Do not cite papers not in the evidence list.
+- Full-text sections provide richer context than abstracts alone — use them
+  for detailed method comparison, result synthesis, and limitation discussion.
+- Write in clear academic prose. Avoid bullet points in the review text.
+- Organize sections by theme, method, or chronology — not by paper.
+- Each paragraph should synthesize across multiple papers, not summarize one.
+- citation_paper_ids must be non-empty for every paragraph.
+- If the research gaps are provided, dedicate a section to addressing them
+  with evidence from the papers.
+"""
+
+REVIEW_WRITER_CHUNK_USER = """\
+Project topic: {project_topic}
+Research question: {research_question}
+
+Available paper IDs for citation (use ONLY these):
+{paper_ids_json}
+
+Literature matrix rows:
+{matrix_rows_json}
+
+Research gaps to address:
+{gaps_json}
+
+Relevant sections from full-text papers:
+{chunk_context}
 
 Write the literature review. Return structured sections with cited paragraphs.
 """
