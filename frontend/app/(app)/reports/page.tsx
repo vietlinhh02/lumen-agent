@@ -307,44 +307,34 @@ export default function ReportsPage() {
   const filteredSections = parsedSections.filter(matchesSearch);
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <div className="px-4 sm:px-6 py-6">
-        <div className="flex flex-col gap-5">
-          {/* Header */}
-          <div>
-            <h1
-              className="font-display text-[32px] font-bold leading-[1.0] text-ink"
-              style={{ letterSpacing: "-1px" }}
-            >
-              Literature Reviews
-            </h1>
-            <p className="mt-2 text-sm text-charcoal">
-              Generate citation-safe literature review drafts from your matrix
-              and research gaps.
-            </p>
-          </div>
-
+    <div className="h-screen bg-canvas flex flex-col overflow-hidden">
+      {/* Compact Header — fixed */}
+      <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
+        <h1
+          className="font-display text-[20px] font-bold leading-none text-ink shrink-0"
+          style={{ letterSpacing: "-0.5px" }}
+        >
+          Literature Reviews
+        </h1>
+        <div className="h-5 w-px bg-[var(--hairline)] shrink-0" />
+        <div className="flex-1 min-w-0 max-w-xs">
           <Dropdown
             options={projects.map((p) => ({
               value: p.id,
               label: p.title,
-              description: `${p.paper_count} papers · ${p.status}`,
+              description: `${p.paper_count} papers`,
             }))}
             value={selectedProjectId}
             onChange={setSelectedProjectId}
-            label="Project"
-            placeholder="Select a project…"
+            placeholder="Select project…"
           />
+        </div>
+      </div>
 
-          {/* Split View */}
-          <div
-            className="flex gap-0 rounded-[12px] overflow-hidden"
-            style={{
-              border: "1px solid var(--hairline)",
-              height: "calc(100vh - 200px)",
-              minHeight: "650px",
-            }}
-          >
+      {/* Split View — fills remaining height */}
+      <div
+        className="flex-1 flex min-h-0"
+      >
             {/* ── Left Panel: Report List ── */}
             <div
               className="w-[240px] shrink-0 bg-surface-card flex flex-col"
@@ -371,7 +361,7 @@ export default function ReportsPage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto scrollbar-hide">
                 {loading ? (
                   <div className="p-3 space-y-2">
                     {[1, 2].map((i) => (
@@ -532,7 +522,7 @@ export default function ReportsPage() {
                     {/* Main scroll area */}
                     <div
                       ref={scrollRef}
-                      className="flex-1 overflow-y-auto"
+                      className="flex-1 overflow-y-auto scrollbar-hide"
                     >
                       <div className="max-w-[900px] mx-auto px-10 py-8 space-y-6">
                         {/* Citation Audit */}
@@ -656,7 +646,7 @@ export default function ReportsPage() {
                     {/* ── TOC Sidebar (right rail) ── */}
                     {toc.length > 2 && (
                       <div
-                        className="hidden lg:block w-[220px] shrink-0 bg-surface-card/50 overflow-y-auto"
+                        className="hidden lg:block w-[220px] shrink-0 bg-surface-card/50 overflow-y-auto scrollbar-hide"
                         style={{
                           borderLeft: "1px solid var(--hairline)",
                         }}
@@ -691,7 +681,6 @@ export default function ReportsPage() {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }
@@ -732,7 +721,7 @@ function TocDropdown({
       </button>
       {open && (
         <div
-          className="absolute left-0 top-[36px] z-50 w-[220px] rounded-[10px] bg-surface-card p-1 shadow-lg max-h-[300px] overflow-y-auto"
+          className="absolute left-0 top-[36px] z-50 w-[220px] rounded-[10px] bg-surface-card p-1 shadow-lg max-h-[300px] overflow-y-auto scrollbar-hide"
           style={{ border: "1px solid var(--hairline)" }}
         >
           {toc.map((entry) => (

@@ -147,6 +147,25 @@ body {
   box-shadow: 0 0 0 3px var(--ring-focus);
 }
 
+/* Scrollbar hide utility */
+.scrollbar-hide {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/Edge */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;                  /* Chrome/Safari */
+}
+
+/* Scrollable but hidden scrollbar */
+.scroll-y {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-y::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Animations ── */
 @keyframes fade-in {
   from { opacity: 0; }
