@@ -31,15 +31,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["reports"])
 
 
-@router.post("/{project_id}/reports", response_model=ReportResponse)
+@router.post("/{project_id}/reports")
 async def create_report(
     project_id: str,
     request: CreateReportRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> ReportResponse:
-    """Generate a citation-safe literature review."""
-    from sqlalchemy import select
+) -> dict:
+    """Start report generation as a background job. Returns job info immediately."""
+    import asyncio
+
+    from sqlalchemy import func, select
+
+    from app.db.models import BackgroundJob, LiteratureMatrixRow
 
     pid = uuid.UUID(project_id)
 
@@ -49,6 +53,20 @@ async def create_report(
     ).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    # Check matrix rows exist
+    matrix_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(LiteratureMatrixRow)
+            .where(LiteratureMatrixRow.project_id == pid)
+        )
+    ).scalar()
+    if not matrix_count:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="No matrix rows. Generate a literature matrix first.",
+        )
 
     # Parse selected gap IDs
     gap_ids = None
@@ -61,24 +79,101 @@ async def create_report(
                 detail="Invalid gap ID format",
             ) from err
 
-    result = await generate_report(
-        db=db,
+    # Create a background job record
+    job = BackgroundJob(
+        job_type="report_generate",
         project_id=pid,
         user_id=user.id,
-        topic=project.topic,
-        research_question=project.research_question,
-        title=request.title,
-        include_gap_section=request.include_gap_section,
-        selected_gap_ids=gap_ids,
+        status="pending",
+        total=1,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Launch background task
+    asyncio.ensure_future(
+        _run_report_job(
+            job.id,
+            pid,
+            user.id,
+            project.topic,
+            project.research_question,
+            request.title,
+            request.include_gap_section,
+            gap_ids,
+        )
     )
 
-    if result.get("status") == "failed":
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail=result.get("error", "Report generation failed"),
-        )
+    return {"job_id": str(job.id), "status": "running"}
 
-    return ReportResponse(**result)
+
+async def _run_report_job(
+    job_id: uuid.UUID,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    topic: str,
+    research_question: str | None,
+    title: str | None,
+    include_gap_section: bool,
+    selected_gap_ids: list[uuid.UUID] | None,
+) -> None:
+    """Background worker: run report generation."""
+    from datetime import datetime
+
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as bg_db:
+        job = None
+        try:
+            from sqlalchemy import select as sa_select
+
+            from app.db.models import BackgroundJob
+
+            job_result = await bg_db.execute(
+                sa_select(BackgroundJob).where(BackgroundJob.id == job_id)
+            )
+            job = job_result.scalar_one_or_none()
+            if not job:
+                return
+
+            job.status = "running"
+            await bg_db.commit()
+
+            result = await generate_report(
+                db=bg_db,
+                project_id=project_id,
+                user_id=user_id,
+                topic=topic,
+                research_question=research_question,
+                title=title,
+                include_gap_section=include_gap_section,
+                selected_gap_ids=selected_gap_ids,
+            )
+
+            if result.get("status") == "failed":
+                job.status = "failed"
+                job.error_message = result.get("error", "Report generation failed")
+            else:
+                job.status = "completed"
+                job.result = {
+                    "report_id": result.get("id"),
+                    "validation_status": result.get("validation_status"),
+                    "total_citations": result.get("citation_audit", {}).get("total_citations", 0),
+                }
+            job.completed_at = datetime.utcnow()
+            await bg_db.commit()
+
+        except Exception as exc:
+            logger.exception("Background report job failed: %s", exc)
+            try:
+                if job is not None:
+                    job.status = "failed"
+                    job.error_message = str(exc)[:500]
+                    job.completed_at = datetime.utcnow()
+                    await bg_db.commit()
+            except Exception:
+                pass
 
 
 @router.get("/{project_id}/reports", response_model=ReportListResponse)

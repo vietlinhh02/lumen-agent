@@ -75,7 +75,7 @@ export default function ReportsPage() {
     if (!token || !selectedProjectId) return;
     setGenerating(true);
     try {
-      const result = await apiFetch<ReportResponse>(
+      const result = await apiFetch<{ job_id?: string; status?: string }>(
         `/projects/${selectedProjectId}/reports`,
         {
           method: "POST",
@@ -87,24 +87,56 @@ export default function ReportsPage() {
         },
       );
 
-      if (result.validation_status === "valid") {
-        toast.success("Report generated — all citations valid");
-      } else {
-        toast.warning("Report generated — some citations invalid");
+      if (result.job_id && result.status === "running") {
+        toast.info("Generating literature review...");
+        await pollReportJob(result.job_id);
       }
 
       await fetchReports();
-      // Auto-expand the new report
-      setExpandedId(result.id);
-      setDetailMap((prev) => ({
-        ...prev,
-        [result.id]: { ...result, created_at: new Date().toISOString() },
-      }));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function pollReportJob(jobId: string) {
+    const maxAttempts = 120; // 4 minutes max
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const job = await apiFetch<{
+          status: string;
+          progress: number;
+          total: number;
+          result?: { report_id?: string; validation_status?: string; total_citations?: number };
+          error_message?: string;
+        }>(`/papers/search/jobs/${jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (job.status === "completed") {
+          const vs = job.result?.validation_status;
+          const tc = job.result?.total_citations ?? 0;
+          if (vs === "valid") {
+            toast.success(`Report generated — ${tc} citations, all valid`);
+          } else {
+            toast.warning(`Report generated — ${tc} citations, some invalid`);
+          }
+          // Auto-expand the new report
+          if (job.result?.report_id) {
+            setExpandedId(job.result.report_id);
+          }
+          return;
+        }
+        if (job.status === "failed") {
+          toast.error(job.error_message || "Report generation failed");
+          return;
+        }
+      } catch {
+        // Ignore polling errors, keep trying
+      }
+    }
+    toast.warning("Report generation is still running. Check back later.");
   }
 
   // Load detail when expanding

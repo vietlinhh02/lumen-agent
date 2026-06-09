@@ -41,7 +41,8 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE background_jobs ADD CONSTRAINT ck_background_jobs_type "
                 "CHECK (job_type IN ("
                 "'auto_save', 'normalize', 'enrich', "
-                "'matrix_generate', 'gap_generate', 'conflict_generate'"
+                "'matrix_generate', 'gap_generate', 'conflict_generate', "
+                "'report_generate'"
                 "))"
             )
         )
