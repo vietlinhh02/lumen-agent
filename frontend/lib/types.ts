@@ -173,3 +173,131 @@ export interface FullTextResponse {
   chunks: FullTextChunk[];
   crawled_markdown: string | null;
 }
+
+// ── Literature Matrix ───────────────────────────────────────────────────
+
+export interface MatrixRowResponse {
+  id: string;
+  project_id: string;
+  project_paper_id: string;
+  paper_title: string | null;
+  research_problem: string | null;
+  method: string | null;
+  dataset_or_context: string | null;
+  key_result: string | null;
+  limitation: string | null;
+  contribution: string | null;
+  relevance: string | null;
+  extraction_confidence: string;
+  created_by: string;
+  updated_at: string | null;
+}
+
+export interface MatrixListResponse {
+  items: MatrixRowResponse[];
+}
+
+export interface MatrixRowUpdate {
+  research_problem?: string;
+  method?: string;
+  dataset_or_context?: string;
+  key_result?: string;
+  limitation?: string;
+  contribution?: string;
+  relevance?: string;
+  extraction_confidence?: string;
+}
+
+export interface MatrixGenerateResponse {
+  status: string;
+  created_count: number;
+  skipped_count: number;
+}
+
+// ── Research Gaps ──────────────────────────────────────────────────────
+
+export interface GapEvidenceResponse {
+  project_paper_id: string;
+  title: string;
+  evidence_type: string;
+  note: string;
+}
+
+export interface GapResponse {
+  id: string;
+  title: string;
+  description: string;
+  suggested_direction: string;
+  evidence_summary: string;
+  confidence: string;
+  evidence: GapEvidenceResponse[];
+}
+
+export interface GapListResponse {
+  items: GapResponse[];
+  total: number;
+}
+
+// ── Conflicting Findings ───────────────────────────────────────────────
+
+export interface ConflictResponse {
+  id: string;
+  title: string;
+  description: string;
+  paper_a_id: string;
+  paper_a_title: string;
+  paper_b_id: string;
+  paper_b_title: string;
+  shared_context: string | null;
+  claim_a: string | null;
+  claim_b: string | null;
+  possible_explanation: string | null;
+  confidence: string;
+}
+
+export interface ConflictListResponse {
+  items: ConflictResponse[];
+  total: number;
+}
+
+// ── Review Reports ──────────────────────────────────────────────────────
+
+export interface ReferenceResponse {
+  citation_label: string;
+  project_paper_id: string;
+  title: string;
+  authors: string[];
+  year: number | null;
+  url: string | null;
+}
+
+export interface CitationAuditResponse {
+  total_citations: number;
+  invalid_citations: number;
+  valid_citations: number;
+  uncited_saved_papers: number;
+}
+
+export interface ReportResponse {
+  id: string;
+  title: string;
+  validation_status: string;
+  content_markdown: string;
+  references: ReferenceResponse[];
+  citation_audit: CitationAuditResponse;
+}
+
+export interface ReportListResponse {
+  items: ReportResponse[];
+  total: number;
+}
+
+export interface ReportDetailResponse extends ReportResponse {
+  created_at: string;
+}
+
+export interface CreateReportRequest {
+  title?: string;
+  include_gap_section?: boolean;
+  selected_gap_ids?: string[];
+}
