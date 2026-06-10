@@ -6,13 +6,15 @@ produces intermediate checkpoints that the frontend can poll.
 
 from __future__ import annotations
 
+import inspect
 import logging
-from typing import Any, Literal
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 
 from app.agents.nodes import (
     citation_validator_node,
+    conflict_detection_node,
     gap_analysis_node,
     matrix_extraction_node,
     query_planner_node,
@@ -21,11 +23,22 @@ from app.agents.nodes import (
     search_agent_node,
 )
 from app.agents.state import ResearchState
+from app.db.session import async_session_factory
 
 logger = logging.getLogger(__name__)
 
 
 # ── Graph Builder ───────────────────────────────────────────────────────────
+
+
+def _needs_db(node_fn: Any) -> bool:
+    """Check if a node function accepts a ``db`` parameter (by name or type hint)."""
+    sig = inspect.signature(node_fn)
+    params = list(sig.parameters.values())
+    if len(params) < 2:
+        return False
+    p = params[1]
+    return p.name == "db" or "AsyncSession" in str(p.annotation)
 
 
 def build_research_graph() -> StateGraph:
@@ -45,6 +58,7 @@ def build_research_graph() -> StateGraph:
     graph.add_node("save_screened", _wrap(save_screened_node))
     graph.add_node("matrix_extraction", _wrap(matrix_extraction_node))
     graph.add_node("gap_analysis", _wrap(gap_analysis_node))
+    graph.add_node("conflict_detection", _wrap(conflict_detection_node))
     graph.add_node("review_writer", _wrap(review_writer_node))
     graph.add_node("citation_validator", _wrap(citation_validator_node))
 
@@ -54,7 +68,8 @@ def build_research_graph() -> StateGraph:
     graph.add_edge("search_agent", "save_screened")
     graph.add_edge("save_screened", "matrix_extraction")
     graph.add_edge("matrix_extraction", "gap_analysis")
-    graph.add_edge("gap_analysis", "review_writer")
+    graph.add_edge("gap_analysis", "conflict_detection")
+    graph.add_edge("conflict_detection", "review_writer")
     graph.add_edge("review_writer", "citation_validator")
     graph.add_edge("citation_validator", END)
 
@@ -65,9 +80,18 @@ def _wrap(node_fn):
     """Wrap an async node so LangGraph can invoke it.
 
     LangGraph nodes receive ``state`` and return a dict of partial updates.
+    Nodes that accept a second ``db`` parameter receive an async session.
     """
-    async def wrapper(state: ResearchState) -> dict[str, Any]:
-        return await node_fn(state)
+    if _needs_db(node_fn):
+
+        async def wrapper(state: ResearchState) -> dict[str, Any]:
+            async with async_session_factory() as db:
+                return await node_fn(state, db)
+    else:
+
+        async def wrapper(state: ResearchState) -> dict[str, Any]:
+            return await node_fn(state)
+
     return wrapper
 
 
@@ -104,7 +128,8 @@ async def run_research_workflow(
 
     logger.info("Starting research workflow for project %s", project_id)
     final_state = await _research_graph.ainvoke(initial_state)
-    logger.info("Research workflow completed for project %s — %d papers, %d gaps, %d sections",
+    logger.info(
+        "Research workflow completed for project %s — %d papers, %d gaps, %d sections",
         project_id,
         len(final_state.get("raw_papers", [])),
         len(final_state.get("gaps", [])),
@@ -123,8 +148,7 @@ async def run_partial_workflow(
     Useful for re-running just the matrix extraction or gap analysis
     after the user has edited intermediate data.
     """
-    partial_graph = StateGraph(ResearchState)
     # Clone the compiled graph but only run the requested segment
     # For now we delegate to the full graph — partial runs can be added later.
     logger.warning("Partial workflow not fully implemented — running full graph")
-    return ResearchState(**_research_graph.ainvoke(state))
+    return ResearchState(**await _research_graph.ainvoke(state))

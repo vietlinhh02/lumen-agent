@@ -24,6 +24,7 @@ from app.routers.gaps import router as gaps_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.reports import router as reports_router
 from app.routers.admin import router as admin_router
+from app.routers.knowledge_graph import router as knowledge_graph_router
 from app.routers.stats import router as stats_router
 
 
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(conflicts_router, prefix="/api/projects")
     app.include_router(reports_router, prefix="/api/projects")
     app.include_router(admin_router, prefix="/api/admin")
+    app.include_router(knowledge_graph_router, prefix="/api/projects")
     app.include_router(stats_router, prefix="/api")
 
     # Serve PDF files statically
