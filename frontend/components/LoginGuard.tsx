@@ -11,7 +11,7 @@ export function LoginGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (token && !isTokenExpired(token)) {
-      router.replace("/");
+      router.replace("/projects");
     } else {
       setChecking(false);
     }

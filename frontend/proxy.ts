@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+const PUBLIC_EXTENSIONS = /\.(png|jpg|jpeg|svg|webp|gif|ico|woff2?|ttf|otf|css|js|map|json|txt|xml)$/i;
+
 function isJwtExpired(token: string): boolean {
   try {
     const parts = token.split(".");
@@ -14,6 +16,18 @@ function isJwtExpired(token: string): boolean {
 }
 
 export default function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Allow public access to landing page
+  if (pathname === "/") {
+    return NextResponse.next();
+  }
+
+  // Allow public static files (images, fonts, css, js, etc.)
+  if (PUBLIC_EXTENSIONS.test(pathname)) {
+    return NextResponse.next();
+  }
+
   const cookie = request.cookies.get("lumen_token");
 
   if (!cookie?.value || isJwtExpired(cookie.value)) {
@@ -26,5 +40,5 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|register|api|_next|favicon.ico|.*\\.svg).*)"],
+  matcher: ["/((?!login|register|api|_next|favicon.ico).*)"],
 };

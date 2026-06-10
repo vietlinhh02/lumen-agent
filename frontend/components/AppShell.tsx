@@ -21,7 +21,7 @@ import {
 /* ── Navigation items ── */
 
 const NAV_ITEMS = [
-  { label: "Dashboard", href: "/", icon: SquaresFour },
+  { label: "Dashboard", href: "/dashboard", icon: SquaresFour },
   { label: "Projects", href: "/projects", icon: Folder },
   { label: "Search Papers", href: "/search", icon: MagnifyingGlass },
   { label: "Saved Papers", href: "/papers", icon: FileText },

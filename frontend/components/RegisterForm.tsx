@@ -32,7 +32,7 @@ export default function RegisterForm() {
       await register(email, password);
       toast.success("Account created. Signing you in…");
       await login(email, password);
-      router.push("/");
+      router.push("/dashboard");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -43,12 +43,13 @@ export default function RegisterForm() {
   return (
     <div className="w-full max-w-[400px]">
       <div className="mb-12 text-center lg:text-left animate-fade-in">
-        <span
+        <Link
+          href="/"
           className="font-display text-[20px] font-bold text-ink lg:hidden"
           style={{ letterSpacing: "-0.3px" }}
         >
           Lumen
-        </span>
+        </Link>
         <h1
           className="font-display mt-2 text-[40px] font-bold leading-[1.0] text-ink lg:mt-0 animate-slide-up"
           style={{ letterSpacing: "-1px" }}
