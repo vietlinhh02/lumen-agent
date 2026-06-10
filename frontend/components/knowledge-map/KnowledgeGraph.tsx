@@ -3,6 +3,31 @@
 import { useEffect, useRef, useState } from "react";
 import type { LayoutOptions } from "cytoscape";
 import type { KnowledgeGraphResponse, GraphNodeResponse } from "@/lib/types";
+import cytoscapeNodeHtmlLabel from "cytoscape-node-html-label";
+
+// ── Phosphor SVG paths (regular weight, 256×256 viewBox) ─────────────────
+// Extracted from @phosphor-icons/react defs. MIT licensed.
+
+const PHOSPHOR_SVG_PATHS: Record<string, string> = {
+  paper: "M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Zm-32-80a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,136Zm0,32a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,168Z",
+  method: "M221.69,199.77,160,96.92V40h8a8,8,0,0,0,0-16H88a8,8,0,0,0,0,16h8V96.92L34.31,199.77A16,16,0,0,0,48,224H208a16,16,0,0,0,13.72-24.23ZM110.86,103.25A7.93,7.93,0,0,0,112,99.14V40h32V99.14a7.93,7.93,0,0,0,1.14,4.11L183.36,167c-12,2.37-29.07,1.37-51.75-10.11-15.91-8.05-31.05-12.32-45.22-12.81ZM48,208l28.54-47.58c14.25-1.74,30.31,1.85,47.82,10.72,19,9.61,35,12.88,48,12.88a69.89,69.89,0,0,0,19.55-2.7L208,208Z",
+  dataset: "M128,24C74.17,24,32,48.6,32,80v96c0,31.4,42.17,56,96,56s96-24.6,96-56V80C224,48.6,181.83,24,128,24Zm80,104c0,9.62-7.88,19.43-21.61,26.92C170.93,163.35,150.19,168,128,168s-42.93-4.65-58.39-13.08C55.88,147.43,48,137.62,48,128V111.36c17.06,15,46.23,24.64,80,24.64s62.94-9.68,80-24.64ZM69.61,53.08C85.07,44.65,105.81,40,128,40s42.93,4.65,58.39,13.08C200.12,60.57,208,70.38,208,80s-7.88,19.43-21.61,26.92C170.93,115.35,150.19,120,128,120s-42.93-4.65-58.39-13.08C55.88,99.43,48,89.62,48,80S55.88,60.57,69.61,53.08ZM186.39,202.92C170.93,211.35,150.19,216,128,216s-42.93-4.65-58.39-13.08C55.88,195.43,48,185.62,48,176V159.36c17.06,15,46.23,24.64,80,24.64s62.94-9.68,80-24.64V176C208,185.62,200.12,195.43,186.39,202.92Z",
+  limitation: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z",
+};
+
+const ICON_SIZES: Record<string, number> = {
+  paper: 16,
+  method: 15,
+  dataset: 16,
+  limitation: 16,
+};
+
+function phosphorSvgMarkup(type: string): string {
+  const path = PHOSPHOR_SVG_PATHS[type];
+  if (!path) return "";
+  const size = ICON_SIZES[type] ?? 16;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="${path}"/></svg>`;
+}
 
 // ── Built-in layouts only (no extensions) ────────────────────────────────
 
@@ -128,6 +153,9 @@ export default function KnowledgeGraphCanvas({ data, layout, visibleTypes, onNod
         if (destroyed || !containerRef.current) return;
         const cytoscape = mod.default;
 
+        // Register the HTML label extension
+        cytoscapeNodeHtmlLabel(cytoscape);
+
         const cy = cytoscape({
           container: containerRef.current,
           elements,
@@ -246,6 +274,50 @@ export default function KnowledgeGraphCanvas({ data, layout, visibleTypes, onNod
           minZoom: 0.3,
           maxZoom: 3,
         });
+
+      // Attach Phosphor icon HTML labels to each node type
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (cy as any).nodeHtmlLabel(
+          [
+            {
+              query: "node.paper",
+              halign: "center",
+              valign: "center",
+              tpl: (d: { label: string; type: string }) =>
+                `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">` +
+                  `<span style="color:#202020;display:flex;align-items:center">${phosphorSvgMarkup("paper")}</span>` +
+                `</div>`,
+            },
+            {
+              query: "node.method",
+              halign: "center",
+              valign: "center",
+              tpl: (d: { label: string; type: string }) =>
+                `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">` +
+                  `<span style="color:#2b9a66;display:flex;align-items:center">${phosphorSvgMarkup("method")}</span>` +
+                `</div>`,
+            },
+            {
+              query: "node.dataset",
+              halign: "center",
+              valign: "center",
+              tpl: (d: { label: string; type: string }) =>
+                `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">` +
+                  `<span style="color:#ea580c;display:flex;align-items:center">${phosphorSvgMarkup("dataset")}</span>` +
+                `</div>`,
+            },
+            {
+              query: "node.limitation",
+              halign: "center",
+              valign: "center",
+              tpl: (d: { label: string; type: string }) =>
+                `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">` +
+                  `<span style="color:#dc2626;display:flex;align-items:center">${phosphorSvgMarkup("limitation")}</span>` +
+                `</div>`,
+            },
+          ],
+          { enablePointerEvents: false },
+        );
 
       cy.on("mouseover", "node", (e) => {
         const neighborhood = e.target.closedNeighborhood();

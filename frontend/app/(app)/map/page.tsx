@@ -25,7 +25,7 @@ export default function KnowledgeMapPage() {
 
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [layout, setLayout] = useState("cose");
-  const [minConnections, setMinConnections] = useState(2);
+  const [minConnections, setMinConnections] = useState(1);
   const [visibleTypes, setVisibleTypes] = useState(
     new Set(["paper", "method", "dataset", "limitation"]),
   );
