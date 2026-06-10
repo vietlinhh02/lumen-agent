@@ -1,12 +1,15 @@
+import Link from "next/link";
+
 export default function BrandPanel() {
   return (
     <div className="hidden flex-col justify-between bg-surface-dark p-12 lg:flex lg:w-[45%]">
-      <span
+      <Link
+        href="/"
         className="font-display text-[24px] font-bold text-on-dark animate-fade-in"
         style={{ letterSpacing: "-0.5px" }}
       >
         Lumen
-      </span>
+      </Link>
 
       <div className="max-w-md">
         <h2
