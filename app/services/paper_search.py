@@ -14,13 +14,19 @@ from typing import NamedTuple
 
 from app.core.config import get_settings
 from app.schemas.paper import (
+    LanguageBiasAudit as LanguageBiasAuditSchema,
     PaperAuthor,
     PaperPDFStatus,
     PaperResult,
     PaperSearchRequest,
     PaperSearchResponse,
+    QueryVariant as QueryVariantSchema,
 )
 from app.services.pdf_downloader import PDFDownloader
+from app.services.language_bias import (
+    compute_bias_audit,
+    detect_and_generate_variants,
+)
 from app.sources.base import RawPaper
 from app.sources.paperhub import PaperHubSource
 
@@ -56,16 +62,73 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     settings = get_settings()
     pdf_dir = Path(settings.paper_pdf_dir)
 
-    # ── 1. Search ────────────────────────────────────────────────────────
+    # ── 1. Language bias: detect + generate variants ─────────────────────
+    detected_lang = "en"
+    variants: list = []
+    source_diagnostics: list[dict] = []
+
+    try:
+        variants, detected_lang = await detect_and_generate_variants(
+            request.query,
+            request.target_languages or [detected_lang, "en"],
+        )
+    except Exception as exc:
+        logger.warning("Language bias detection failed: %s", exc)
+
+    # ── 2. Search ────────────────────────────────────────────────────────
     t0 = time.monotonic()
-    source = PaperHubSource()
-    raw_papers = await source.search(
-        query=request.query,
-        limit=request.limit,
-        year_from=request.year_from,
-        year_to=request.year_to,
-    )
+    all_raw: list[RawPaper] = []
+
+    source_query_map: dict[str, str] = {}
+    for v in variants:
+        source_query_map[v.source] = v.query
+
+    if not source_query_map:
+        source_query_map["semantic_scholar"] = request.query
+
+    for src_name, src_query in source_query_map.items():
+        try:
+            if src_name == "semantic_scholar":
+                source = PaperHubSource()
+            else:
+                source_diagnostics.append(
+                    {
+                        "source": src_name,
+                        "status": "skipped",
+                        "result_count": 0,
+                        "message": f"Source '{src_name}' not implemented",
+                    }
+                )
+                continue
+
+            papers = await source.search(
+                query=src_query,
+                limit=min(request.limit, 100),
+                year_from=request.year_from,
+                year_to=request.year_to,
+            )
+            all_raw.extend(papers)
+            source_diagnostics.append(
+                {
+                    "source": src_name,
+                    "status": "ok",
+                    "result_count": len(papers),
+                }
+            )
+        except Exception as exc:
+            logger.warning("Source %s failed: %s", src_name, exc)
+            source_diagnostics.append(
+                {
+                    "source": src_name,
+                    "status": "failed",
+                    "result_count": 0,
+                    "message": str(exc)[:200],
+                }
+            )
+
     search_ms = round((time.monotonic() - t0) * 1000, 1)
+    raw_papers = _deduplicate_raw_books(all_raw)
+    raw_papers = raw_papers[: request.limit]
 
     # ── 2. Build paper results ───────────────────────────────────────────
     results: list[PaperResult] = []
@@ -158,6 +221,28 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     pdf_statuses = [item[1] for item in zipped]
     raw_papers = [item[2] for item in zipped]
 
+    # ── 5. Compute language bias audit ──────────────────────────────────
+    audit_schema: LanguageBiasAuditSchema | None = None
+    if source_diagnostics:
+        try:
+            audit = compute_bias_audit(
+                source_diagnostics,
+                request.language_policy,
+                variants,
+            )
+            audit_schema = LanguageBiasAuditSchema(
+                policy=audit.policy,
+                candidate_counts_by_language=audit.candidate_counts_by_language,
+                english_dominance_score=audit.english_dominance_score,
+                adjustments_applied=audit.adjustments_applied,
+            )
+        except Exception as exc:
+            logger.warning("Failed to compute bias audit: %s", exc)
+
+    response_variants = [
+        QueryVariantSchema(source=v.source, query=v.query, language=v.language) for v in variants
+    ]
+
     response = PaperSearchResponse(
         query=request.query,
         total_found=len(raw_papers),
@@ -167,12 +252,28 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
         pdfs_downloaded=pdfs_downloaded,
         pdfs_failed=pdfs_failed,
         papers=results,
+        detected_language=detected_lang,
+        query_variants=response_variants,
+        language_bias_audit=audit_schema,
+        source_diagnostics=source_diagnostics,
     )
 
     return SearchOutcome(response=response, raw_papers=raw_papers, pdf_statuses=pdf_statuses)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
+
+
+def _deduplicate_raw_books(papers: list[RawPaper]) -> list[RawPaper]:
+    """Deduplicate by strongest identifier, preserving order."""
+    seen: set[str] = set()
+    result: list[RawPaper] = []
+    for p in papers:
+        key = p.semantic_scholar_id or p.arxiv_id or p.doi or p.title.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            result.append(p)
+    return result
 
 
 def _classify_pdf_source(paper: RawPaper) -> str | None:

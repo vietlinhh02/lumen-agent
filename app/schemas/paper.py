@@ -24,6 +24,30 @@ class PaperSearchRequest(BaseModel):
         default=True,
         description="Automatically download full-text PDFs for returned papers",
     )
+    target_languages: list[str] = Field(
+        default_factory=list,
+        description="Preferred languages for query variants, e.g. ['en', 'vi']",
+    )
+    language_policy: str = Field(
+        default="balanced",
+        description="Language bias policy: 'balanced', 'original_first', or 'english_first'",
+    )
+
+
+# ── Language Bias ─────────────────────────────────────────────────────────
+
+
+class QueryVariant(BaseModel):
+    source: str
+    query: str
+    language: str
+
+
+class LanguageBiasAudit(BaseModel):
+    policy: str = "balanced"
+    candidate_counts_by_language: dict[str, int] = Field(default_factory=dict)
+    english_dominance_score: float = 0.0
+    adjustments_applied: list[str] = Field(default_factory=list)
 
 
 # ── Response ─────────────────────────────────────────────────────────────
@@ -71,6 +95,10 @@ class PaperSearchResponse(BaseModel):
     pdfs_downloaded: int = 0
     pdfs_failed: int = 0
     papers: list[PaperResult]
+    detected_language: str | None = None
+    query_variants: list[QueryVariant] = Field(default_factory=list)
+    language_bias_audit: LanguageBiasAudit | None = None
+    source_diagnostics: list[dict] = Field(default_factory=list)
 
 
 class PaperPDFStatus(BaseModel):

@@ -24,12 +24,20 @@ async def create_search_session(
     query: str,
     results: list[dict],
     total_found: int,
+    detected_language: str | None = None,
+    language_policy: str = "balanced",
+    target_languages: list[str] | None = None,
+    english_dominance_score: float | None = None,
 ) -> SearchRun:
     run = SearchRun(
         project_id=project_id,
         user_query=query,
         total_results=total_found,
         results_json=results,
+        detected_language=detected_language,
+        language_policy=language_policy,
+        target_languages=target_languages or [],
+        english_dominance_score=english_dominance_score,
     )
     db.add(run)
     await db.commit()

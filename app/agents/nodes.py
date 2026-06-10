@@ -170,6 +170,67 @@ async def search_agent_node(state: ResearchState) -> dict:
     }
 
 
+# ── Node 1b: Language Bias Audit ─────────────────────────────────────────
+
+
+async def language_bias_node(state: ResearchState) -> dict:
+    """Compute language coverage audit from search diagnostics."""
+    from app.services.language_bias import compute_bias_audit
+
+    diagnostics = state.source_diagnostics or {}
+    variants = state.query_variants or []
+
+    if not diagnostics or not variants:
+        return {
+            "current_node": "language_bias",
+            "language_bias_audit": {
+                "policy": "balanced",
+                "candidate_counts_by_language": {},
+                "english_dominance_score": 0.0,
+                "adjustments_applied": [],
+            },
+        }
+
+    variant_objects = []
+    for v in variants:
+        sources = v.get("sources", [])
+        source_name = sources[0] if isinstance(sources, list) and sources else "semantic_scholar"
+        variant_objects.append(
+            type(
+                "V",
+                (),
+                {
+                    "source": source_name,
+                    "query": v.get("query", ""),
+                    "language": v.get("language", "en"),
+                },
+            )
+        )
+
+    diag_list = []
+    for src_name, info in diagnostics.items():
+        diag_list.append(
+            {
+                "source": src_name,
+                "status": info.get("status", "skipped"),
+                "result_count": info.get("count", 0),
+                "message": info.get("error"),
+            }
+        )
+
+    audit = compute_bias_audit(diag_list, "balanced", variant_objects)
+
+    return {
+        "current_node": "language_bias",
+        "language_bias_audit": {
+            "policy": audit.policy,
+            "candidate_counts_by_language": audit.candidate_counts_by_language,
+            "english_dominance_score": audit.english_dominance_score,
+            "adjustments_applied": audit.adjustments_applied,
+        },
+    }
+
+
 # ── Node 2: Save Screened Papers ───────────────────────────────────────────
 
 

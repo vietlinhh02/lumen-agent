@@ -137,6 +137,30 @@ export interface SessionDetailResponse {
   total_pages: number;
   papers: Record<string, unknown>[];
   saved_paper_ids: string[];
+  detected_language?: string | null;
+  query_variants?: QueryVariant[];
+  language_bias_audit?: LanguageBiasAudit | null;
+  source_diagnostics?: SourceDiagnostic[];
+}
+
+export interface QueryVariant {
+  source: string;
+  query: string;
+  language: string;
+}
+
+export interface LanguageBiasAudit {
+  policy: string;
+  candidate_counts_by_language: Record<string, number>;
+  english_dominance_score: number;
+  adjustments_applied: string[];
+}
+
+export interface SourceDiagnostic {
+  source: string;
+  status: string;
+  result_count: number;
+  message?: string;
 }
 
 export interface AutoSaveResponse {

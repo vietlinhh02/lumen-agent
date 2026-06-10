@@ -16,6 +16,7 @@ from app.agents.nodes import (
     citation_validator_node,
     conflict_detection_node,
     gap_analysis_node,
+    language_bias_node,
     matrix_extraction_node,
     query_planner_node,
     review_writer_node,
@@ -46,7 +47,7 @@ def build_research_graph() -> StateGraph:
 
     Graph topology::
 
-        query_planner → search_agent → save_screened
+        query_planner → search_agent → language_bias → save_screened
         → matrix_extraction → gap_analysis → review_writer
         → citation_validator → END
     """
@@ -55,6 +56,7 @@ def build_research_graph() -> StateGraph:
     # ── add all nodes ──────────────────────────────────────────────────
     graph.add_node("query_planner", _wrap(query_planner_node))
     graph.add_node("search_agent", _wrap(search_agent_node))
+    graph.add_node("language_bias", _wrap(language_bias_node))
     graph.add_node("save_screened", _wrap(save_screened_node))
     graph.add_node("matrix_extraction", _wrap(matrix_extraction_node))
     graph.add_node("gap_analysis", _wrap(gap_analysis_node))
@@ -65,7 +67,8 @@ def build_research_graph() -> StateGraph:
     # ── linear pipeline ────────────────────────────────────────────────
     graph.set_entry_point("query_planner")
     graph.add_edge("query_planner", "search_agent")
-    graph.add_edge("search_agent", "save_screened")
+    graph.add_edge("search_agent", "language_bias")
+    graph.add_edge("language_bias", "save_screened")
     graph.add_edge("save_screened", "matrix_extraction")
     graph.add_edge("matrix_extraction", "gap_analysis")
     graph.add_edge("gap_analysis", "conflict_detection")

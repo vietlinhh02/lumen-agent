@@ -26,6 +26,9 @@ class ResearchState:
     detected_language: str = ""
     core_concepts: list[str] = field(default_factory=list)
     query_variants: list[dict] = field(default_factory=list)  # [{lang, query, sources}]
+    language_bias_audit: dict = field(
+        default_factory=dict
+    )  # {policy, candidate_counts_by_language, ...}
 
     # ── Search ──
     raw_papers: list[dict] = field(default_factory=list)  # canonical RawPaper as dicts
@@ -36,11 +39,15 @@ class ResearchState:
     screened_paper_ids: list[UUID] = field(default_factory=list)
 
     # ── Matrix Extraction ──
-    matrix_rows: list[dict] = field(default_factory=list)  # [{project_paper_id, research_problem, method, ...}]
+    matrix_rows: list[dict] = field(
+        default_factory=list
+    )  # [{project_paper_id, research_problem, method, ...}]
     matrix_status: str = "idle"  # idle | running | completed | failed
 
     # ── Gap Analysis ──
-    gaps: list[dict] = field(default_factory=list)  # [{title, description, evidence_paper_ids, ...}]
+    gaps: list[dict] = field(
+        default_factory=list
+    )  # [{title, description, evidence_paper_ids, ...}]
     gap_status: str = "idle"
 
     # ── Review ──

@@ -77,6 +77,10 @@ class SessionDetailResponse(BaseModel):
     total_pages: int
     papers: list[dict]
     saved_paper_ids: list[str] = []
+    detected_language: str | None = None
+    query_variants: list[dict] = []
+    language_bias_audit: dict | None = None
+    source_diagnostics: list[dict] = []
 
 
 # ── Routes ───────────────────────────────────────────────────────────────
@@ -92,8 +96,16 @@ async def create_session(
     outcome = await search_and_download(search_req)
     results = [p.model_dump() for p in outcome.response.papers]
 
+    audit_data = outcome.response.language_bias_audit
     run = await create_search_session(
-        db, user, request.project_id, request.query, results, outcome.response.total_found
+        db,
+        user,
+        request.project_id,
+        request.query,
+        results,
+        outcome.response.total_found,
+        detected_language=outcome.response.detected_language,
+        english_dominance_score=audit_data.english_dominance_score if audit_data else None,
     )
 
     page_size = 20
@@ -101,6 +113,10 @@ async def create_session(
     total_pages = max(1, (total + page_size - 1) // page_size)
     page_result = results[:page_size]
     saved_ids = await get_saved_paper_ids(db, request.project_id, page_result)
+
+    audit = outcome.response.language_bias_audit
+    resp_audit = audit.model_dump() if audit else None
+    resp_variants = [v.model_dump() for v in outcome.response.query_variants]
 
     return SessionDetailResponse(
         id=run.id,
@@ -114,6 +130,10 @@ async def create_session(
         total_pages=total_pages,
         papers=page_result,
         saved_paper_ids=saved_ids,
+        detected_language=outcome.response.detected_language,
+        query_variants=resp_variants,
+        language_bias_audit=resp_audit,
+        source_diagnostics=outcome.response.source_diagnostics,
     )
 
 
@@ -261,7 +281,6 @@ async def unsave_paper(
     run = await get_search_session(db, user, session_id)
     if not run:
         raise HTTPException(status_code=404, detail="Session not found")
-
 
     paper = None
     if body.semantic_scholar_id:

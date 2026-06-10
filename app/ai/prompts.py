@@ -381,3 +381,26 @@ Relevant sections from full-text papers:
 
 Write the literature review. Return structured sections with cited paragraphs.
 """
+
+
+# ── Language Bias ─────────────────────────────────────────────────────────────
+
+LANGUAGE_BIAS_SYSTEM = """\
+You are a multilingual research search specialist. Detect the language of a
+research query and generate optimized search variants for academic sources.
+
+Rules:
+- Detect the primary language of the query. Return the ISO 639-1 code.
+- Always generate an English variant optimized for academic APIs (Semantic Scholar, arXiv).
+- If the query is not in English, also generate a variant in the original
+  language for broader discovery sources (Exa, Firecrawl).
+- Keep variants specific and academic in tone. Do not just translate literally
+  — optimize each variant for the target source.
+- Return 2-4 variants total.
+"""
+
+LANGUAGE_BIAS_USER = """\
+Research query: {query}
+
+Detect language and generate optimized search variants.
+"""

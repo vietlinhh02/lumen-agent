@@ -21,9 +21,11 @@ import {
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 import type {
+  LanguageBiasAudit,
   PaperResult,
   ProjectResponse,
   ProjectListResponse,
+  QueryVariant,
   SavePaperRequest,
   SavePaperResponse,
   SuggestQueriesResponse,
@@ -650,6 +652,50 @@ export default function SearchPage() {
             )}
           </div>
         </div>
+      )}
+
+      {sessionData?.language_bias_audit && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+          {sessionData.detected_language && (
+            <span className="px-2 py-0.5 rounded bg-surface-bone">
+              Language: {sessionData.detected_language}
+            </span>
+          )}
+          <span className="px-2 py-0.5 rounded bg-surface-bone">
+            Policy: {sessionData.language_bias_audit.policy}
+          </span>
+          {Object.entries(sessionData.language_bias_audit.candidate_counts_by_language).map(([lang, count]) => (
+            <span key={lang} className="px-2 py-0.5 rounded bg-surface-bone">
+              {lang.toUpperCase()}: {count}
+            </span>
+          ))}
+          <span className={`px-2 py-0.5 rounded font-medium ${
+            sessionData.language_bias_audit.english_dominance_score < 0.7
+              ? "bg-green-100 text-green-800"
+              : sessionData.language_bias_audit.english_dominance_score < 0.85
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-red-100 text-red-800"
+          }`}>
+            EN: {Math.round(sessionData.language_bias_audit.english_dominance_score * 100)}%
+          </span>
+        </div>
+      )}
+
+      {sessionData?.query_variants && sessionData.query_variants.length > 0 && (
+        <details className="mt-1 mb-1">
+          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+            Query variants sent ({sessionData.query_variants.length})
+          </summary>
+          <div className="mt-1.5 space-y-1">
+            {sessionData.query_variants.map((v, i) => (
+              <div key={i} className="text-xs text-muted-foreground pl-3 flex items-center gap-1.5">
+                <span className="font-medium min-w-[100px]">{v.source}:</span>
+                <span>{v.query}</span>
+                <span className="ml-auto px-1 rounded bg-surface-bone text-[10px]">{v.language}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       <div className="mt-4">
