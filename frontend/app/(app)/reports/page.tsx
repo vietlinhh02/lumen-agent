@@ -25,6 +25,7 @@ import {
 import { Dropdown } from "@/components/ui/Dropdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 /* ── Types ── */
 
@@ -48,6 +49,18 @@ function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+/** Extract plain text from React children (handles nested elements). */
+function extractText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (!children) return "";
+  if (Array.isArray(children)) return children.map(extractText).join("");
+  if (typeof children === "object" && "props" in children) {
+    return extractText((children as React.ReactElement).props.children);
+  }
+  return "";
 }
 
 function parseSections(markdown: string): ParsedSection[] {
@@ -104,6 +117,7 @@ export default function ReportsPage() {
 
   // Search within review
   const [searchQuery, setSearchQuery] = useState("");
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Record<string, HTMLElement>>({});
@@ -309,14 +323,16 @@ export default function ReportsPage() {
   return (
     <div className="fixed inset-0 top-[60px] bg-canvas flex flex-col overflow-hidden z-10 ml-0 xl:ml-[56px]">
       {/* Compact Header — fixed */}
-      <div className="shrink-0 px-6 pt-3 pb-2.5 flex items-center gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
-        <h1
-          className="font-display text-[20px] font-bold leading-none text-ink shrink-0"
-          style={{ letterSpacing: "-0.5px" }}
-        >
-          Literature Reviews
-        </h1>
-        <div className="h-5 w-px bg-[var(--hairline)] shrink-0" />
+      <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4" style={{ borderBottom: "1px solid var(--hairline)" }}>
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <h1
+            className="font-display text-[18px] sm:text-[20px] font-bold leading-none text-ink shrink-0"
+            style={{ letterSpacing: "-0.5px" }}
+          >
+            Literature Reviews
+          </h1>
+          <div className="h-5 w-px bg-[var(--hairline)] shrink-0 hidden sm:block" />
+        </div>
         <div className="flex-1 min-w-0 max-w-xs">
           <Dropdown
             options={projects.map((p) => ({
@@ -332,16 +348,14 @@ export default function ReportsPage() {
       </div>
 
       {/* Split View — fills remaining height */}
-      <div
-        className="flex-1 flex min-h-0"
-      >
+      <div className="flex-1 flex min-h-0">
             {/* ── Left Panel: Report List ── */}
             <div
-              className="w-[240px] shrink-0 bg-surface-card flex flex-col"
+              className={`w-full md:w-[200px] lg:w-[240px] shrink-0 bg-surface-card flex-col transition-all duration-200 ease-out ${selectedId ? "hidden md:flex" : "flex"}`}
               style={{ borderRight: "1px solid var(--hairline)" }}
             >
               <div
-                className="px-4 py-3 flex items-center justify-between"
+                className="px-3 sm:px-4 py-3 flex items-center justify-between"
                 style={{ borderBottom: "1px solid var(--hairline)" }}
               >
                 <span className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide">
@@ -367,7 +381,7 @@ export default function ReportsPage() {
                     {[1, 2].map((i) => (
                       <div
                         key={i}
-                        className="h-14 rounded bg-surface-bone animate-pulse"
+                        className="h-14 rounded-[8px] bg-surface-bone animate-pulse"
                       />
                     ))}
                   </div>
@@ -434,7 +448,7 @@ export default function ReportsPage() {
             </div>
 
             {/* ── Right Panel: Preview ── */}
-            <div className="flex-1 bg-canvas flex flex-col min-w-0">
+            <div className={`flex-1 bg-canvas flex flex-col min-w-0 transition-all duration-200 ease-out ${selectedId ? "flex" : "hidden md:flex"}`}>
               {!selectedId ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <PencilLine size={40} className="text-stone/40 mb-3" />
@@ -451,7 +465,7 @@ export default function ReportsPage() {
                 <>
                   {/* ── Toolbar ── */}
                   <div
-                    className="flex items-center gap-3 px-4 py-2.5 bg-surface-card shrink-0"
+                    className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 bg-surface-card shrink-0"
                     style={{
                       borderBottom: "1px solid var(--hairline)",
                     }}
@@ -481,8 +495,8 @@ export default function ReportsPage() {
                       {detail.validation_status === "valid" ? "Valid" : "Invalid"}
                     </span>
 
-                    {/* Search */}
-                    <div className="flex-1 max-w-xs relative">
+                    {/* Search — hidden on mobile, icon toggle */}
+                    <div className="hidden sm:flex flex-1 min-w-[100px] max-w-xs relative">
                       <MagnifyingGlass
                         size={14}
                         className="absolute left-3 top-1/2 -translate-y-1/2 text-ash"
@@ -496,6 +510,14 @@ export default function ReportsPage() {
                         style={{ border: "1px solid var(--hairline)" }}
                       />
                     </div>
+                    {/* Mobile search icon — toggle inline search */}
+                    <button
+                      onClick={() => setShowMobileSearch((v) => !v)}
+                      className="sm:hidden flex items-center justify-center h-[30px] w-[30px] rounded-full bg-surface-bone text-charcoal hover:text-ink transition-colors"
+                      style={{ border: "1px solid var(--hairline)" }}
+                    >
+                      <MagnifyingGlass size={14} />
+                    </button>
 
                     {/* TOC dropdown */}
                     {toc.length > 0 && (
@@ -510,11 +532,36 @@ export default function ReportsPage() {
 
                     <button
                       onClick={handleExport}
-                      className="flex items-center gap-1.5 h-[28px] rounded-full bg-primary px-3 font-ui text-[11px] font-semibold text-on-primary hover:bg-primary-deep transition-colors shrink-0"
+                      className="flex items-center gap-1.5 h-[28px] rounded-full bg-primary px-2.5 sm:px-3 font-ui text-[11px] font-semibold text-on-primary hover:bg-primary-deep transition-colors shrink-0"
                     >
                       <Download size={12} />
-                      Export
+                      <span className="hidden sm:inline">Export</span>
                     </button>
+                  </div>
+
+                  {/* Mobile search bar — animated slide-down */}
+                  <div
+                    className={`sm:hidden overflow-hidden transition-all duration-200 ease-out ${
+                      showMobileSearch ? "max-h-[60px] opacity-100" : "max-h-0 opacity-0"
+                    }`}
+                  >
+                    <div className="px-3 py-2 bg-surface-card" style={{ borderBottom: "1px solid var(--hairline)" }}>
+                      <div className="relative">
+                        <MagnifyingGlass
+                          size={14}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-ash"
+                        />
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Search in review…"
+                          autoFocus={showMobileSearch}
+                          className="focus-ring h-[32px] w-full rounded-full bg-surface-bone pl-8 pr-3 font-ui text-[13px] text-ink outline-none"
+                          style={{ border: "1px solid var(--hairline)" }}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* ── Content with TOC sidebar ── */}
@@ -524,9 +571,9 @@ export default function ReportsPage() {
                       ref={scrollRef}
                       className="flex-1 overflow-y-auto scrollbar-hide"
                     >
-                      <div className="px-10 py-8 space-y-6">
+                      <div className="px-4 sm:px-6 lg:px-10 py-5 sm:py-8 space-y-4 sm:space-y-6">
                         {/* Citation Audit */}
-                        <div className="flex items-center gap-5 flex-wrap">
+                        <div className="flex items-center gap-3 sm:gap-5 flex-wrap">
                           <AuditPill
                             label="Citations"
                             value={detail.citation_audit.total_citations}
@@ -598,7 +645,7 @@ export default function ReportsPage() {
                             ref={(el) => {
                               if (el) sectionRefs.current[section.id] = el;
                             }}
-                            className={`rounded-[12px] bg-surface-card transition-all ${
+                            className={`rounded-[8px] sm:rounded-[12px] bg-surface-card transition-all ${
                               activeSection === section.id
                                 ? "ring-2 ring-primary/20 shadow-sm"
                                 : "hover:shadow-sm"
@@ -610,22 +657,22 @@ export default function ReportsPage() {
                           >
                             {section.heading && (
                               <div
-                                className="px-8 pt-6 pb-3"
+                                className="px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-2 sm:pb-3"
                                 style={{
                                   borderBottom: "1px solid var(--hairline)",
                                 }}
                               >
-                                <h2 className="font-display text-[20px] font-bold text-ink tracking-tight">
+                                <h2 className="font-display text-[18px] sm:text-[20px] font-bold text-ink tracking-tight">
                                   {section.heading}
                                 </h2>
                               </div>
                             )}
                             <div
-                              className={`prose max-w-none px-8 ${section.heading ? "py-5" : "py-6"}
-                                prose-p:text-ink prose-p:leading-[1.85] prose-p:text-[15px] prose-p:mb-4
+                              className={`prose max-w-none px-4 sm:px-6 lg:px-8 ${section.heading ? "py-5" : "py-6"}
+                                prose-p:text-ink prose-p:leading-[1.85] prose-p:text-[14px] sm:prose-p:text-[15px] prose-p:mb-4
                                 prose-strong:text-ink prose-strong:font-semibold
                                 prose-em:text-charcoal
-                                prose-li:text-ink prose-li:text-[15px] prose-li:leading-[1.8] prose-li:mb-1
+                                prose-li:text-ink prose-li:text-[14px] sm:prose-li:text-[15px] prose-li:leading-[1.8] prose-li:mb-1
                                 prose-ol:my-4 prose-ul:my-4
                                 prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium
                                 prose-blockquote:border-l-[3px] prose-blockquote:border-l-primary prose-blockquote:text-charcoal prose-blockquote:italic prose-blockquote:pl-5 prose-blockquote:my-4
@@ -634,7 +681,58 @@ export default function ReportsPage() {
                                 prose-th:text-left prose-th:font-semibold prose-th:text-ink prose-th:pb-2 prose-th:border-b prose-th:border-[var(--hairline)]
                                 prose-td:py-2 prose-td:border-b prose-td:border-[var(--hairline)]`}
                             >
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                rehypePlugins={[rehypeRaw]}
+                                components={{
+                                  sup: ({ children }) => {
+                                    const text = typeof children === "string" ? children : "";
+                                    const label = text.replace(/[\[\]]/g, "");
+                                    return (
+                                      <sup
+                                        className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold leading-none mx-0.5 cursor-default"
+                                        style={{ verticalAlign: "super" }}
+                                      >
+                                        {label}
+                                      </sup>
+                                    );
+                                  },
+                                  blockquote: ({ children }) => {
+                                    return (
+                                      <div className="my-3 border-l-[3px] border-primary/40 pl-4">
+                                        <div className="text-[14px] leading-[1.75] text-charcoal min-w-0">
+                                          {children}
+                                        </div>
+                                      </div>
+                                    );
+                                  },
+                                  hr: () => (
+                                    <div className="my-5">
+                                      <div className="h-px bg-[var(--hairline)]" />
+                                    </div>
+                                  ),
+                                  strong: ({ children }) => {
+                                    const text = extractText(children);
+                                    const isLabel = /^(Key synthesis|Key finding|Research gap|Limitation):?$/i.test(text.trim());
+                                    if (isLabel) {
+                                      return (
+                                        <strong className="italic font-semibold text-primary/70">
+                                          {children}
+                                        </strong>
+                                      );
+                                    }
+                                    return <strong className="font-semibold text-ink">{children}</strong>;
+                                  },
+                                  em: ({ children }) => {
+                                    // Italic text in reference list — style as paper title
+                                    const text = typeof children === "string" ? children : "";
+                                    if (text.length > 30) {
+                                      return <span className="text-ink font-medium not-italic">{children}</span>;
+                                    }
+                                    return <em className="text-charcoal">{children}</em>;
+                                  },
+                                }}
+                              >
                                 {section.content}
                               </ReactMarkdown>
                             </div>
@@ -710,13 +808,13 @@ function TocDropdown({
 
   return (
     <div ref={ref} className="relative shrink-0">
-      <button
+        <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 h-[30px] rounded-full bg-surface-bone px-3 font-ui text-[11px] text-charcoal hover:text-ink transition-colors"
+        className="flex items-center gap-1.5 h-[30px] rounded-full bg-surface-bone px-2.5 sm:px-3 font-ui text-[11px] text-charcoal hover:text-ink transition-colors"
         style={{ border: "1px solid var(--hairline)" }}
       >
         <List size={12} />
-        Sections
+        <span className="hidden sm:inline">Sections</span>
       </button>
       {open && (
         <div
