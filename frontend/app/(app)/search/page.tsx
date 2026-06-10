@@ -632,11 +632,44 @@ export default function SearchPage() {
       </div>
 
       {sessionData && (
-        <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
-          <p className="font-ui text-[13px] text-ash">
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <p className="font-ui text-[13px] text-ash shrink-0">
             Found {sessionData.total_results} papers • Page {page} of {totalPages}
           </p>
-          <div className="flex items-center gap-2">
+
+          {sessionData.language_bias_audit && (
+            <div className="flex items-center gap-2 text-[11px] text-ash">
+              <span>·</span>
+              {sessionData.detected_language && <span>{sessionData.detected_language.toUpperCase()}</span>}
+              {Object.entries(sessionData.language_bias_audit.candidate_counts_by_language).map(([lang, count]) => (
+                <span key={lang}>{lang.toUpperCase()}: {count}</span>
+              ))}
+              <span className={`font-semibold ${
+                sessionData.language_bias_audit.english_dominance_score < 0.7
+                  ? "text-emerald-600"
+                  : sessionData.language_bias_audit.english_dominance_score < 0.85
+                    ? "text-amber-600"
+                    : "text-red-500"
+              }`}>
+                EN {Math.round(sessionData.language_bias_audit.english_dominance_score * 100)}%
+              </span>
+              {sessionData.query_variants && sessionData.query_variants.length > 0 && (
+                <span className="relative group">
+                  <span className="cursor-help border-b border-dashed border-stone">{sessionData.query_variants.length} queries</span>
+                  <div className="hidden group-hover:block absolute left-0 top-full z-20 mt-1 w-[420px] rounded-lg bg-surface-card p-3 shadow-lg" style={{ border: "1px solid var(--hairline)" }}>
+                    {sessionData.query_variants.map((v, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[11px] py-0.5">
+                        <span className="font-semibold text-charcoal shrink-0">{v.source}</span>
+                        <span className="text-mute break-words">{v.query}</span>
+                      </div>
+                    ))}
+                  </div>
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-2">
             {scores.length > 0 ? (
               <button onClick={handleAutoSave} disabled={autoSaving}
                 className="font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50">
@@ -652,50 +685,6 @@ export default function SearchPage() {
             )}
           </div>
         </div>
-      )}
-
-      {sessionData?.language_bias_audit && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-          {sessionData.detected_language && (
-            <span className="px-2 py-0.5 rounded bg-surface-bone">
-              Language: {sessionData.detected_language}
-            </span>
-          )}
-          <span className="px-2 py-0.5 rounded bg-surface-bone">
-            Policy: {sessionData.language_bias_audit.policy}
-          </span>
-          {Object.entries(sessionData.language_bias_audit.candidate_counts_by_language).map(([lang, count]) => (
-            <span key={lang} className="px-2 py-0.5 rounded bg-surface-bone">
-              {lang.toUpperCase()}: {count}
-            </span>
-          ))}
-          <span className={`px-2 py-0.5 rounded font-medium ${
-            sessionData.language_bias_audit.english_dominance_score < 0.7
-              ? "bg-green-100 text-green-800"
-              : sessionData.language_bias_audit.english_dominance_score < 0.85
-                ? "bg-yellow-100 text-yellow-800"
-                : "bg-red-100 text-red-800"
-          }`}>
-            EN: {Math.round(sessionData.language_bias_audit.english_dominance_score * 100)}%
-          </span>
-        </div>
-      )}
-
-      {sessionData?.query_variants && sessionData.query_variants.length > 0 && (
-        <details className="mt-1 mb-1">
-          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-            Query variants sent ({sessionData.query_variants.length})
-          </summary>
-          <div className="mt-1.5 space-y-1">
-            {sessionData.query_variants.map((v, i) => (
-              <div key={i} className="text-xs text-muted-foreground pl-3 flex items-center gap-1.5">
-                <span className="font-medium min-w-[100px]">{v.source}:</span>
-                <span>{v.query}</span>
-                <span className="ml-auto px-1 rounded bg-surface-bone text-[10px]">{v.language}</span>
-              </div>
-            ))}
-          </div>
-        </details>
       )}
 
       <div className="mt-4">

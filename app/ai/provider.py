@@ -113,8 +113,7 @@ class AnthropicAdapter(AIProvider):
 
     async def embed(self, text: str) -> list[float]:
         raise NotImplementedError(
-            "AnthropicAdapter does not support embed(). "
-            "Use OpenAIEmbedder for pgvector embeddings."
+            "AnthropicAdapter does not support embed(). Use OpenAIEmbedder for pgvector embeddings."
         )
 
 
@@ -275,8 +274,7 @@ class OpenAICompatibleAdapter(AIProvider):
 
     async def embed(self, text: str) -> list[float]:
         raise NotImplementedError(
-            "OpenAICompatibleAdapter does not support embed(). "
-            "Use a dedicated embedding model."
+            "OpenAICompatibleAdapter does not support embed(). Use a dedicated embedding model."
         )
 
 
@@ -331,6 +329,7 @@ def get_provider() -> AIProvider:
     Current routing:
     - ``claude-*``      → AnthropicAdapter
     - ``deepseek-*``    → OpenAICompatibleAdapter (via deepseek_base_url)
+    - ``mimo-*``        → OpenAICompatibleAdapter (via deepseek_base_url)
     - ``gpt-*``         → OpenAICompatibleAdapter (via standard OpenAI)
     - ``o1`` / ``o3``   → OpenAICompatibleAdapter
     """
@@ -341,8 +340,8 @@ def get_provider() -> AIProvider:
     if model.startswith("claude"):
         return AnthropicAdapter(model=model)
 
-    # DeepSeek (via OpenAI-compatible endpoint)
-    if model.startswith("deepseek"):
+    # DeepSeek / MiMo (via OpenAI-compatible endpoint)
+    if model.startswith(("deepseek", "mimo")):
         return OpenAICompatibleAdapter(
             model=model,
             api_key=settings.deepseek_api_key,
@@ -357,8 +356,7 @@ def get_provider() -> AIProvider:
         )
 
     raise ValueError(
-        f"Unsupported model '{model}'. "
-        "Supported prefixes: claude-*, deepseek-*, gpt-*, o1, o3."
+        f"Unsupported model '{model}'. Supported prefixes: claude-*, deepseek-*, mimo-*, gpt-*, o1, o3."
     )
 
 

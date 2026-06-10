@@ -193,6 +193,13 @@ class SearchRun(Base):
     screening_scores: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]"
     )
+    query_variants: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    language_bias_audit: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    source_diagnostics: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="search_runs")

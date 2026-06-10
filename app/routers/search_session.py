@@ -106,6 +106,9 @@ async def create_session(
         outcome.response.total_found,
         detected_language=outcome.response.detected_language,
         english_dominance_score=audit_data.english_dominance_score if audit_data else None,
+        query_variants=[v.model_dump() for v in outcome.response.query_variants],
+        language_bias_audit=audit_data.model_dump() if audit_data else None,
+        source_diagnostics=outcome.response.source_diagnostics,
     )
 
     page_size = 20
@@ -190,6 +193,10 @@ async def get_session(
         total_pages=total_pages,
         papers=page_result,
         saved_paper_ids=saved_ids,
+        detected_language=run.detected_language,
+        query_variants=run.query_variants or [],
+        language_bias_audit=run.language_bias_audit,
+        source_diagnostics=run.source_diagnostics or [],
     )
 
 

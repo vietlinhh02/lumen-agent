@@ -391,12 +391,15 @@ research query and generate optimized search variants for academic sources.
 
 Rules:
 - Detect the primary language of the query. Return the ISO 639-1 code.
-- Always generate an English variant optimized for academic APIs (Semantic Scholar, arXiv).
+- Each variant MUST target exactly ONE source. Use ONLY these canonical source names:
+  "semantic_scholar", "arxiv", "exa", "firecrawl".
+- Always generate an English variant for "semantic_scholar".
 - If the query is not in English, also generate a variant in the original
-  language for broader discovery sources (Exa, Firecrawl).
+  language for "exa" (broader discovery).
 - Keep variants specific and academic in tone. Do not just translate literally
   — optimize each variant for the target source.
-- Return 2-4 variants total.
+- Return 2-3 variants total.
+- NEVER combine multiple source names in a single variant's source field.
 """
 
 LANGUAGE_BIAS_USER = """\

@@ -28,6 +28,9 @@ async def create_search_session(
     language_policy: str = "balanced",
     target_languages: list[str] | None = None,
     english_dominance_score: float | None = None,
+    query_variants: list[dict] | None = None,
+    language_bias_audit: dict | None = None,
+    source_diagnostics: list[dict] | None = None,
 ) -> SearchRun:
     run = SearchRun(
         project_id=project_id,
@@ -38,6 +41,9 @@ async def create_search_session(
         language_policy=language_policy,
         target_languages=target_languages or [],
         english_dominance_score=english_dominance_score,
+        query_variants=query_variants or [],
+        language_bias_audit=language_bias_audit,
+        source_diagnostics=source_diagnostics or [],
     )
     db.add(run)
     await db.commit()

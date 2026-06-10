@@ -79,16 +79,23 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     t0 = time.monotonic()
     all_raw: list[RawPaper] = []
 
+    # Normalize source names and collect queries per canonical source
+    _CANONICAL_SOURCES = {"semantic_scholar", "arxiv", "exa", "firecrawl", "openalex"}
     source_query_map: dict[str, str] = {}
     for v in variants:
-        source_query_map[v.source] = v.query
+        canonical = _normalize_source_name(v.source, _CANONICAL_SOURCES)
+        if canonical:
+            # Keep the first (best) query per source
+            if canonical not in source_query_map:
+                source_query_map[canonical] = v.query
 
     if not source_query_map:
         source_query_map["semantic_scholar"] = request.query
 
     for src_name, src_query in source_query_map.items():
         try:
-            if src_name == "semantic_scholar":
+            if src_name in ("semantic_scholar", "arxiv", "openalex"):
+                # All academic sources go through PaperHubSource
                 source = PaperHubSource()
             else:
                 source_diagnostics.append(
@@ -262,6 +269,38 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
+
+
+def _normalize_source_name(name: str, valid_sources: set[str]) -> str | None:
+    """Map a possibly multi-word source name to a canonical single source.
+
+    Examples:
+        "Semantic Scholar" → "semantic_scholar"
+        "Semantic Scholar, arXiv" → "semantic_scholar" (first match by position)
+        "Exa, Firecrawl" → "exa" (first match by position)
+        "unknown_source" → None
+    """
+    _ALIASES = {
+        "semantic scholar": "semantic_scholar",
+        "open alex": "openalex",
+    }
+    lower = name.lower().strip()
+    # Exact match
+    if lower in valid_sources:
+        return lower
+    # Check aliases
+    for alias, canonical in _ALIASES.items():
+        if alias in lower and canonical in valid_sources:
+            return canonical
+    # Find the earliest appearing canonical source in the string
+    best: str | None = None
+    best_pos = len(lower)
+    for canonical in valid_sources:
+        pos = lower.find(canonical)
+        if pos != -1 and pos < best_pos:
+            best = canonical
+            best_pos = pos
+    return best
 
 
 def _deduplicate_raw_books(papers: list[RawPaper]) -> list[RawPaper]:
