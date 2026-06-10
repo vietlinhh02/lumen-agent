@@ -348,6 +348,19 @@ Rules:
 - citation_paper_ids must be non-empty for every paragraph.
 - If the research gaps are provided, dedicate a section to addressing them
   with evidence from the papers.
+
+Formatting rules for richer output:
+- After the first paragraph of each section, add a blockquote paragraph that
+  highlights the key synthesis or finding. Start it with "**Key finding:**" or
+  "**Key synthesis:**" followed by the insight. This paragraph should also
+  have citation_paper_ids.
+- When discussing a research gap or limitation, add a blockquote paragraph
+  starting with "**Research gap:**" or "**Limitation:**" with supporting
+  citation_paper_ids.
+- Vary paragraph length: mix 2–3 sentence analytical paragraphs with longer
+  comparative paragraphs. Do not write uniform 4-sentence paragraphs.
+- Open each section with a framing sentence that establishes the theme
+  before diving into specific papers.
 """
 
 REVIEW_WRITER_CHUNK_USER = """\

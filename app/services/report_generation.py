@@ -334,28 +334,69 @@ async def _build_references(db: AsyncSession, cited_paper_ids: set[UUID]) -> lis
 
 
 def _build_content_markdown(sections: list[dict], references: list[dict]) -> str:
-    """Convert validated sections + references into Markdown."""
+    """Convert validated sections + references into rich Markdown.
+
+    Produces:
+    - Superscript citation markers: <sup>[1]</sup>
+    - Blockquote key findings preserved from LLM output
+    - Horizontal rules between sections
+    - Structured reference table
+    """
     ref_map: dict[str, str] = {}
     for ref in references:
         ref_map[ref["project_paper_id"]] = ref["citation_label"]
 
     parts: list[str] = []
-    for section in sections:
+
+    for i, section in enumerate(sections):
+        # Section divider (not before first section)
+        if i > 0:
+            parts.append("\n---\n")
+
         parts.append(f"## {section['heading']}\n")
+
         for para in section.get("paragraphs", []):
             cited_ids = para.get("citation_paper_ids", [])
             labels = [ref_map.get(str(pid), "[?]") for pid in cited_ids]
-            citation_str = ", ".join(labels)
-            parts.append(f"{para['text']} ({citation_str})\n")
 
-    parts.append("\n## References\n")
-    for ref in references:
-        authors = ", ".join(ref["authors"][:3])
-        if len(ref["authors"]) > 3:
-            authors += " et al."
-        year = ref.get("year") or "n.d."
-        url_part = f" {ref['url']}" if ref.get("url") else ""
-        parts.append(f"{ref['citation_label']} {authors} ({year}). {ref['title']}.{url_part}\n")
+            text = para.get("text", "")
+
+            # Detect if this is a blockquote (starts with **Key finding:** etc.)
+            is_blockquote = (
+                text.lstrip().startswith("**Key ")
+                or text.lstrip().startswith("**Research gap:")
+                or text.lstrip().startswith("**Limitation:")
+            )
+
+            # Build citation superscripts
+            sup_parts = [f"<sup>{label}</sup>" for label in labels]
+            citation_html = " ".join(sup_parts)
+
+            if is_blockquote:
+                # Render as blockquote with citation badges
+                parts.append(f"> {text} {citation_html}\n")
+            else:
+                # Regular paragraph with inline superscript citations
+                parts.append(f"{text} {citation_html}\n")
+
+    # References section
+    parts.append("\n---\n\n## References\n")
+
+    if references:
+        # Build a structured reference list with metadata
+        for ref in references:
+            authors = ", ".join(ref["authors"][:3])
+            if len(ref["authors"]) > 3:
+                authors += " et al."
+            year = ref.get("year") or "n.d."
+            title = ref["title"]
+            url = ref.get("url")
+
+            # Format: [1] Author(s) (Year). *Title*. [Link](url)
+            link_part = f" · [Link]({url})" if url else ""
+            parts.append(f"{ref['citation_label']} {authors} ({year}). *{title}*{link_part}\n")
+    else:
+        parts.append("*No references cited.*\n")
 
     return "\n".join(parts)
 
