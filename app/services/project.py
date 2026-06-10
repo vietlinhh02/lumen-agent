@@ -308,21 +308,42 @@ async def remove_project_paper(
 
 
 async def _upsert_paper(db: AsyncSession, data: SavePaperRequest) -> Paper:
-    """Find existing paper or create a new one. Deduplicates by strongest ID."""
+    """Find existing paper or create a new one. Deduplicates by strongest ID.
+
+    Uses asyncio.gather to run all three identifier lookups in parallel.
+    """
+    import asyncio
+
     paper: Paper | None = None
 
-    # Try by strongest identifier first
-    if data.paper_semantic_scholar_id:
-        result = await db.execute(
-            select(Paper).where(Paper.semantic_scholar_id == data.paper_semantic_scholar_id)
-        )
-        paper = result.scalar_one_or_none()
-    if paper is None and data.paper_arxiv_id:
-        result = await db.execute(select(Paper).where(Paper.arxiv_id == data.paper_arxiv_id))
-        paper = result.scalar_one_or_none()
-    if paper is None and data.paper_doi:
-        result = await db.execute(select(Paper).where(Paper.doi == data.paper_doi))
-        paper = result.scalar_one_or_none()
+    # Run all three lookups in parallel
+    async def _by_ss():
+        if data.paper_semantic_scholar_id:
+            r = await db.execute(
+                select(Paper).where(Paper.semantic_scholar_id == data.paper_semantic_scholar_id)
+            )
+            return r.scalar_one_or_none()
+        return None
+
+    async def _by_arxiv():
+        if data.paper_arxiv_id:
+            r = await db.execute(select(Paper).where(Paper.arxiv_id == data.paper_arxiv_id))
+            return r.scalar_one_or_none()
+        return None
+
+    async def _by_doi():
+        if data.paper_doi:
+            r = await db.execute(select(Paper).where(Paper.doi == data.paper_doi))
+            return r.scalar_one_or_none()
+        return None
+
+    results = await asyncio.gather(_by_ss(), _by_arxiv(), _by_doi())
+
+    # Priority: semantic_scholar > arxiv > doi
+    for candidate in results:
+        if candidate is not None:
+            paper = candidate
+            break
 
     if paper is not None:
         # Merge missing fields

@@ -12,18 +12,20 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status as http_status
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.prompts import PAPER_SCREEN_SYSTEM, PAPER_SCREEN_USER
+from app.ai.provider import get_provider
 from app.core.security import get_current_user
-from app.db.models import User, Paper, ProjectPaper
+from app.db.models import Paper, ProjectPaper, User
 from app.db.session import get_db
+from app.routers.paper import _parse_screening_scores
 from app.schemas.paper import (
     PaperSearchRequest,
-    PaperSearchResponse,
-    ScreenPapersRequest,
     ScreenPapersResponse,
 )
 from app.services.paper_search import search_and_download
@@ -35,9 +37,6 @@ from app.services.search_session import (
     list_search_sessions,
     save_screening_scores,
 )
-from app.ai.prompts import PAPER_SCREEN_SYSTEM, PAPER_SCREEN_USER
-from app.ai.provider import get_provider
-from app.routers.paper import _parse_screening_scores
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +155,7 @@ async def get_session(
     total_pages = max(1, (total + page_size - 1) // page_size)
 
     start = (page - 1) * page_size
-    page_result = results[start:start + page_size]
+    page_result = results[start : start + page_size]
     saved_ids = await get_saved_paper_ids(db, run.project_id, page_result)
 
     return SessionDetailResponse(
@@ -227,6 +226,22 @@ async def auto_save_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     result = await auto_save_high_papers(db, user, run.project_id, session_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.get("/search/jobs/{job_id}")
+async def get_job(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from app.services.search_session import get_job_status
+
+    result = await get_job_status(db, user, job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Job not found")
     return result
 
 
@@ -247,12 +262,12 @@ async def unsave_paper(
     if not run:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    from app.db.models import Paper, ProjectPaper
-    from sqlalchemy import or_
 
     paper = None
     if body.semantic_scholar_id:
-        r = await db.execute(select(Paper).where(Paper.semantic_scholar_id == body.semantic_scholar_id))
+        r = await db.execute(
+            select(Paper).where(Paper.semantic_scholar_id == body.semantic_scholar_id)
+        )
         paper = r.scalar_one_or_none()
     if not paper and body.doi:
         r = await db.execute(select(Paper).where(Paper.doi == body.doi))

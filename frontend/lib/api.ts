@@ -10,7 +10,18 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed (${res.status})`);
+    const detail = body.detail;
+    let message: string;
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (detail && typeof detail === "object" && "message" in detail) {
+      message = String(detail.message);
+    } else if (Array.isArray(detail)) {
+      message = detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join("; ");
+    } else {
+      message = `Request failed (${res.status})`;
+    }
+    throw new Error(message);
   }
   if (res.status === 204) {
     return undefined as T;

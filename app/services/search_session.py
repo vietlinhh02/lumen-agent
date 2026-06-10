@@ -80,51 +80,78 @@ async def get_saved_paper_ids(
     project_id: UUID,
     paper_dicts: list[dict],
 ) -> list[str]:
-    """Return which papers (by identifier) are already saved to the project."""
-    saved = []
+    """Return which papers (by identifier) are already saved to the project.
+
+    Uses a single batch query instead of N+1 per-paper queries.
+    """
+    if not paper_dicts:
+        return []
+
+    # Collect all identifiers from the paper dicts
+    ss_ids: list[str] = []
+    dois: list[str] = []
+    arxiv_ids: list[str] = []
     for p in paper_dicts:
         sid = p.get("semantic_scholar_id")
         doi = p.get("doi")
         arxiv = p.get("arxiv_id")
         if sid:
-            result = await db.execute(select(Paper).where(Paper.semantic_scholar_id == sid))
-            paper = result.scalar_one_or_none()
-            if paper:
-                existing = await db.execute(
-                    select(ProjectPaper).where(
-                        ProjectPaper.project_id == project_id,
-                        ProjectPaper.paper_id == paper.id,
-                    )
-                )
-                if existing.scalar_one_or_none():
-                    saved.append(sid)
-                    continue
+            ss_ids.append(sid)
         if doi:
-            result = await db.execute(select(Paper).where(Paper.doi == doi))
-            paper = result.scalar_one_or_none()
-            if paper:
-                existing = await db.execute(
-                    select(ProjectPaper).where(
-                        ProjectPaper.project_id == project_id,
-                        ProjectPaper.paper_id == paper.id,
-                    )
-                )
-                if existing.scalar_one_or_none():
-                    saved.append(doi)
-                    continue
+            dois.append(doi)
         if arxiv:
-            result = await db.execute(select(Paper).where(Paper.arxiv_id == arxiv))
-            paper = result.scalar_one_or_none()
-            if paper:
-                existing = await db.execute(
-                    select(ProjectPaper).where(
-                        ProjectPaper.project_id == project_id,
-                        ProjectPaper.paper_id == paper.id,
-                    )
-                )
-                if existing.scalar_one_or_none():
-                    saved.append(arxiv)
-                    continue
+            arxiv_ids.append(arxiv)
+
+    # Single query: find all papers matching any of these identifiers
+    from sqlalchemy import or_
+
+    conditions = []
+    if ss_ids:
+        conditions.append(Paper.semantic_scholar_id.in_(ss_ids))
+    if dois:
+        conditions.append(Paper.doi.in_(dois))
+    if arxiv_ids:
+        conditions.append(Paper.arxiv_id.in_(arxiv_ids))
+
+    if not conditions:
+        return []
+
+    # Get all paper IDs that match our identifiers
+    paper_result = await db.execute(
+        select(Paper.id, Paper.semantic_scholar_id, Paper.doi, Paper.arxiv_id).where(
+            or_(*conditions)
+        )
+    )
+    matched_papers = paper_result.all()
+
+    if not matched_papers:
+        return []
+
+    # Get all project_papers for this project that match these paper IDs
+    paper_ids = [row[0] for row in matched_papers]
+    pp_result = await db.execute(
+        select(ProjectPaper.paper_id).where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.paper_id.in_(paper_ids),
+        )
+    )
+    saved_paper_ids = set(pp_result.scalars().all())
+
+    # Build the result: return the identifier that matched
+    saved: list[str] = []
+    for p in paper_dicts:
+        sid = p.get("semantic_scholar_id")
+        doi = p.get("doi")
+        arxiv = p.get("arxiv_id")
+        # Check if any of this paper's identifiers match a saved paper
+        for row in matched_papers:
+            paper_id, p_ss, p_doi, p_arxiv = row
+            if paper_id not in saved_paper_ids:
+                continue
+            if (sid and p_ss == sid) or (doi and p_doi == doi) or (arxiv and p_arxiv == arxiv):
+                saved.append(sid or doi or arxiv)
+                break
+
     return saved
 
 
@@ -134,6 +161,10 @@ async def auto_save_high_papers(
     project_id: UUID,
     session_id: UUID,
 ) -> dict:
+    """Start auto-save as a background job. Returns job info immediately."""
+    from app.db.models import BackgroundJob
+
+    # Verify session exists
     result = await db.execute(
         select(SearchRun).where(
             SearchRun.id == session_id,
@@ -142,58 +173,185 @@ async def auto_save_high_papers(
     )
     run = result.scalar_one_or_none()
     if run is None:
-        return {"saved": 0, "skipped": 0, "error": "Session not found"}
+        return {"error": "Session not found"}
 
     scores = run.screening_scores or []
     results = run.results_json or []
+    high_count = sum(1 for s in scores if s == "high")
 
     if not scores:
         return {"saved": 0, "skipped": len(results), "error": "No screening scores available"}
 
-    saved = 0
-    skipped = 0
+    if high_count == 0:
+        return {"saved": 0, "skipped": len(results)}
 
-    for i, paper_dict in enumerate(results):
-        score = scores[i] if i < len(scores) else "medium"
-        if score != "high":
-            skipped += 1
-            continue
+    # Create a background job record
+    job = BackgroundJob(
+        job_type="auto_save",
+        project_id=project_id,
+        user_id=user.id,
+        status="pending",
+        total=high_count,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
 
+    # Launch background task
+    import asyncio
+
+    asyncio.ensure_future(_run_auto_save_job(job.id, project_id, session_id, user.id))
+
+    return {"job_id": str(job.id), "status": "running", "total": high_count}
+
+
+async def _run_auto_save_job(
+    job_id: UUID,
+    project_id: UUID,
+    session_id: UUID,
+    user_id: UUID,
+) -> None:
+    """Background worker: save high-relevance papers one by one."""
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as bg_db:
+        job = None
         try:
-            # Map search-result dict to SavePaperRequest
-            from app.schemas.project import SavePaperRequest
-            from app.services.project import save_paper_to_project
+            # Load job
+            from app.db.models import BackgroundJob
 
-            authors_mapped = []
-            for a in paper_dict.get("authors") or []:
-                authors_mapped.append(
-                    {
-                        "name": a.get("name") if isinstance(a, dict) else str(a),
-                        "author_id": "",
-                    }
-                )
-            req = SavePaperRequest(
-                paper_title=paper_dict.get("title", ""),
-                paper_abstract=paper_dict.get("abstract"),
-                paper_year=paper_dict.get("year"),
-                paper_venue=paper_dict.get("venue"),
-                paper_doi=paper_dict.get("doi"),
-                paper_arxiv_id=paper_dict.get("arxiv_id"),
-                paper_semantic_scholar_id=paper_dict.get("semantic_scholar_id"),
-                paper_url=paper_dict.get("url"),
-                paper_citation_count=paper_dict.get("citation_count"),
-                paper_authors=authors_mapped,
-                paper_source_names=paper_dict.get("source_names") or ["paperhub"],
-                download_pdf=True,
-                source_specific=paper_dict.get("source_specific") or {},
+            job_result = await bg_db.execute(
+                select(BackgroundJob).where(BackgroundJob.id == job_id)
             )
-            save_result = await save_paper_to_project(db, user, project_id, req)
-            if save_result is None:
-                skipped += 1
-                continue
-            saved += 1
-        except Exception as exc:
-            logger.warning("Failed to auto-save paper %s: %s", paper_dict.get("title", "?"), exc)
-            skipped += 1
+            job = job_result.scalar_one_or_none()
+            if not job:
+                return
 
-    return {"saved": saved, "skipped": skipped}
+            job.status = "running"
+            await bg_db.commit()
+
+            # Load session
+            session_result = await bg_db.execute(
+                select(SearchRun).where(SearchRun.id == session_id)
+            )
+            run = session_result.scalar_one_or_none()
+            if not run:
+                job.status = "failed"
+                job.error_message = "Session not found"
+                await bg_db.commit()
+                return
+
+            # Load user
+            user_result = await bg_db.execute(select(User).where(User.id == user_id))
+            user = user_result.scalar_one_or_none()
+            if not user:
+                job.status = "failed"
+                job.error_message = "User not found"
+                await bg_db.commit()
+                return
+
+            scores = run.screening_scores or []
+            results = run.results_json or []
+
+            saved = 0
+            skipped = 0
+
+            for i, paper_dict in enumerate(results):
+                score = scores[i] if i < len(scores) else "medium"
+                if score != "high":
+                    skipped += 1
+                    continue
+
+                try:
+                    from app.schemas.project import SavePaperRequest
+                    from app.services.project import save_paper_to_project
+
+                    authors_mapped = []
+                    for a in paper_dict.get("authors") or []:
+                        authors_mapped.append(
+                            {
+                                "name": a.get("name") if isinstance(a, dict) else str(a),
+                                "author_id": "",
+                            }
+                        )
+                    req = SavePaperRequest(
+                        paper_title=paper_dict.get("title", ""),
+                        paper_abstract=paper_dict.get("abstract"),
+                        paper_year=paper_dict.get("year"),
+                        paper_venue=paper_dict.get("venue"),
+                        paper_doi=paper_dict.get("doi"),
+                        paper_arxiv_id=paper_dict.get("arxiv_id"),
+                        paper_semantic_scholar_id=paper_dict.get("semantic_scholar_id"),
+                        paper_url=paper_dict.get("url"),
+                        paper_citation_count=paper_dict.get("citation_count"),
+                        paper_authors=authors_mapped,
+                        paper_source_names=paper_dict.get("source_names") or ["paperhub"],
+                        download_pdf=True,
+                        source_specific=paper_dict.get("source_specific") or {},
+                    )
+                    save_result = await save_paper_to_project(bg_db, user, project_id, req)
+                    if save_result is None:
+                        skipped += 1
+                    else:
+                        saved += 1
+                        # Update progress
+                        job.progress = saved
+                        await bg_db.commit()
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to auto-save paper %s: %s",
+                        paper_dict.get("title", "?"),
+                        exc,
+                    )
+                    skipped += 1
+
+            job.status = "completed"
+            job.result = {"saved": saved, "skipped": skipped}
+            from datetime import datetime
+
+            job.completed_at = datetime.utcnow()
+            await bg_db.commit()
+
+        except Exception as exc:
+            logger.exception("Background auto-save job failed: %s", exc)
+            try:
+                if job is not None:
+                    job.status = "failed"
+                    job.error_message = str(exc)[:500]
+                    from datetime import datetime
+
+                    job.completed_at = datetime.utcnow()
+                    await bg_db.commit()
+            except Exception:
+                pass
+
+
+async def get_job_status(
+    db: AsyncSession,
+    user: User,
+    job_id: UUID,
+) -> dict | None:
+    """Return the status of a background job."""
+    from app.db.models import BackgroundJob
+
+    result = await db.execute(
+        select(BackgroundJob).where(
+            BackgroundJob.id == job_id,
+            BackgroundJob.user_id == user.id,
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        return None
+
+    return {
+        "job_id": str(job.id),
+        "job_type": job.job_type,
+        "status": job.status,
+        "progress": job.progress,
+        "total": job.total,
+        "result": job.result,
+        "error_message": job.error_message,
+        "created_at": str(job.created_at),
+        "completed_at": str(job.completed_at) if job.completed_at else None,
+    }

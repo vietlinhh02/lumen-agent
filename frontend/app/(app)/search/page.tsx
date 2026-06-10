@@ -421,17 +421,25 @@ export default function SearchPage() {
     finally { setScreening(false); }
   }
 
-  // Auto-save high papers
+  // Auto-save high papers (async background job)
   async function handleAutoSave() {
     if (!sessionId) return;
     setAutoSaving(true);
     try {
-      const data = await apiFetch<{ saved: number; skipped: number; error?: string }>(
+      const data = await apiFetch<{ job_id?: string; status?: string; total?: number; saved?: number; skipped?: number; error?: string }>(
         `/papers/search/sessions/${sessionId}/auto-save`, {
           method: "POST", headers: { Authorization: `Bearer ${token}` },
         }
       );
-      toast.success(`${data.saved} papers auto-saved`);
+
+      if (data.job_id && data.status === "running") {
+        toast.info(`Auto-saving ${data.total} papers in background...`);
+        // Poll for completion
+        await pollJobStatus(data.job_id);
+      } else if (data.saved !== undefined) {
+        toast.success(`${data.saved} papers auto-saved`);
+      }
+
       // Refresh saved IDs
       if (sessionId) {
         const fresh = await apiFetch<SessionDetailResponse>(`/papers/search/sessions/${sessionId}?page=${page}`, {
@@ -443,6 +451,34 @@ export default function SearchPage() {
       fetchSessions();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Auto-save failed"); }
     finally { setAutoSaving(false); }
+  }
+
+  async function pollJobStatus(jobId: string) {
+    const maxAttempts = 60; // 2 minutes max
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const job = await apiFetch<{ status: string; progress: number; total: number; result?: { saved: number; skipped: number }; error_message?: string }>(
+          `/papers/search/jobs/${jobId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (job.status === "completed") {
+          toast.success(`${job.result?.saved ?? 0} papers auto-saved`);
+          return;
+        }
+        if (job.status === "failed") {
+          toast.error(job.error_message || "Auto-save failed");
+          return;
+        }
+        // Update progress toast
+        if (job.progress > 0) {
+          toast.info(`Saved ${job.progress}/${job.total} papers...`, { autoClose: 1000 });
+        }
+      } catch {
+        // Ignore polling errors, keep trying
+      }
+    }
+    toast.warning("Auto-save is still running. Check back later.");
   }
 
   // Manual save
