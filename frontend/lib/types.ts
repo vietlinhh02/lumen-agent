@@ -361,3 +361,20 @@ export interface KnowledgeGraphResponse {
   links: GraphLinkResponse[];
   stats: GraphStatsResponse;
 }
+
+// ── User / Admin ──────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
