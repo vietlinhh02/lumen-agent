@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const googleSans = localFont({
-  src: "../public/Google_Sans/GoogleSans-VariableFont_GRAD,opsz,wght.ttf",
+  src: "../public/Google_Sans/GoogleSans-VariableFont_GRAD,opsz,wght.woff2",
   variable: "--font-display",
   display: "swap",
 });
