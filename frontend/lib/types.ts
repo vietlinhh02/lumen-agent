@@ -301,3 +301,39 @@ export interface CreateReportRequest {
   include_gap_section?: boolean;
   selected_gap_ids?: string[];
 }
+
+// ── Knowledge Graph ──────────────────────────────────────────────────────
+
+export interface GraphNodeResponse {
+  id: string;
+  label: string;
+  full_label?: string | null;
+  type: string;
+  year?: number | null;
+  abstract?: string | null;
+  authors?: string | null;
+  venue?: string | null;
+  url?: string | null;
+  project_paper_id?: string | null;
+  connections: number;
+}
+
+export interface GraphLinkResponse {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+export interface GraphStatsResponse {
+  paper_count: number;
+  method_count: number;
+  dataset_count: number;
+  limitation_count: number;
+  total_edges: number;
+}
+
+export interface KnowledgeGraphResponse {
+  nodes: GraphNodeResponse[];
+  links: GraphLinkResponse[];
+  stats: GraphStatsResponse;
+}
