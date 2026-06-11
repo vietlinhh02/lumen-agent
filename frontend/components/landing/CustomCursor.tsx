@@ -1,26 +1,26 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
-import { useGSAP } from "@gsap/react";
+import { useRef, useEffect, useCallback } from "react";
 import gsap from "gsap";
 
 export function CustomCursor() {
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const [isMobile, setIsMobile] = useState(true);
 
-  useEffect(() => {
-    setIsMobile(window.innerWidth < 768);
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  useGSAP(() => {
-    if (isMobile || !outerRef.current || !innerRef.current) return;
-
+  const setupCursor = useCallback(() => {
     const outer = outerRef.current;
     const inner = innerRef.current;
+    if (!outer || !inner) return;
+
+    // Check if mobile - don't setup cursor on mobile
+    if (window.innerWidth < 768) {
+      outer.style.display = "none";
+      inner.style.display = "none";
+      return;
+    }
+
+    outer.style.display = "block";
+    inner.style.display = "block";
 
     const xTo = gsap.quickTo(outer, "x", {
       duration: 0.4,
@@ -71,9 +71,12 @@ export function CustomCursor() {
         el.removeEventListener("mouseleave", onMouseLeaveInteractive);
       });
     };
-  }, [isMobile]);
+  }, []);
 
-  if (isMobile) return null;
+  useEffect(() => {
+    const cleanup = setupCursor();
+    return () => cleanup?.();
+  }, [setupCursor]);
 
   return (
     <>
