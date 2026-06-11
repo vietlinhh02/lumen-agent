@@ -16,10 +16,6 @@ import { CustomCursor } from "@/components/landing/CustomCursor";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 export default function LandingPage() {
-  useGSAP(() => {
-    ScrollTrigger.refresh();
-  });
-
   return (
     <div className="min-h-screen bg-canvas">
       <CustomCursor />

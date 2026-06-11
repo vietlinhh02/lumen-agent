@@ -33,12 +33,11 @@ const features = [
 
 export function Features() {
   const sectionRef = useRef<HTMLElement>(null);
-  const headingRef = useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const heading = headingRef.current;
+    const heading = sectionRef.current.querySelector(".features-heading");
 
     // Split heading text
     if (heading) {
@@ -62,9 +61,11 @@ export function Features() {
         opacity: 0,
         stagger: 0.06,
         ease: "back.out(1.7)",
+        duration: 0.8,
         scrollTrigger: {
           trigger: heading,
           start: "top 85%",
+          toggleActions: "play none none none",
         },
       });
     }
@@ -76,13 +77,15 @@ export function Features() {
       opacity: 0,
       stagger: 0.15,
       ease: "power2.out",
+      duration: 0.7,
       scrollTrigger: {
         trigger: cards[0],
         start: "top 85%",
+        toggleActions: "play none none none",
       },
     });
 
-    // Image parallax inside each card
+    // Image parallax inside each card (lightweight, scrub is OK here)
     const images = sectionRef.current.querySelectorAll(".feature-img");
     images.forEach((img) => {
       gsap.to(img, {
@@ -105,9 +108,11 @@ export function Features() {
         opacity: 0,
         stagger: 0.08,
         ease: "power2.out",
+        duration: 0.4,
         scrollTrigger: {
           trigger: card,
           start: "top 80%",
+          toggleActions: "play none none none",
         },
       });
     });
@@ -119,9 +124,11 @@ export function Features() {
       opacity: 0,
       stagger: 0.1,
       ease: "power2.out",
+      duration: 0.5,
       scrollTrigger: {
         trigger: secondaryCards[0],
         start: "top 90%",
+        toggleActions: "play none none none",
       },
     });
   }, { scope: sectionRef });
@@ -129,7 +136,7 @@ export function Features() {
   return (
     <section ref={sectionRef} id="features" className="py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-6">
-        <div ref={headingRef} className="mb-16 max-w-2xl">
+        <div className="features-heading mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             Core capabilities
           </p>

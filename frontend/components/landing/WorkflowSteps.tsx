@@ -3,7 +3,6 @@
 import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const steps = [
   {
@@ -97,12 +96,11 @@ const steps = [
 
 export function WorkflowSteps() {
   const sectionRef = useRef<HTMLElement>(null);
-  const headingRef = useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const heading = headingRef.current;
+    const heading = sectionRef.current.querySelector(".steps-heading");
     const cards = sectionRef.current.querySelectorAll(".step-card");
     const icons = sectionRef.current.querySelectorAll(".step-icon");
 
@@ -121,50 +119,50 @@ export function WorkflowSteps() {
       }
     }
 
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: sectionRef.current,
-        start: "top top",
-        end: "+=150%",
-        pin: true,
-        scrub: 0.3,
-      },
-    });
-
-    // 1. Heading text reveal
+    // Heading text reveal
     if (heading) {
-      tl.from(heading.querySelectorAll(".word"), {
+      gsap.from(heading.querySelectorAll(".word"), {
         y: 30,
         opacity: 0,
         stagger: 0.06,
         ease: "back.out(1.7)",
+        duration: 0.8,
+        scrollTrigger: {
+          trigger: heading,
+          start: "top 85%",
+          toggleActions: "play none none none",
+        },
       });
     }
 
-    // 2. Cards staggered entrance
-    tl.from(
-      cards,
-      {
-        y: 60,
-        opacity: 0,
-        scale: 0.95,
-        stagger: 0.12,
-        ease: "power2.out",
+    // Cards staggered entrance
+    gsap.from(cards, {
+      y: 60,
+      opacity: 0,
+      scale: 0.95,
+      stagger: 0.1,
+      ease: "power2.out",
+      duration: 0.6,
+      scrollTrigger: {
+        trigger: cards[0],
+        start: "top 85%",
+        toggleActions: "play none none none",
       },
-      "-=0.3"
-    );
+    });
 
-    // 3. Icons rotate in
-    tl.from(
-      icons,
-      {
-        rotation: -90,
-        scale: 0,
-        stagger: 0.1,
-        ease: "back.out(2)",
+    // Icons rotate in
+    gsap.from(icons, {
+      rotation: -90,
+      scale: 0,
+      stagger: 0.08,
+      ease: "back.out(2)",
+      duration: 0.5,
+      scrollTrigger: {
+        trigger: cards[0],
+        start: "top 80%",
+        toggleActions: "play none none none",
       },
-      "-=0.8"
-    );
+    });
   }, { scope: sectionRef });
 
   return (
@@ -174,7 +172,7 @@ export function WorkflowSteps() {
       className="bg-surface-bone pb-24 pt-36 lg:pb-32 lg:pt-48"
     >
       <div className="mx-auto max-w-7xl px-6">
-        <div ref={headingRef} className="mb-16 max-w-2xl">
+        <div className="steps-heading mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             How it works
           </p>

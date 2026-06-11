@@ -11,7 +11,6 @@ export function CtaBand() {
   const router = useRouter();
   const [loggedIn, setLoggedIn] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -19,20 +18,26 @@ export function CtaBand() {
   }, []);
 
   useGSAP(() => {
-    if (!sectionRef.current || !headingRef.current) return;
+    if (!sectionRef.current) return;
+
+    const heading = sectionRef.current.querySelector(".cta-heading");
 
     // Split heading text
-    const h2 = headingRef.current;
-    const text = h2.textContent || "";
-    h2.innerHTML = text
-      .split(" ")
-      .map(
-        (w) =>
-          `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
-      )
-      .join("");
+    if (heading) {
+      const h2 = heading.querySelector("h2");
+      if (h2) {
+        const text = h2.textContent || "";
+        h2.innerHTML = text
+          .split(" ")
+          .map(
+            (w) =>
+              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+          )
+          .join("");
+      }
+    }
 
-    // Gradient pulse
+    // Gradient pulse — infinite
     const gradient = sectionRef.current.querySelector(".cta-gradient");
     if (gradient) {
       gsap.to(gradient, {
@@ -45,7 +50,7 @@ export function CtaBand() {
       });
     }
 
-    // Floating circles
+    // Floating circles — infinite
     const circles = sectionRef.current.querySelectorAll(".floating-circle");
     circles.forEach((circle, i) => {
       gsap.to(circle, {
@@ -59,38 +64,56 @@ export function CtaBand() {
       });
     });
 
-    // Pinned timeline
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: sectionRef.current,
-        start: "top top",
-        end: "+=100%",
-        pin: true,
-        scrub: 0.3,
-      },
-    });
-
-    // Heading reveal with scale
-    tl.from(h2.querySelectorAll(".word"), {
-      scale: 0.9,
-      opacity: 0,
-      stagger: 0.08,
-      ease: "back.out(1.7)",
-    });
+    // Heading reveal with scale — scroll-triggered (not pinned)
+    if (heading) {
+      gsap.from(heading.querySelectorAll(".word"), {
+        scale: 0.9,
+        opacity: 0,
+        stagger: 0.08,
+        ease: "back.out(1.7)",
+        duration: 0.8,
+        scrollTrigger: {
+          trigger: heading,
+          start: "top 85%",
+          toggleActions: "play none none none",
+        },
+      });
+    }
 
     // CTA buttons
     const ctaButtons = sectionRef.current.querySelector(".cta-buttons");
     if (ctaButtons) {
-      tl.from(
+      gsap.from(
         ctaButtons.children,
         {
           scale: 0.8,
           opacity: 0,
           ease: "back.out(2)",
           stagger: 0.15,
-        },
-        "-=0.3"
+          duration: 0.6,
+          scrollTrigger: {
+            trigger: ctaButtons,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+        }
       );
+    }
+
+    // Subtitle
+    const subtitle = sectionRef.current.querySelector(".cta-subtitle");
+    if (subtitle) {
+      gsap.from(subtitle, {
+        y: 20,
+        opacity: 0,
+        duration: 0.6,
+        ease: "power2.out",
+        scrollTrigger: {
+          trigger: subtitle,
+          start: "top 85%",
+          toggleActions: "play none none none",
+        },
+      });
     }
   }, { scope: sectionRef });
 
@@ -109,14 +132,15 @@ export function CtaBand() {
       <div className="floating-circle absolute right-[25%] bottom-[15%] h-20 w-20 rounded-full bg-[rgba(255,255,255,0.06)]" />
 
       <div className="relative mx-auto max-w-7xl px-6 text-center">
-        <h2
-          ref={headingRef}
-          className="font-display text-4xl font-bold leading-[1.0] text-on-dark sm:text-5xl lg:text-6xl"
-          style={{ letterSpacing: "-1.5px" }}
-        >
-          Ready to illuminate your research?
-        </h2>
-        <p className="mx-auto mt-6 max-w-md text-lg text-on-dark-mute">
+        <div className="cta-heading">
+          <h2
+            className="font-display text-4xl font-bold leading-[1.0] text-on-dark sm:text-5xl lg:text-6xl"
+            style={{ letterSpacing: "-1.5px" }}
+          >
+            Ready to illuminate your research?
+          </h2>
+        </div>
+        <p className="cta-subtitle mx-auto mt-6 max-w-md text-lg text-on-dark-mute">
           Build defensible literature reviews with real papers, structured
           evidence, and validated citations.
         </p>

@@ -33,12 +33,11 @@ const stats = [
 
 export function PainPoints() {
   const sectionRef = useRef<HTMLElement>(null);
-  const headingRef = useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const heading = headingRef.current;
+    const heading = sectionRef.current.querySelector(".pp-heading");
 
     // Split heading text
     if (heading) {
@@ -62,9 +61,11 @@ export function PainPoints() {
         opacity: 0,
         stagger: 0.06,
         ease: "back.out(1.7)",
+        duration: 0.8,
         scrollTrigger: {
           trigger: heading,
           start: "top 85%",
+          toggleActions: "play none none none",
         },
       });
     }
@@ -81,11 +82,27 @@ export function PainPoints() {
         scrollTrigger: {
           trigger: el,
           start: "top 85%",
+          toggleActions: "play none none none",
         },
         onUpdate: () => {
           el.textContent = Math.round(counter.value).toString();
         },
       });
+    });
+
+    // Stat cards entrance
+    const statCards = sectionRef.current.querySelectorAll(".stat-card");
+    gsap.from(statCards, {
+      y: 40,
+      opacity: 0,
+      stagger: 0.1,
+      ease: "power2.out",
+      duration: 0.6,
+      scrollTrigger: {
+        trigger: statCards[0],
+        start: "top 85%",
+        toggleActions: "play none none none",
+      },
     });
 
     // Trust chain pills reveal
@@ -95,24 +112,28 @@ export function PainPoints() {
     gsap.from(pills, {
       x: -20,
       opacity: 0,
-      stagger: 0.1,
+      stagger: 0.08,
       ease: "power2.out",
+      duration: 0.5,
       scrollTrigger: {
         trigger: ".trust-chain",
         start: "top 85%",
+        toggleActions: "play none none none",
       },
     });
 
     gsap.from(arrows, {
       scale: 0,
       opacity: 0,
-      stagger: 0.1,
+      stagger: 0.08,
       ease: "back.out(2)",
+      duration: 0.4,
       scrollTrigger: {
         trigger: ".trust-chain",
         start: "top 85%",
+        toggleActions: "play none none none",
       },
-      delay: 0.3,
+      delay: 0.2,
     });
   }, { scope: sectionRef });
 
@@ -123,7 +144,7 @@ export function PainPoints() {
       className="bg-surface-dark py-24 lg:py-32"
     >
       <div className="mx-auto max-w-7xl px-6">
-        <div ref={headingRef} className="mb-16 max-w-2xl">
+        <div className="pp-heading mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             The problem
           </p>
@@ -139,7 +160,7 @@ export function PainPoints() {
           {stats.map((stat, i) => (
             <div
               key={i}
-              className="rounded-xl border border-[rgba(255,255,255,0.1)] p-6"
+              className="stat-card rounded-xl border border-[rgba(255,255,255,0.1)] p-6"
             >
               <p
                 className="stat-value font-display text-4xl font-bold text-primary"

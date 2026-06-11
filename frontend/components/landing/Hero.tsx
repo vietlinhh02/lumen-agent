@@ -42,7 +42,7 @@ export function Hero() {
         .join("");
     }
 
-    // Gradient mesh pulse
+    // Gradient mesh pulse — infinite
     const mesh = sectionRef.current.querySelector(".gradient-mesh");
     if (mesh) {
       gsap.to(mesh, {
@@ -54,31 +54,24 @@ export function Hero() {
       });
     }
 
-    // Create pinned timeline
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: sectionRef.current,
-        start: "top top",
-        end: "+=200%",
-        pin: true,
-        scrub: 0.5,
-      },
-    });
+    // ── Entrance animation (plays immediately on load, not scroll) ──
+    const entranceTl = gsap.timeline({ delay: 0.2 });
 
     // 1. Title words staggered reveal
     if (heading) {
-      tl.from(heading.querySelectorAll(".word"), {
+      entranceTl.from(heading.querySelectorAll(".word"), {
         y: 40,
         opacity: 0,
         rotationX: -15,
         stagger: 0.08,
         ease: "back.out(1.7)",
+        duration: 0.8,
       });
     }
 
     // 2. Subtitle fade in
     if (subtitle) {
-      tl.from(
+      entranceTl.from(
         subtitle,
         { y: 20, opacity: 0, duration: 0.6, ease: "power2.out" },
         "-=0.3"
@@ -87,13 +80,14 @@ export function Hero() {
 
     // 3. CTA buttons scale in
     if (cta) {
-      tl.from(
+      entranceTl.from(
         cta.children,
         {
           scale: 0.8,
           opacity: 0,
           ease: "back.out(2)",
           stagger: 0.15,
+          duration: 0.6,
         },
         "-=0.2"
       );
@@ -101,23 +95,32 @@ export function Hero() {
 
     // 4. Screenshot entrance
     if (screenshot) {
-      tl.from(
+      entranceTl.from(
         screenshot,
         {
           scale: 0.85,
           rotateX: -15,
           opacity: 0,
           ease: "power3.out",
+          duration: 1,
         },
         "-=0.4"
       );
+    }
 
-      // 5. Scroll-linked parallax on screenshot
-      tl.to(screenshot, {
+    // ── Scroll-linked parallax on screenshot (separate, lightweight) ──
+    if (screenshot) {
+      gsap.to(screenshot, {
         rotateX: 8,
-        scale: 1.08,
-        y: -40,
+        scale: 1.05,
+        y: -30,
         ease: "none",
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: "top top",
+          end: "bottom top",
+          scrub: true,
+        },
       });
     }
   }, { scope: sectionRef });
