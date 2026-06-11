@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
+import { useRef, useEffect } from "react";
 import gsap from "gsap";
 
 const features = [
@@ -34,104 +33,117 @@ const features = [
 export function Features() {
   const sectionRef = useRef<HTMLElement>(null);
 
-  useGSAP(() => {
+  useEffect(() => {
     if (!sectionRef.current) return;
 
-    const heading = sectionRef.current.querySelector(".features-heading");
+    const ctx = gsap.context(() => {
+      const heading = sectionRef.current!.querySelector(".features-heading");
+      const cards = sectionRef.current!.querySelectorAll(".feature-card");
+      const secondaryCards = sectionRef.current!.querySelectorAll(".secondary-card");
 
-    // Split heading text
-    if (heading) {
-      const h2 = heading.querySelector("h2");
-      if (h2) {
-        const text = h2.textContent || "";
-        h2.innerHTML = text
-          .split(" ")
-          .map(
-            (w) =>
-              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
-          )
-          .join("");
+      // Split heading text
+      if (heading) {
+        const h2 = heading.querySelector("h2");
+        if (h2) {
+          const text = h2.textContent || "";
+          h2.innerHTML = text
+            .split(" ")
+            .map(
+              (w) =>
+                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+            )
+            .join("");
+        }
       }
-    }
 
-    // Heading text reveal
-    if (heading) {
-      gsap.from(heading.querySelectorAll(".word"), {
-        y: 30,
-        opacity: 0,
-        stagger: 0.06,
-        ease: "back.out(1.7)",
-        duration: 0.8,
+      // Set initial hidden state
+      gsap.set(heading?.querySelectorAll(".word") || [], { y: 30, opacity: 0 });
+      gsap.set(cards, { y: 50, opacity: 0 });
+      gsap.set(secondaryCards, { y: 30, opacity: 0 });
+      cards.forEach((card) => {
+        const tags = card.querySelectorAll(".feature-tag");
+        gsap.set(tags, { y: 10, opacity: 0 });
+      });
+
+      // Heading text reveal
+      if (heading) {
+        gsap.to(heading.querySelectorAll(".word"), {
+          y: 0,
+          opacity: 1,
+          stagger: 0.06,
+          ease: "back.out(1.7)",
+          duration: 0.8,
+          scrollTrigger: {
+            trigger: heading,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
+
+      // Feature cards staggered entrance
+      gsap.to(cards, {
+        y: 0,
+        opacity: 1,
+        stagger: 0.15,
+        ease: "power2.out",
+        duration: 0.7,
         scrollTrigger: {
-          trigger: heading,
+          trigger: cards[0] || sectionRef.current,
           start: "top 85%",
           toggleActions: "play none none none",
         },
       });
-    }
 
-    // Feature cards staggered entrance
-    const cards = sectionRef.current.querySelectorAll(".feature-card");
-    gsap.from(cards, {
-      y: 50,
-      opacity: 0,
-      stagger: 0.15,
-      ease: "power2.out",
-      duration: 0.7,
-      scrollTrigger: {
-        trigger: cards[0],
-        start: "top 85%",
-        toggleActions: "play none none none",
-      },
-    });
-
-    // Image parallax inside each card (lightweight, scrub is OK here)
-    const images = sectionRef.current.querySelectorAll(".feature-img");
-    images.forEach((img) => {
-      gsap.to(img, {
-        y: -20,
-        ease: "none",
-        scrollTrigger: {
-          trigger: img.closest(".feature-card"),
-          start: "top bottom",
-          end: "bottom top",
-          scrub: true,
-        },
+      // Image parallax inside each card
+      const images = sectionRef.current!.querySelectorAll(".feature-img");
+      images.forEach((img) => {
+        gsap.to(img, {
+          y: -20,
+          ease: "none",
+          scrollTrigger: {
+            trigger: img.closest(".feature-card"),
+            start: "top bottom",
+            end: "bottom top",
+            scrub: true,
+          },
+        });
       });
-    });
 
-    // Tags staggered fade-in within each card
-    cards.forEach((card) => {
-      const tags = card.querySelectorAll(".feature-tag");
-      gsap.from(tags, {
-        y: 10,
-        opacity: 0,
-        stagger: 0.08,
+      // Tags staggered fade-in within each card
+      cards.forEach((card) => {
+        const tags = card.querySelectorAll(".feature-tag");
+        gsap.to(tags, {
+          y: 0,
+          opacity: 1,
+          stagger: 0.08,
+          ease: "power2.out",
+          duration: 0.4,
+          scrollTrigger: {
+            trigger: card,
+            start: "top 80%",
+            toggleActions: "play none none none",
+          },
+        });
+      });
+
+      // Secondary feature cards
+      gsap.to(secondaryCards, {
+        y: 0,
+        opacity: 1,
+        stagger: 0.1,
         ease: "power2.out",
-        duration: 0.4,
+        duration: 0.5,
         scrollTrigger: {
-          trigger: card,
-          start: "top 80%",
+          trigger: secondaryCards[0] || sectionRef.current,
+          start: "top 90%",
           toggleActions: "play none none none",
         },
       });
-    });
+    }, sectionRef);
 
-    // Secondary feature cards
-    const secondaryCards = sectionRef.current.querySelectorAll(".secondary-card");
-    gsap.from(secondaryCards, {
-      y: 30,
-      opacity: 0,
-      stagger: 0.1,
-      ease: "power2.out",
-      duration: 0.5,
-      scrollTrigger: {
-        trigger: secondaryCards[0],
-        start: "top 90%",
-        toggleActions: "play none none none",
-      },
-    });
-  }, { scope: sectionRef });
+    return () => ctx.revert();
+  }, []);
 
   return (
     <section ref={sectionRef} id="features" className="py-24 lg:py-32">

@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
-import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { MagneticButton } from "./MagneticButton";
 
@@ -17,77 +16,97 @@ export function CtaBand() {
     setLoggedIn(!!token && !isTokenExpired(token));
   }, []);
 
-  useGSAP(() => {
+  useEffect(() => {
     if (!sectionRef.current) return;
 
-    const heading = sectionRef.current.querySelector(".cta-heading");
+    const ctx = gsap.context(() => {
+      const heading = sectionRef.current!.querySelector(".cta-heading");
+      const subtitle = sectionRef.current!.querySelector(".cta-subtitle");
+      const ctaButtons = sectionRef.current!.querySelector(".cta-buttons");
 
-    // Split heading text
-    if (heading) {
-      const h2 = heading.querySelector("h2");
-      if (h2) {
-        const text = h2.textContent || "";
-        h2.innerHTML = text
-          .split(" ")
-          .map(
-            (w) =>
-              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
-          )
-          .join("");
+      // Split heading text
+      if (heading) {
+        const h2 = heading.querySelector("h2");
+        if (h2) {
+          const text = h2.textContent || "";
+          h2.innerHTML = text
+            .split(" ")
+            .map(
+              (w) =>
+                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+            )
+            .join("");
+        }
       }
-    }
 
-    // Gradient pulse — infinite
-    const gradient = sectionRef.current.querySelector(".cta-gradient");
-    if (gradient) {
-      gsap.to(gradient, {
-        scale: 1.1,
-        opacity: 0.7,
-        duration: 3,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
+      // Set initial hidden state
+      gsap.set(heading?.querySelectorAll(".word") || [], { scale: 0.9, opacity: 0 });
+      gsap.set(subtitle || [], { y: 20, opacity: 0 });
+      if (ctaButtons) gsap.set(ctaButtons.children, { scale: 0.8, opacity: 0 });
+
+      // Gradient pulse — infinite
+      const gradient = sectionRef.current!.querySelector(".cta-gradient");
+      if (gradient) {
+        gsap.to(gradient, {
+          scale: 1.1,
+          opacity: 0.7,
+          duration: 3,
+          repeat: -1,
+          yoyo: true,
+          ease: "sine.inOut",
+        });
+      }
+
+      // Floating circles — infinite
+      const circles = sectionRef.current!.querySelectorAll(".floating-circle");
+      circles.forEach((circle, i) => {
+        gsap.to(circle, {
+          y: `random(-30, 30)`,
+          x: `random(-20, 20)`,
+          duration: `random(3, 5)`,
+          repeat: -1,
+          yoyo: true,
+          ease: "sine.inOut",
+          delay: i * 0.5,
+        });
       });
-    }
 
-    // Floating circles — infinite
-    const circles = sectionRef.current.querySelectorAll(".floating-circle");
-    circles.forEach((circle, i) => {
-      gsap.to(circle, {
-        y: `random(-30, 30)`,
-        x: `random(-20, 20)`,
-        duration: `random(3, 5)`,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-        delay: i * 0.5,
-      });
-    });
+      // Heading reveal
+      if (heading) {
+        gsap.to(heading.querySelectorAll(".word"), {
+          scale: 1,
+          opacity: 1,
+          stagger: 0.08,
+          ease: "back.out(1.7)",
+          duration: 0.8,
+          scrollTrigger: {
+            trigger: heading,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
-    // Heading reveal with scale — scroll-triggered (not pinned)
-    if (heading) {
-      gsap.from(heading.querySelectorAll(".word"), {
-        scale: 0.9,
-        opacity: 0,
-        stagger: 0.08,
-        ease: "back.out(1.7)",
-        duration: 0.8,
-        scrollTrigger: {
-          trigger: heading,
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
-    }
+      // Subtitle
+      if (subtitle) {
+        gsap.to(subtitle, {
+          y: 0,
+          opacity: 1,
+          duration: 0.6,
+          ease: "power2.out",
+          scrollTrigger: {
+            trigger: subtitle,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
-    // CTA buttons
-    const ctaButtons = sectionRef.current.querySelector(".cta-buttons");
-    if (ctaButtons) {
-      gsap.from(
-        ctaButtons.children,
-        {
-          scale: 0.8,
-          opacity: 0,
+      // CTA buttons
+      if (ctaButtons) {
+        gsap.to(ctaButtons.children, {
+          scale: 1,
+          opacity: 1,
           ease: "back.out(2)",
           stagger: 0.15,
           duration: 0.6,
@@ -96,26 +115,12 @@ export function CtaBand() {
             start: "top 85%",
             toggleActions: "play none none none",
           },
-        }
-      );
-    }
+        });
+      }
+    }, sectionRef);
 
-    // Subtitle
-    const subtitle = sectionRef.current.querySelector(".cta-subtitle");
-    if (subtitle) {
-      gsap.from(subtitle, {
-        y: 20,
-        opacity: 0,
-        duration: 0.6,
-        ease: "power2.out",
-        scrollTrigger: {
-          trigger: subtitle,
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
-    }
-  }, { scope: sectionRef });
+    return () => ctx.revert();
+  }, []);
 
   return (
     <section

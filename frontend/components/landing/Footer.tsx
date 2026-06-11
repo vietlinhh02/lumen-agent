@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
+import { useRef, useEffect } from "react";
 import gsap from "gsap";
 
 const footerLinks = {
@@ -25,21 +24,31 @@ const footerLinks = {
 export function Footer() {
   const footerRef = useRef<HTMLElement>(null);
 
-  useGSAP(() => {
+  useEffect(() => {
     if (!footerRef.current) return;
 
-    const cols = footerRef.current.querySelectorAll(".footer-col");
-    gsap.from(cols, {
-      y: 30,
-      opacity: 0,
-      stagger: 0.1,
-      ease: "power2.out",
-      scrollTrigger: {
-        trigger: footerRef.current,
-        start: "top 90%",
-      },
-    });
-  }, { scope: footerRef });
+    const ctx = gsap.context(() => {
+      const cols = footerRef.current!.querySelectorAll(".footer-col");
+
+      // Set initial hidden state
+      gsap.set(cols, { y: 30, opacity: 0 });
+
+      gsap.to(cols, {
+        y: 0,
+        opacity: 1,
+        stagger: 0.1,
+        ease: "power2.out",
+        duration: 0.6,
+        scrollTrigger: {
+          trigger: footerRef.current,
+          start: "top 90%",
+          toggleActions: "play none none none",
+        },
+      });
+    }, footerRef);
+
+    return () => ctx.revert();
+  }, []);
 
   return (
     <footer ref={footerRef} className="bg-surface-deep py-16 lg:py-20">

@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef } from "react";
-import { useGSAP } from "@gsap/react";
+import { useRef, useEffect } from "react";
 import gsap from "gsap";
 
 const stats = [
@@ -34,108 +33,117 @@ const stats = [
 export function PainPoints() {
   const sectionRef = useRef<HTMLElement>(null);
 
-  useGSAP(() => {
+  useEffect(() => {
     if (!sectionRef.current) return;
 
-    const heading = sectionRef.current.querySelector(".pp-heading");
+    const ctx = gsap.context(() => {
+      const heading = sectionRef.current!.querySelector(".pp-heading");
+      const statCards = sectionRef.current!.querySelectorAll(".stat-card");
+      const pills = sectionRef.current!.querySelectorAll(".trust-pill");
+      const arrows = sectionRef.current!.querySelectorAll(".trust-arrow");
 
-    // Split heading text
-    if (heading) {
-      const h2 = heading.querySelector("h2");
-      if (h2) {
-        const text = h2.textContent || "";
-        h2.innerHTML = text
-          .split(" ")
-          .map(
-            (w) =>
-              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
-          )
-          .join("");
+      // Split heading text
+      if (heading) {
+        const h2 = heading.querySelector("h2");
+        if (h2) {
+          const text = h2.textContent || "";
+          h2.innerHTML = text
+            .split(" ")
+            .map(
+              (w) =>
+                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+            )
+            .join("");
+        }
       }
-    }
 
-    // Heading text reveal
-    if (heading) {
-      gsap.from(heading.querySelectorAll(".word"), {
-        y: 30,
-        opacity: 0,
-        stagger: 0.06,
-        ease: "back.out(1.7)",
-        duration: 0.8,
+      // Set initial hidden state
+      gsap.set(heading?.querySelectorAll(".word") || [], { y: 30, opacity: 0 });
+      gsap.set(statCards, { y: 40, opacity: 0 });
+      gsap.set(pills, { x: -20, opacity: 0 });
+      gsap.set(arrows, { scale: 0, opacity: 0 });
+
+      // Heading text reveal
+      if (heading) {
+        gsap.to(heading.querySelectorAll(".word"), {
+          y: 0,
+          opacity: 1,
+          stagger: 0.06,
+          ease: "back.out(1.7)",
+          duration: 0.8,
+          scrollTrigger: {
+            trigger: heading,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
+
+      // Counter animations for stats
+      const statValues = sectionRef.current!.querySelectorAll(".stat-value");
+      statValues.forEach((el) => {
+        const target = parseInt(el.getAttribute("data-target") || "0", 10);
+        const counter = { value: 0 };
+        gsap.to(counter, {
+          value: target,
+          duration: 2,
+          ease: "power1.inOut",
+          scrollTrigger: {
+            trigger: el,
+            start: "top 85%",
+            toggleActions: "play none none none",
+          },
+          onUpdate: () => {
+            el.textContent = Math.round(counter.value).toString();
+          },
+        });
+      });
+
+      // Stat cards entrance
+      gsap.to(statCards, {
+        y: 0,
+        opacity: 1,
+        stagger: 0.1,
+        ease: "power2.out",
+        duration: 0.6,
         scrollTrigger: {
-          trigger: heading,
+          trigger: statCards[0] || sectionRef.current,
           start: "top 85%",
           toggleActions: "play none none none",
         },
       });
-    }
 
-    // Counter animations for stats
-    const statValues = sectionRef.current.querySelectorAll(".stat-value");
-    statValues.forEach((el) => {
-      const target = parseInt(el.getAttribute("data-target") || "0", 10);
-      const counter = { value: 0 };
-      gsap.to(counter, {
-        value: target,
-        duration: 2,
-        ease: "power1.inOut",
+      // Trust chain pills reveal
+      gsap.to(pills, {
+        x: 0,
+        opacity: 1,
+        stagger: 0.08,
+        ease: "power2.out",
+        duration: 0.5,
         scrollTrigger: {
-          trigger: el,
+          trigger: ".trust-chain",
           start: "top 85%",
           toggleActions: "play none none none",
         },
-        onUpdate: () => {
-          el.textContent = Math.round(counter.value).toString();
-        },
       });
-    });
 
-    // Stat cards entrance
-    const statCards = sectionRef.current.querySelectorAll(".stat-card");
-    gsap.from(statCards, {
-      y: 40,
-      opacity: 0,
-      stagger: 0.1,
-      ease: "power2.out",
-      duration: 0.6,
-      scrollTrigger: {
-        trigger: statCards[0],
-        start: "top 85%",
-        toggleActions: "play none none none",
-      },
-    });
+      gsap.to(arrows, {
+        scale: 1,
+        opacity: 1,
+        stagger: 0.08,
+        ease: "back.out(2)",
+        duration: 0.4,
+        scrollTrigger: {
+          trigger: ".trust-chain",
+          start: "top 85%",
+          toggleActions: "play none none none",
+        },
+        delay: 0.2,
+      });
+    }, sectionRef);
 
-    // Trust chain pills reveal
-    const pills = sectionRef.current.querySelectorAll(".trust-pill");
-    const arrows = sectionRef.current.querySelectorAll(".trust-arrow");
-
-    gsap.from(pills, {
-      x: -20,
-      opacity: 0,
-      stagger: 0.08,
-      ease: "power2.out",
-      duration: 0.5,
-      scrollTrigger: {
-        trigger: ".trust-chain",
-        start: "top 85%",
-        toggleActions: "play none none none",
-      },
-    });
-
-    gsap.from(arrows, {
-      scale: 0,
-      opacity: 0,
-      stagger: 0.08,
-      ease: "back.out(2)",
-      duration: 0.4,
-      scrollTrigger: {
-        trigger: ".trust-chain",
-        start: "top 85%",
-        toggleActions: "play none none none",
-      },
-      delay: 0.2,
-    });
-  }, { scope: sectionRef });
+    return () => ctx.revert();
+  }, []);
 
   return (
     <section
