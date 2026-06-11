@@ -402,3 +402,60 @@ html::-webkit-scrollbar-thumb:hover {
   max-width: 100%;
   border-radius: 8px;
 }
+
+/* ── Custom Cursor ── */
+.cursor-outer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: difference;
+  transform: translate(-50%, -50%);
+}
+
+.cursor-inner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: difference;
+  transform: translate(-50%, -50%);
+}
+
+@media (min-width: 768px) {
+  body.gsap-cursor-active {
+    cursor: none;
+  }
+  body.gsap-cursor-active a,
+  body.gsap-cursor-active button {
+    cursor: none;
+  }
+}
+
+/* ── Navbar scroll state ── */
+.nav-scrolled {
+  background: rgba(249, 247, 243, 0.9) !important;
+  border-bottom: 1px solid var(--hairline) !important;
+}
+
+/* ── Text reveal word spans ── */
+.word {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+/* ── Step card active highlight ── */
+.step-card-active {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary);
+}
