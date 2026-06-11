@@ -33,16 +33,11 @@ export function CtaBand() {
             .split(" ")
             .map(
               (w) =>
-                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+                `<span class="word" style="perspective:400px">${w}&nbsp;</span>`
             )
             .join("");
         }
       }
-
-      // Set initial hidden state
-      gsap.set(heading?.querySelectorAll(".word") || [], { scale: 0.9, opacity: 0 });
-      gsap.set(subtitle || [], { y: 20, opacity: 0 });
-      if (ctaButtons) gsap.set(ctaButtons.children, { scale: 0.8, opacity: 0 });
 
       // Gradient pulse — infinite
       const gradient = sectionRef.current!.querySelector(".cta-gradient");
@@ -72,16 +67,18 @@ export function CtaBand() {
       });
 
       // Heading reveal
-      if (heading) {
-        gsap.to(heading.querySelectorAll(".word"), {
-          scale: 1,
-          opacity: 1,
+      const words = heading?.querySelectorAll(".word") || [];
+      if (words.length) {
+        gsap.from(words, {
+          scale: 0.9,
+          opacity: 0,
           stagger: 0.08,
           ease: "back.out(1.7)",
           duration: 0.8,
+          immediateRender: false,
           scrollTrigger: {
             trigger: heading,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });
@@ -89,30 +86,32 @@ export function CtaBand() {
 
       // Subtitle
       if (subtitle) {
-        gsap.to(subtitle, {
-          y: 0,
-          opacity: 1,
+        gsap.from(subtitle, {
+          y: 20,
+          opacity: 0,
           duration: 0.6,
           ease: "power2.out",
+          immediateRender: false,
           scrollTrigger: {
             trigger: subtitle,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });
       }
 
       // CTA buttons
-      if (ctaButtons) {
-        gsap.to(ctaButtons.children, {
-          scale: 1,
-          opacity: 1,
+      if (ctaButtons && ctaButtons.children.length) {
+        gsap.from(ctaButtons.children, {
+          scale: 0.8,
+          opacity: 0,
           ease: "back.out(2)",
           stagger: 0.15,
           duration: 0.6,
+          immediateRender: false,
           scrollTrigger: {
             trigger: ctaButtons,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });

@@ -113,61 +113,64 @@ export function WorkflowSteps() {
             .split(" ")
             .map(
               (w) =>
-                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+                `<span class="word gsap-hidden" style="perspective:400px">${w}&nbsp;</span>`
             )
             .join("");
         }
       }
 
-      // Set initial hidden state via CSS (not GSAP from())
-      gsap.set(heading?.querySelectorAll(".word") || [], { y: 30, opacity: 0 });
-      gsap.set(cards, { y: 60, opacity: 0, scale: 0.95 });
-      gsap.set(icons, { rotation: -90, scale: 0 });
-
-      // Heading text reveal
-      if (heading) {
-        gsap.to(heading.querySelectorAll(".word"), {
-          y: 0,
-          opacity: 1,
+      // Animate words from hidden state
+      const words = heading?.querySelectorAll(".word") || [];
+      if (words.length) {
+        gsap.from(words, {
+          y: 30,
+          opacity: 0,
           stagger: 0.06,
           ease: "back.out(1.7)",
           duration: 0.8,
+          immediateRender: false,
           scrollTrigger: {
             trigger: heading,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });
       }
 
       // Cards staggered entrance
-      gsap.to(cards, {
-        y: 0,
-        opacity: 1,
-        scale: 1,
-        stagger: 0.1,
-        ease: "power2.out",
-        duration: 0.6,
-        scrollTrigger: {
-          trigger: cards[0] || sectionRef.current,
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (cards.length) {
+        gsap.from(cards, {
+          y: 60,
+          opacity: 0,
+          scale: 0.95,
+          stagger: 0.1,
+          ease: "power2.out",
+          duration: 0.6,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
       // Icons rotate in
-      gsap.to(icons, {
-        rotation: 0,
-        scale: 1,
-        stagger: 0.08,
-        ease: "back.out(2)",
-        duration: 0.5,
-        scrollTrigger: {
-          trigger: cards[0] || sectionRef.current,
-          start: "top 80%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (icons.length) {
+        gsap.from(icons, {
+          rotation: -90,
+          scale: 0,
+          stagger: 0.08,
+          ease: "back.out(2)",
+          duration: 0.5,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 75%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
     }, sectionRef);
 
     return () => ctx.revert();

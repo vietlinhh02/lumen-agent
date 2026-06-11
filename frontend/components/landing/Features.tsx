@@ -50,50 +50,46 @@ export function Features() {
             .split(" ")
             .map(
               (w) =>
-                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+                `<span class="word" style="perspective:400px">${w}&nbsp;</span>`
             )
             .join("");
         }
       }
 
-      // Set initial hidden state
-      gsap.set(heading?.querySelectorAll(".word") || [], { y: 30, opacity: 0 });
-      gsap.set(cards, { y: 50, opacity: 0 });
-      gsap.set(secondaryCards, { y: 30, opacity: 0 });
-      cards.forEach((card) => {
-        const tags = card.querySelectorAll(".feature-tag");
-        gsap.set(tags, { y: 10, opacity: 0 });
-      });
-
       // Heading text reveal
-      if (heading) {
-        gsap.to(heading.querySelectorAll(".word"), {
-          y: 0,
-          opacity: 1,
+      const words = heading?.querySelectorAll(".word") || [];
+      if (words.length) {
+        gsap.from(words, {
+          y: 30,
+          opacity: 0,
           stagger: 0.06,
           ease: "back.out(1.7)",
           duration: 0.8,
+          immediateRender: false,
           scrollTrigger: {
             trigger: heading,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });
       }
 
       // Feature cards staggered entrance
-      gsap.to(cards, {
-        y: 0,
-        opacity: 1,
-        stagger: 0.15,
-        ease: "power2.out",
-        duration: 0.7,
-        scrollTrigger: {
-          trigger: cards[0] || sectionRef.current,
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (cards.length) {
+        gsap.from(cards, {
+          y: 50,
+          opacity: 0,
+          stagger: 0.15,
+          ease: "power2.out",
+          duration: 0.7,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
       // Image parallax inside each card
       const images = sectionRef.current!.querySelectorAll(".feature-img");
@@ -113,33 +109,39 @@ export function Features() {
       // Tags staggered fade-in within each card
       cards.forEach((card) => {
         const tags = card.querySelectorAll(".feature-tag");
-        gsap.to(tags, {
-          y: 0,
-          opacity: 1,
-          stagger: 0.08,
-          ease: "power2.out",
-          duration: 0.4,
-          scrollTrigger: {
-            trigger: card,
-            start: "top 80%",
-            toggleActions: "play none none none",
-          },
-        });
+        if (tags.length) {
+          gsap.from(tags, {
+            y: 10,
+            opacity: 0,
+            stagger: 0.08,
+            ease: "power2.out",
+            duration: 0.4,
+            immediateRender: false,
+            scrollTrigger: {
+              trigger: card,
+              start: "top 85%",
+              toggleActions: "play none none none",
+            },
+          });
+        }
       });
 
       // Secondary feature cards
-      gsap.to(secondaryCards, {
-        y: 0,
-        opacity: 1,
-        stagger: 0.1,
-        ease: "power2.out",
-        duration: 0.5,
-        scrollTrigger: {
-          trigger: secondaryCards[0] || sectionRef.current,
-          start: "top 90%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (secondaryCards.length) {
+        gsap.from(secondaryCards, {
+          y: 30,
+          opacity: 0,
+          stagger: 0.1,
+          ease: "power2.out",
+          duration: 0.5,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 70%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
     }, sectionRef);
 
     return () => ctx.revert();

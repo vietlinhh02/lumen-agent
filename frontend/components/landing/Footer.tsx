@@ -30,21 +30,21 @@ export function Footer() {
     const ctx = gsap.context(() => {
       const cols = footerRef.current!.querySelectorAll(".footer-col");
 
-      // Set initial hidden state
-      gsap.set(cols, { y: 30, opacity: 0 });
-
-      gsap.to(cols, {
-        y: 0,
-        opacity: 1,
-        stagger: 0.1,
-        ease: "power2.out",
-        duration: 0.6,
-        scrollTrigger: {
-          trigger: footerRef.current,
-          start: "top 90%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (cols.length) {
+        gsap.from(cols, {
+          y: 30,
+          opacity: 0,
+          stagger: 0.1,
+          ease: "power2.out",
+          duration: 0.6,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: footerRef.current,
+            start: "top 95%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
     }, footerRef);
 
     return () => ctx.revert();

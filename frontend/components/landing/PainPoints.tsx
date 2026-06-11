@@ -51,29 +51,25 @@ export function PainPoints() {
             .split(" ")
             .map(
               (w) =>
-                `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+                `<span class="word" style="perspective:400px">${w}&nbsp;</span>`
             )
             .join("");
         }
       }
 
-      // Set initial hidden state
-      gsap.set(heading?.querySelectorAll(".word") || [], { y: 30, opacity: 0 });
-      gsap.set(statCards, { y: 40, opacity: 0 });
-      gsap.set(pills, { x: -20, opacity: 0 });
-      gsap.set(arrows, { scale: 0, opacity: 0 });
-
       // Heading text reveal
-      if (heading) {
-        gsap.to(heading.querySelectorAll(".word"), {
-          y: 0,
-          opacity: 1,
+      const words = heading?.querySelectorAll(".word") || [];
+      if (words.length) {
+        gsap.from(words, {
+          y: 30,
+          opacity: 0,
           stagger: 0.06,
           ease: "back.out(1.7)",
           duration: 0.8,
+          immediateRender: false,
           scrollTrigger: {
             trigger: heading,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
         });
@@ -88,9 +84,10 @@ export function PainPoints() {
           value: target,
           duration: 2,
           ease: "power1.inOut",
+          immediateRender: false,
           scrollTrigger: {
             trigger: el,
-            start: "top 85%",
+            start: "top 90%",
             toggleActions: "play none none none",
           },
           onUpdate: () => {
@@ -100,46 +97,55 @@ export function PainPoints() {
       });
 
       // Stat cards entrance
-      gsap.to(statCards, {
-        y: 0,
-        opacity: 1,
-        stagger: 0.1,
-        ease: "power2.out",
-        duration: 0.6,
-        scrollTrigger: {
-          trigger: statCards[0] || sectionRef.current,
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (statCards.length) {
+        gsap.from(statCards, {
+          y: 40,
+          opacity: 0,
+          stagger: 0.1,
+          ease: "power2.out",
+          duration: 0.6,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 80%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
       // Trust chain pills reveal
-      gsap.to(pills, {
-        x: 0,
-        opacity: 1,
-        stagger: 0.08,
-        ease: "power2.out",
-        duration: 0.5,
-        scrollTrigger: {
-          trigger: ".trust-chain",
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-      });
+      if (pills.length) {
+        gsap.from(pills, {
+          x: -20,
+          opacity: 0,
+          stagger: 0.08,
+          ease: "power2.out",
+          duration: 0.5,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: ".trust-chain",
+            start: "top 90%",
+            toggleActions: "play none none none",
+          },
+        });
+      }
 
-      gsap.to(arrows, {
-        scale: 1,
-        opacity: 1,
-        stagger: 0.08,
-        ease: "back.out(2)",
-        duration: 0.4,
-        scrollTrigger: {
-          trigger: ".trust-chain",
-          start: "top 85%",
-          toggleActions: "play none none none",
-        },
-        delay: 0.2,
-      });
+      if (arrows.length) {
+        gsap.from(arrows, {
+          scale: 0,
+          opacity: 0,
+          stagger: 0.08,
+          ease: "back.out(2)",
+          duration: 0.4,
+          immediateRender: false,
+          scrollTrigger: {
+            trigger: ".trust-chain",
+            start: "top 90%",
+            toggleActions: "play none none none",
+          },
+          delay: 0.2,
+        });
+      }
     }, sectionRef);
 
     return () => ctx.revert();
