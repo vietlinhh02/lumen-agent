@@ -37,7 +37,7 @@ export function Hero() {
         .split(" ")
         .map(
           (w) =>
-            `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+            `<span class="word inline-block">${w}&nbsp;</span>`
         )
         .join("");
     }
@@ -62,7 +62,6 @@ export function Hero() {
       entranceTl.from(heading.querySelectorAll(".word"), {
         y: 40,
         opacity: 0,
-        rotationX: -15,
         stagger: 0.08,
         ease: "back.out(1.7)",
         duration: 0.8,

@@ -33,7 +33,6 @@ export function TextReveal({
     gsap.from(words, {
       y,
       opacity: 0,
-      rotationX: -10,
       stagger,
       ease,
       scrollTrigger: {
@@ -48,7 +47,6 @@ export function TextReveal({
     <span
       key={i}
       className="word inline-block"
-      style={{ perspective: 400 }}
     >
       {w}&nbsp;
     </span>

@@ -452,6 +452,13 @@ html::-webkit-scrollbar-thumb:hover {
 .word {
   display: inline-block;
   will-change: transform, opacity;
+  line-height: 1.15;
+}
+
+@media (max-width: 767px) {
+  .word {
+    will-change: auto;
+  }
 }
 
 /* ── Step card active highlight ── */

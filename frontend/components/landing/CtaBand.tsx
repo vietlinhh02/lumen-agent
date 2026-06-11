@@ -28,7 +28,7 @@ export function CtaBand() {
         const h2 = heading.querySelector("h2");
         if (h2) {
           const text = h2.textContent || "";
-          h2.innerHTML = text.split(" ").map((w) => `<span class="word" style="perspective:400px">${w}&nbsp;</span>`).join("");
+          h2.innerHTML = text.split(" ").map((w) => `<span class="word">${w}&nbsp;</span>`).join("");
         }
       }
 

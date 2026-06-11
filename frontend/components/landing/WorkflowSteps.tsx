@@ -113,7 +113,7 @@ export function WorkflowSteps() {
             .split(" ")
             .map(
               (w) =>
-                `<span class="word" style="perspective:400px">${w}&nbsp;</span>`
+                `<span class="word">${w}&nbsp;</span>`
             )
             .join("");
         }
