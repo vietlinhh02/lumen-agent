@@ -126,7 +126,7 @@ export function Hero() {
   }, { scope: sectionRef });
 
   return (
-    <section ref={sectionRef} className="relative overflow-hidden">
+    <section ref={sectionRef} className="relative" style={{ overflowX: "clip", overflowY: "visible" }}>
       {/* Atmospheric gradient mesh */}
       <div className="gradient-mesh absolute inset-0 -z-10 h-[85%] overflow-hidden">
         <div className="absolute left-1/2 top-0 h-[800px] w-[1200px] -translate-x-1/2 -translate-y-1/4 rounded-full bg-gradient-to-br from-primary/20 via-primary/10 to-transparent blur-3xl" />
@@ -174,7 +174,7 @@ export function Hero() {
       {/* Screenshot with 3D parallax */}
       <div
         ref={screenshotRef}
-        className="relative z-10 mx-auto mb-0 w-full max-w-6xl px-4 pb-0 lg:-mb-44"
+        className="relative z-30 mx-auto mb-0 w-full max-w-6xl px-4 pb-0 lg:-mb-44"
         style={{
           perspective: "1000px",
           transformStyle: "preserve-3d",
