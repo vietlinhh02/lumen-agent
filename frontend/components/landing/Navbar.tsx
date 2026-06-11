@@ -7,6 +7,7 @@ import { List, X } from "@phosphor-icons/react";
 import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 const navLinks = [
   { label: "Workflow", href: "#workflow" },
