@@ -1,31 +1,129 @@
+"use client";
+
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+
 const stats = [
   {
-    value: "30-72%",
+    value: 72,
+    suffix: "%",
     label: "of AI-generated citations are fabricated",
     source: "Athaluri et al., 2024",
   },
   {
-    value: "1,000+",
+    value: 1000,
+    suffix: "+",
     label: "person-hours for a full systematic review",
     source: "Systematic Review Guide, 2026",
   },
   {
-    value: "5+",
+    value: 5,
+    suffix: "+",
     label: "disconnected tools cobbled together",
     source: "ResearchGold, 2026",
   },
   {
-    value: "288 years",
+    value: 288,
+    suffix: " years",
     label: "to read 105k papers from one search",
     source: "LessWrong",
   },
 ];
 
 export function PainPoints() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    if (!sectionRef.current) return;
+
+    const heading = headingRef.current;
+
+    // Split heading text
+    if (heading) {
+      const h2 = heading.querySelector("h2");
+      if (h2) {
+        const text = h2.textContent || "";
+        h2.innerHTML = text
+          .split(" ")
+          .map(
+            (w) =>
+              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+          )
+          .join("");
+      }
+    }
+
+    // Heading text reveal
+    if (heading) {
+      gsap.from(heading.querySelectorAll(".word"), {
+        y: 30,
+        opacity: 0,
+        stagger: 0.06,
+        ease: "back.out(1.7)",
+        scrollTrigger: {
+          trigger: heading,
+          start: "top 85%",
+        },
+      });
+    }
+
+    // Counter animations for stats
+    const statValues = sectionRef.current.querySelectorAll(".stat-value");
+    statValues.forEach((el) => {
+      const target = parseInt(el.getAttribute("data-target") || "0", 10);
+      const counter = { value: 0 };
+      gsap.to(counter, {
+        value: target,
+        duration: 2,
+        ease: "power1.inOut",
+        scrollTrigger: {
+          trigger: el,
+          start: "top 85%",
+        },
+        onUpdate: () => {
+          el.textContent = Math.round(counter.value).toString();
+        },
+      });
+    });
+
+    // Trust chain pills reveal
+    const pills = sectionRef.current.querySelectorAll(".trust-pill");
+    const arrows = sectionRef.current.querySelectorAll(".trust-arrow");
+
+    gsap.from(pills, {
+      x: -20,
+      opacity: 0,
+      stagger: 0.1,
+      ease: "power2.out",
+      scrollTrigger: {
+        trigger: ".trust-chain",
+        start: "top 85%",
+      },
+    });
+
+    gsap.from(arrows, {
+      scale: 0,
+      opacity: 0,
+      stagger: 0.1,
+      ease: "back.out(2)",
+      scrollTrigger: {
+        trigger: ".trust-chain",
+        start: "top 85%",
+      },
+      delay: 0.3,
+    });
+  }, { scope: sectionRef });
+
   return (
-    <section id="pain-points" className="bg-surface-dark py-24 lg:py-32">
+    <section
+      ref={sectionRef}
+      id="pain-points"
+      className="bg-surface-dark py-24 lg:py-32"
+    >
       <div className="mx-auto max-w-7xl px-6">
-        <div className="mb-16 max-w-2xl">
+        <div ref={headingRef} className="mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             The problem
           </p>
@@ -33,9 +131,7 @@ export function PainPoints() {
             className="font-display text-4xl font-bold leading-[1.0] text-on-dark sm:text-5xl"
             style={{ letterSpacing: "-1px" }}
           >
-            Literature reviews are
-            <br />
-            broken. Here&rsquo;s why.
+            Literature reviews are broken. Here&rsquo;s why.
           </h2>
         </div>
 
@@ -46,12 +142,16 @@ export function PainPoints() {
               className="rounded-xl border border-[rgba(255,255,255,0.1)] p-6"
             >
               <p
-                className="font-display text-4xl font-bold text-primary"
+                className="stat-value font-display text-4xl font-bold text-primary"
                 style={{ letterSpacing: "-1px" }}
+                data-target={stat.value}
               >
-                {stat.value}
+                0
               </p>
               <p className="mt-2 text-sm leading-relaxed text-on-dark">
+                {stat.suffix && (
+                  <span className="stat-suffix">{stat.suffix}</span>
+                )}{" "}
                 {stat.label}
               </p>
               <p className="mt-3 text-xs text-on-dark-mute">{stat.source}</p>
@@ -60,7 +160,7 @@ export function PainPoints() {
         </div>
 
         {/* Trust chain */}
-        <div className="mt-16 rounded-xl border border-[rgba(255,255,255,0.1)] p-8">
+        <div className="trust-chain mt-16 rounded-xl border border-[rgba(255,255,255,0.1)] p-8">
           <p className="mb-6 text-sm font-semibold uppercase tracking-wider text-primary">
             The trust chain
           </p>
@@ -75,7 +175,7 @@ export function PainPoints() {
               "Don't trust output",
             ].map((step, i, arr) => (
               <span key={i} className="flex items-center gap-3">
-                <span className="rounded-full bg-[rgba(255,255,255,0.08)] px-3 py-1.5">
+                <span className="trust-pill rounded-full bg-[rgba(255,255,255,0.08)] px-3 py-1.5">
                   {step}
                 </span>
                 {i < arr.length - 1 && (
@@ -86,7 +186,7 @@ export function PainPoints() {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
-                    className="hidden text-ash sm:block"
+                    className="trust-arrow hidden text-ash sm:block"
                   >
                     <path d="M5 12h14" />
                     <path d="m12 5 7 7-7 7" />

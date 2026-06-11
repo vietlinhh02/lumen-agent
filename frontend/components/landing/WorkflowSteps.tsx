@@ -1,3 +1,10 @@
+"use client";
+
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
 const steps = [
   {
     number: "01",
@@ -89,10 +96,85 @@ const steps = [
 ];
 
 export function WorkflowSteps() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    if (!sectionRef.current) return;
+
+    const heading = headingRef.current;
+    const cards = sectionRef.current.querySelectorAll(".step-card");
+    const icons = sectionRef.current.querySelectorAll(".step-icon");
+
+    // Split heading text
+    if (heading) {
+      const h2 = heading.querySelector("h2");
+      if (h2) {
+        const text = h2.textContent || "";
+        h2.innerHTML = text
+          .split(" ")
+          .map(
+            (w) =>
+              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+          )
+          .join("");
+      }
+    }
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: sectionRef.current,
+        start: "top top",
+        end: "+=150%",
+        pin: true,
+        scrub: 0.3,
+      },
+    });
+
+    // 1. Heading text reveal
+    if (heading) {
+      tl.from(heading.querySelectorAll(".word"), {
+        y: 30,
+        opacity: 0,
+        stagger: 0.06,
+        ease: "back.out(1.7)",
+      });
+    }
+
+    // 2. Cards staggered entrance
+    tl.from(
+      cards,
+      {
+        y: 60,
+        opacity: 0,
+        scale: 0.95,
+        stagger: 0.12,
+        ease: "power2.out",
+      },
+      "-=0.3"
+    );
+
+    // 3. Icons rotate in
+    tl.from(
+      icons,
+      {
+        rotation: -90,
+        scale: 0,
+        stagger: 0.1,
+        ease: "back.out(2)",
+      },
+      "-=0.8"
+    );
+  }, { scope: sectionRef });
+
   return (
-    <section id="workflow" className="bg-surface-bone pb-24 pt-36 lg:pb-32 lg:pt-48">
+    <section
+      ref={sectionRef}
+      id="workflow"
+      className="bg-surface-bone pb-24 pt-36 lg:pb-32 lg:pt-48"
+    >
       <div className="mx-auto max-w-7xl px-6">
-        <div className="mb-16 max-w-2xl">
+        <div ref={headingRef} className="mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             How it works
           </p>
@@ -100,9 +182,7 @@ export function WorkflowSteps() {
             className="font-display text-4xl font-bold leading-[1.0] tracking-tight text-ink sm:text-5xl"
             style={{ letterSpacing: "-1px" }}
           >
-            From search to export
-            <br />
-            in six steps.
+            From search to export in six steps.
           </h2>
           <p className="mt-4 text-lg text-body">
             Every step produces a visible, editable artifact. No black boxes.
@@ -111,14 +191,13 @@ export function WorkflowSteps() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {steps.map((step, i) => (
+          {steps.map((step) => (
             <div
               key={step.number}
-              className="group relative rounded-xl border border-hairline bg-surface-card p-6 transition-all hover:border-hairline-strong hover:shadow-lg"
-              style={{ animationDelay: `${i * 80}ms` }}
+              className="step-card group relative rounded-xl border border-hairline bg-surface-card p-6 transition-all hover:border-hairline-strong hover:shadow-lg"
             >
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-charcoal transition-colors group-hover:bg-primary group-hover:text-on-primary">
+                <div className="step-icon flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-charcoal transition-colors group-hover:bg-primary group-hover:text-on-primary">
                   {step.icon}
                 </div>
                 <span className="text-xs font-bold text-ash">

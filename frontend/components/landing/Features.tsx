@@ -1,3 +1,9 @@
+"use client";
+
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
+
 const features = [
   {
     title: "Multi-Source Search",
@@ -26,10 +32,104 @@ const features = [
 ];
 
 export function Features() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    if (!sectionRef.current) return;
+
+    const heading = headingRef.current;
+
+    // Split heading text
+    if (heading) {
+      const h2 = heading.querySelector("h2");
+      if (h2) {
+        const text = h2.textContent || "";
+        h2.innerHTML = text
+          .split(" ")
+          .map(
+            (w) =>
+              `<span class="word inline-block" style="perspective:400px">${w}&nbsp;</span>`
+          )
+          .join("");
+      }
+    }
+
+    // Heading text reveal
+    if (heading) {
+      gsap.from(heading.querySelectorAll(".word"), {
+        y: 30,
+        opacity: 0,
+        stagger: 0.06,
+        ease: "back.out(1.7)",
+        scrollTrigger: {
+          trigger: heading,
+          start: "top 85%",
+        },
+      });
+    }
+
+    // Feature cards staggered entrance
+    const cards = sectionRef.current.querySelectorAll(".feature-card");
+    gsap.from(cards, {
+      y: 50,
+      opacity: 0,
+      stagger: 0.15,
+      ease: "power2.out",
+      scrollTrigger: {
+        trigger: cards[0],
+        start: "top 85%",
+      },
+    });
+
+    // Image parallax inside each card
+    const images = sectionRef.current.querySelectorAll(".feature-img");
+    images.forEach((img) => {
+      gsap.to(img, {
+        y: -20,
+        ease: "none",
+        scrollTrigger: {
+          trigger: img.closest(".feature-card"),
+          start: "top bottom",
+          end: "bottom top",
+          scrub: true,
+        },
+      });
+    });
+
+    // Tags staggered fade-in within each card
+    cards.forEach((card) => {
+      const tags = card.querySelectorAll(".feature-tag");
+      gsap.from(tags, {
+        y: 10,
+        opacity: 0,
+        stagger: 0.08,
+        ease: "power2.out",
+        scrollTrigger: {
+          trigger: card,
+          start: "top 80%",
+        },
+      });
+    });
+
+    // Secondary feature cards
+    const secondaryCards = sectionRef.current.querySelectorAll(".secondary-card");
+    gsap.from(secondaryCards, {
+      y: 30,
+      opacity: 0,
+      stagger: 0.1,
+      ease: "power2.out",
+      scrollTrigger: {
+        trigger: secondaryCards[0],
+        start: "top 90%",
+      },
+    });
+  }, { scope: sectionRef });
+
   return (
-    <section id="features" className="py-24 lg:py-32">
+    <section ref={sectionRef} id="features" className="py-24 lg:py-32">
       <div className="mx-auto max-w-7xl px-6">
-        <div className="mb-16 max-w-2xl">
+        <div ref={headingRef} className="mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">
             Core capabilities
           </p>
@@ -37,9 +137,7 @@ export function Features() {
             className="font-display text-4xl font-bold leading-[1.0] tracking-tight text-ink sm:text-5xl"
             style={{ letterSpacing: "-1px" }}
           >
-            Everything you need.
-            <br />
-            Nothing you don&rsquo;t.
+            Everything you need. Nothing you don&rsquo;t.
           </h2>
           <p className="mt-4 text-lg text-body">
             Eight features, zero fluff. Every capability supports the evidence
@@ -51,13 +149,13 @@ export function Features() {
           {features.map((feature, i) => (
             <div
               key={i}
-              className="group overflow-hidden rounded-xl border border-hairline bg-surface-card transition-all hover:border-hairline-strong hover:shadow-lg"
+              className="feature-card group overflow-hidden rounded-xl border border-hairline bg-surface-card transition-all hover:border-hairline-strong hover:shadow-lg"
             >
               <div className="relative h-48 overflow-hidden">
                 <img
                   src={feature.image}
                   alt={feature.imageAlt}
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  className="feature-img h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-surface-dark/40 to-transparent" />
               </div>
@@ -72,7 +170,7 @@ export function Features() {
                   {feature.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="rounded-full border border-hairline bg-canvas px-3 py-1 text-xs font-medium text-charcoal"
+                      className="feature-tag rounded-full border border-hairline bg-canvas px-3 py-1 text-xs font-medium text-charcoal"
                     >
                       {tag}
                     </span>
@@ -109,7 +207,7 @@ export function Features() {
           ].map((item, i) => (
             <div
               key={i}
-              className="rounded-xl border border-hairline bg-surface-card p-4"
+              className="secondary-card rounded-xl border border-hairline bg-surface-card p-4"
             >
               <h4 className="mb-1 text-sm font-semibold text-ink">
                 {item.title}
