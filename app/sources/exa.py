@@ -32,7 +32,12 @@ class ExaSource(PaperSource):
             logger.warning("EXA_API_KEY not set, skipping Exa search")
             return []
 
-        body: dict = {"query": query, "type": "paper", "numResults": min(limit, 25)}
+        body: dict = {
+            "query": query,
+            "type": "neural",
+            "useAutoprompt": False,
+            "numResults": min(limit, 25),
+        }
         if year_from:
             body["startPublishedDate"] = f"{year_from}-01-01"
         if year_to:
