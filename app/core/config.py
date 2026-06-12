@@ -46,11 +46,22 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://opencode.ai/zen/go/v1"
     default_model: str = "deepseek-v4-flash"
 
-    # Embeddings
-    embedding_provider: str = "gemini"
-    google_api_key: str = ""
-    gemini_embedding_model: str = "gemini-embedding-2-preview"
-    gemini_embedding_dimension: int = 768
+    # Embeddings (NVIDIA Nemotron via OpenRouter API)
+    openrouter_api_key: str = ""
+    embedding_provider: str = "openrouter"
+    embedding_model: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+    embedding_dimension: int = 2048
+    embedding_base_url: str = "https://openrouter.ai/api/v1"
+
+    # Reranker (NVIDIA Nemotron via OpenRouter /v1/rerank)
+    reranker_model: str = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
+    reranker_top_n: int = 30
+
+    # Exa
+    exa_api_key: str = ""
+
+    # Firecrawl
+    firecrawl_api_key: str = ""
 
     # Paper search defaults
     paper_search_max_results: int = 100
