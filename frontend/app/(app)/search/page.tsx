@@ -219,7 +219,12 @@ export default function SearchPage() {
     setSuggestingLabels(true);
     try {
       const data = await apiFetch<SuggestQueriesResponse>("/papers/suggest-queries", {
-        method: "POST", body: JSON.stringify({ topic: suggestTopic }),
+        method: "POST",
+        body: JSON.stringify({
+          title: selectedProject?.title || "",
+          topic: suggestTopic,
+          research_question: selectedProject?.research_question || "",
+        }),
         headers: { Authorization: `Bearer ${token}` },
       });
       setSuggestedQueries(data.queries);
@@ -319,9 +324,9 @@ export default function SearchPage() {
         <p className="mt-2 max-w-lg text-base leading-[1.6] text-charcoal">Search across academic databases to find papers for your literature review.</p>
       </div>
 
-      <div className="flex gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4">
         {projects.length > 0 && (
-          <ProjectSelector projects={projects} selectedId={selectedProjectId ?? ""} onChange={setSelectedProjectId} showStatus={false} />
+          <ProjectSelector projects={projects} selectedId={selectedProjectId ?? ""} onChange={setSelectedProjectId} showStatus={false} label="" />
         )}
         {suggestTopic && (
           <button onClick={handleSuggestQueries} disabled={suggestingLabels}
