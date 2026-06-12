@@ -47,9 +47,11 @@ Rules:
 """
 
 SEARCH_SUGGEST_USER = """\
-Research topic or area: {topic}
+Research project title: {title}
+Research topic: {topic}
+Research question: {research_question}
 
-Suggest targeted academic search queries for this topic.
+Suggest 4–6 targeted academic search queries for this project.
 """
 
 

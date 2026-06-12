@@ -61,7 +61,11 @@ async def suggest_queries(request: SuggestQueriesRequest) -> SuggestQueriesRespo
     that cover different angles (methods, applications, comparisons, trends).
     """
     provider = get_provider()
-    user_msg = SEARCH_SUGGEST_USER.format(topic=request.topic)
+    user_msg = SEARCH_SUGGEST_USER.format(
+        title=request.title,
+        topic=request.topic,
+        research_question=request.research_question or request.topic,
+    )
 
     try:
         raw = await provider.complete_structured(
@@ -104,8 +108,7 @@ async def screen_papers(request: ScreenPapersRequest) -> ScreenPapersResponse:
     provider = get_provider()
 
     paper_list = "\n\n".join(
-        f"[{i}] {p.title}\nAbstract: {p.abstract or 'N/A'}"
-        for i, p in enumerate(request.papers)
+        f"[{i}] {p.title}\nAbstract: {p.abstract or 'N/A'}" for i, p in enumerate(request.papers)
     )
 
     user_msg = PAPER_SCREEN_USER.format(
@@ -138,6 +141,7 @@ def _parse_screening_scores(raw: str, expected_count: int) -> list[str]:
 
     # Try JSON array first
     import json
+
     try:
         parsed = json.loads(raw)
         if isinstance(parsed, list):

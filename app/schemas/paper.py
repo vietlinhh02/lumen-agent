@@ -120,7 +120,9 @@ class PaperPDFStatus(BaseModel):
 class SuggestQueriesRequest(BaseModel):
     """Request body for query suggestion endpoint."""
 
-    topic: str = Field(..., description="Research topic or area", min_length=2, max_length=500)
+    title: str = Field(default="", description="Project title")
+    topic: str = Field(..., description="Research topic", min_length=2, max_length=500)
+    research_question: str = Field(default="", description="Specific research question")
 
 
 class SuggestQueriesResponse(BaseModel):
