@@ -25,6 +25,7 @@ dependencies = [
     "paperhub-cli==0.1.0",
     # PDF text extraction
     "pdfplumber>=0.11.0",
+    # Embeddings + reranking via NVIDIA API (no local model)
 ]
 
 [dependency-groups]

@@ -15,18 +15,22 @@ from typing import NamedTuple
 from app.core.config import get_settings
 from app.schemas.paper import (
     LanguageBiasAudit as LanguageBiasAuditSchema,
+)
+from app.schemas.paper import (
     PaperAuthor,
     PaperPDFStatus,
     PaperResult,
     PaperSearchRequest,
     PaperSearchResponse,
+)
+from app.schemas.paper import (
     QueryVariant as QueryVariantSchema,
 )
-from app.services.pdf_downloader import PDFDownloader
 from app.services.language_bias import (
     compute_bias_audit,
     detect_and_generate_variants,
 )
+from app.services.pdf_downloader import PDFDownloader
 from app.sources.base import RawPaper
 from app.sources.exa import ExaSource
 from app.sources.firecrawl import crawl_pdf_links

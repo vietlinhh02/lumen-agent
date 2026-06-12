@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendPort = process.env.BACKEND_PORT ?? "8010";
+const backendPort = process.env.BACKEND_PORT ?? "8000";
 
 const nextConfig: NextConfig = {
   async rewrites() {

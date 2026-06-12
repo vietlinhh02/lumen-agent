@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import encode_text
 from app.db.models import Paper, PaperChunk, ProjectPaper
+
+logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 _SECTION_BOOSTS = {
@@ -52,10 +55,22 @@ async def retrieve_project_evidence(
     query: str,
     limit: int = 8,
     content_types: list[str] | None = None,
+    use_reranker: bool = True,
 ) -> list[RetrievedChunk]:
-    """Retrieve citation-ready evidence chunks for a project query."""
+    """Retrieve citation-ready evidence chunks for a project query.
+
+    Pipeline: DB fetch → hybrid scoring (keyword + vector) → rerank → top-K.
+    When ``use_reranker`` is True (default), retrieves ``reranker_top_n``
+    candidates first, reranks with the cross-encoder, then returns top-K.
+    """
+    from app.core.config import get_settings
+
+    settings = get_settings()
     query_tokens = _tokens(query)
     query_embedding = encode_text(query) if query.strip() else []
+
+    # Retrieve more candidates when reranking (reranker will prune)
+    candidate_limit = settings.reranker_top_n if use_reranker else limit
 
     stmt = (
         select(ProjectPaper, Paper, PaperChunk)
@@ -99,7 +114,29 @@ async def retrieve_project_evidence(
         )
 
     ranked.sort(key=lambda item: item.score, reverse=True)
-    return ranked[:limit]
+    candidates = ranked[:candidate_limit]
+
+    # Always rerank when enabled — reranker is the final quality gate
+    if use_reranker and candidates:
+        try:
+            from app.services.reranker import rerank
+
+            docs = [c.chunk_text for c in candidates]
+            reranked = rerank(query, docs, top_k=limit)
+            # Filter by score threshold to exclude irrelevant chunks
+            min_score = 0.05
+            candidates = [
+                replace(candidates[idx], score=float(reranker_score))
+                for idx, reranker_score in reranked
+                if reranker_score >= min_score
+            ]
+        except Exception as exc:
+            logger.warning("Reranker failed, falling back to hybrid scores: %s", exc)
+            candidates = candidates[:limit]
+    else:
+        candidates = candidates[:limit]
+
+    return candidates
 
 
 def _keyword_score(query_tokens: set[str], paper: Paper, chunk: PaperChunk) -> float:

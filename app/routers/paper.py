@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, status as http_status
+from fastapi import APIRouter, HTTPException
+from fastapi import status as http_status
 
 from app.ai.prompts import (
     PAPER_SCREEN_SYSTEM,

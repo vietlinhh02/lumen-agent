@@ -404,6 +404,11 @@ async def _store_chunks(
     )
 
     # Insert new chunks
+    from app.core.embeddings import get_embedding_dimension, get_embedding_model_name
+
+    dim = get_embedding_dimension()
+    model_name = get_embedding_model_name()
+
     for chunk in chunks:
         embedding_str = json.dumps(chunk.embedding) if chunk.embedding else None
         db.add(
@@ -413,8 +418,8 @@ async def _store_chunks(
                 chunk_type=chunk.chunk_type,
                 section_label=chunk.section_label,
                 embedding=embedding_str,
-                embedding_model="all-MiniLM-L6-v2",
-                embedding_dimension=384 if chunk.embedding else None,
+                embedding_model=model_name,
+                embedding_dimension=dim if chunk.embedding else None,
             )
         )
 
