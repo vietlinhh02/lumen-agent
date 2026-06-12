@@ -28,6 +28,8 @@ from app.services.language_bias import (
     detect_and_generate_variants,
 )
 from app.sources.base import RawPaper
+from app.sources.exa import ExaSource
+from app.sources.firecrawl import crawl_pdf_links
 from app.sources.paperhub import PaperHubSource
 
 logger = logging.getLogger(__name__)
@@ -95,17 +97,11 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     for src_name, src_query in source_query_map.items():
         try:
             if src_name in ("semantic_scholar", "arxiv", "openalex"):
-                # All academic sources go through PaperHubSource
                 source = PaperHubSource()
+            elif src_name == "exa":
+                source = ExaSource()
             else:
-                source_diagnostics.append(
-                    {
-                        "source": src_name,
-                        "status": "skipped",
-                        "result_count": 0,
-                        "message": f"Source '{src_name}' not implemented",
-                    }
-                )
+                # firecrawl handled separately after search
                 continue
 
             papers = await source.search(
@@ -137,7 +133,13 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     raw_papers = _deduplicate_raw_books(all_raw)
     raw_papers = raw_papers[: request.limit]
 
-    # ── 2. Build paper results ───────────────────────────────────────────
+    # ── 2.5. Enrich PDF links via Firecrawl ─────────────────────────────
+    try:
+        all_raw = await crawl_pdf_links(all_raw)
+    except Exception as exc:
+        logger.warning("Firecrawl crawl failed: %s", exc)
+
+    # ── 3. Build paper results ───────────────────────────────────────────
     results: list[PaperResult] = []
     pdf_statuses: list[PaperPDFStatus] = []
 
