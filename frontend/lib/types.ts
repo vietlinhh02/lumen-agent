@@ -378,3 +378,128 @@ export interface AdminUser {
   is_active: boolean;
   created_at: string;
 }
+
+// ── AI Assistant types ──
+
+export type PipelineStep =
+  | "create_project"
+  | "search_papers"
+  | "save_papers"
+  | "matrix"
+  | "gaps"
+  | "report";
+
+export type AgentStatus =
+  | "idle"
+  | "thinking"
+  | "running"
+  | "needs_confirmation"
+  | "stopped"
+  | "done"
+  | "error";
+
+export interface ChatMessageFE {
+  id?: string;
+  role: "user" | "assistant" | "system" | "tool_log";
+  content: string;
+  tool_name?: string | null;
+  created_at?: string;
+}
+
+export interface ToolCallEvent {
+  type: "tool_call";
+  tool: string;
+  args: Record<string, unknown>;
+  call_id: string;
+}
+
+export interface ToolResultEvent {
+  type: "tool_result";
+  tool: string;
+  call_id: string;
+  summary: string;
+  duration_ms: number;
+  ok: boolean;
+}
+
+export interface ProgressEvent {
+  type: "progress";
+  step: PipelineStep | string;
+  status: "pending" | "running" | "done" | "failed";
+  percent: number;
+  label?: string;
+}
+
+export interface MarkdownUpdatedEvent {
+  type: "markdown_updated";
+  content: string;
+  version: number;
+  section_changed: number | null;
+}
+
+export interface LogEvent {
+  type: "log";
+  level: "info" | "warn" | "error";
+  message: string;
+}
+
+export interface ConnectedEvent {
+  type: "connected";
+  session_id: string;
+  project_id: string | null;
+  document_id: string | null;
+  resumed: boolean;
+}
+
+export interface ProjectCreatedEvent {
+  type: "project_created";
+  project_id: string;
+  document_id: string;
+}
+
+export interface DoneEvent {
+  type: "done";
+  iterations: number;
+  total_duration_ms: number;
+  reason?: "max_iterations" | "stopped" | "completed";
+}
+
+export interface ErrorEvent {
+  type: "error";
+  message: string;
+  code: string;
+}
+
+export type AssistantEvent =
+  | ConnectedEvent
+  | ProjectCreatedEvent
+  | ProgressEvent
+  | LogEvent
+  | ToolCallEvent
+  | ToolResultEvent
+  | MarkdownUpdatedEvent
+  | { type: "agent_message"; content: string; role: "assistant" }
+  | DoneEvent
+  | ErrorEvent
+  | { type: "stopped" }
+  | { type: "needs_confirmation"; prompt: string; options: string[]; request_id: string }
+  | { type: "markdown_snapshot"; content: string; version: number; title: string }
+  | { type: "message_history"; messages: ChatMessageFE[] }
+  | { type: "pong" };
+
+export interface ChatDocumentListResponse {
+  items: Array<{
+    id: string;
+    project_id: string;
+    title: string;
+    content_md: string;
+    version: number;
+    created_at: string;
+    updated_at: string;
+  }>;
+  total: number;
+}
+
+export interface ChatDocumentDetailResponse extends ChatDocumentListResponse {
+  messages: ChatMessageFE[];
+}
