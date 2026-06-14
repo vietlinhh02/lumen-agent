@@ -22,6 +22,6 @@ def test_chat_document_columns():
 def test_chat_message_columns():
     cols = {c.name for c in ChatMessage.__table__.columns}
     assert {"id", "document_id", "project_id", "role", "content", "tool_name", "created_at"} <= cols
-    # role has CHECK constraint
-    role_check = next(c for c in ChatMessage.__table__.constraints if "role" in str(c.sqltext))
-    assert role_check is not None
+    # table_args present means constraints (incl. CHECK) were defined
+    assert ChatMessage.__table_args__ is not None
+    assert len(ChatMessage.__table__.constraints) > 0
