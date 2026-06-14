@@ -305,6 +305,40 @@ Find potential conflicting findings between papers.
 """
 
 
+CONTRADICTION_DETECTION_CHUNK_SYSTEM = """\
+You are a literature conflict analyst. Compare pairs of papers that share a
+method or dataset and identify potential conflicting findings.
+
+Rules:
+- Only flag conflicts where papers study the same context (same dataset, same
+  method, same evaluation setup) but report opposing or contradictory results.
+- Use the full-text evidence sections to verify whether the matrix row summary
+  accurately reflects the paper's actual findings.
+- Label these as "potential conflicting findings", not definitive contradictions.
+- Include a possible explanation for the discrepancy.
+- If no clear conflicts exist based on evidence, return an empty list.
+- paper_a_id and paper_b_id must be valid project_paper_ids from the input.
+- Each conflict MUST have evidence from at least one chunk or matrix field
+  supporting the opposing claims.
+"""
+
+CONTRADICTION_DETECTION_CHUNK_USER = """\
+Project topic: {project_topic}
+
+Saved paper IDs (use only these):
+{paper_ids_json}
+
+Literature matrix rows:
+{matrix_rows_json}
+
+Full-text evidence by paper:
+{chunk_context}
+
+Find potential conflicting findings between papers. Only flag conflicts
+supported by the evidence above.
+"""
+
+
 # ── Review Writer ─────────────────────────────────────────────────────────────
 
 REVIEW_WRITER_SYSTEM = """\
@@ -378,6 +412,9 @@ Literature matrix rows:
 Research gaps to address:
 {gaps_json}
 
+Conflicting findings to address:
+{conflicts_json}
+
 Relevant sections from full-text papers:
 {chunk_context}
 
@@ -409,3 +446,166 @@ Research query: {query}
 
 Detect language and generate optimized search variants.
 """
+
+
+# ── AI Assistant (chat-driven autonomous research) ───────────────────────────
+
+
+ASSISTANT_SYSTEM = """\
+You are Lumen, an AI research assistant. You help researchers produce
+defensible literature reviews from real academic papers.
+
+You have access to 8 tools. Use them to:
+1. create_project — when the user describes a research intent
+2. search_papers — find papers from academic sources
+3. save_paper_to_project — save selected papers into the project
+4. generate_matrix — build a structured literature matrix
+5. detect_gaps — find evidence-based research gaps
+6. generate_report — write a citation-safe Markdown literature review
+7. edit_report_section — rewrite one section of an existing report
+8. qa_search_papers — answer questions about the saved papers using RAG
+
+Rules:
+- Always confirm project basics (title, topic, research question) with the user
+  before calling create_project. Ask one clear question.
+- After the pipeline completes, the user can keep chatting. Match their intent
+  to the right tool. For Q&A, use qa_search_papers. For edits, use
+  edit_report_section. For adding more papers, use search_papers +
+  save_paper_to_project.
+- Be concise. Summarize what you did in 1-2 sentences after each tool call.
+- Never invent paper titles, authors, or DOIs. Only cite what qa_search_papers
+  or generate_report returns.
+- If a tool fails, report the error to the user and suggest a next step.
+"""
+
+
+TOOL_DESCRIPTIONS: list[dict] = [
+    {
+        "name": "create_project",
+        "description": "Create a new research project with title, topic, and research question.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Project title (short, < 100 chars)"},
+                "topic": {
+                    "type": "string",
+                    "description": "Research topic, the main subject of the review",
+                },
+                "research_question": {
+                    "type": "string",
+                    "description": "Specific research question",
+                },
+                "max_papers": {
+                    "type": "integer",
+                    "description": "Target paper count, default 12",
+                    "default": 12,
+                },
+            },
+            "required": ["title", "topic"],
+        },
+    },
+    {
+        "name": "search_papers",
+        "description": "Search academic sources for papers matching a query.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "max_results": {"type": "integer", "default": 25, "maximum": 100},
+                "year_from": {"type": "integer", "description": "Earliest year, optional"},
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "e.g. ['semantic_scholar', 'arxiv']",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "save_paper_to_project",
+        "description": "Save one paper (already searched) into the project corpus.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "paper": {
+                    "type": "object",
+                    "description": "Paper dict with title, authors, year, doi, arxiv_id, etc.",
+                },
+                "relevance_label": {
+                    "type": "string",
+                    "enum": ["core", "related", "background"],
+                    "default": "related",
+                },
+            },
+            "required": ["project_id", "paper"],
+        },
+    },
+    {
+        "name": "generate_matrix",
+        "description": "Generate literature matrix rows for all saved papers in a project.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "detect_gaps",
+        "description": "Detect evidence-based research gaps from the matrix rows.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "max_gaps": {"type": "integer", "default": 5, "maximum": 10},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "generate_report",
+        "description": "Generate a citation-safe Markdown literature review and write it to the chat document.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "include_gaps": {"type": "boolean", "default": True},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "edit_report_section",
+        "description": "Rewrite one section of an existing report based on user instruction.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "section_index": {
+                    "type": "integer",
+                    "description": "0-based section index in the report",
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": "What to change, e.g. 'make it shorter' or 'add a sentence about PubMedQA'",
+                },
+            },
+            "required": ["project_id", "section_index", "instruction"],
+        },
+    },
+    {
+        "name": "qa_search_papers",
+        "description": "Answer a question by retrieving evidence from the project's saved papers via RAG.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "question": {"type": "string"},
+            },
+            "required": ["project_id", "question"],
+        },
+    },
+]
