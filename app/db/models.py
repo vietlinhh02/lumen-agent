@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -776,7 +777,8 @@ class BackgroundJob(Base):
         CheckConstraint(
             "job_type IN ("
             "'auto_save', 'normalize', 'enrich',"
-            " 'matrix_generate', 'gap_generate', 'conflict_generate'"
+            " 'matrix_generate', 'gap_generate', 'conflict_generate',"
+            " 'report_generate', 'paper_search'"
             ")",
             name="ck_background_jobs_type",
         ),
@@ -860,9 +862,7 @@ class PaperChunk(Base):
     content_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     pipeline_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # embedding: Mapped[list[float] | None] = mapped_column(nullable=True)
-    # Uncomment and use pgvector.sqlalchemy.Vector when pgvector is available
-    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding = mapped_column(Vector(2000), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     embedding_dimension: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -884,4 +884,67 @@ class PaperChunk(Base):
         Index("ix_paper_chunks_project_paper", "project_paper_id"),
         Index("ix_paper_chunks_project_content", "project_paper_id", "content_type"),
         Index("ix_paper_chunks_project_section", "project_paper_id", "section_label"),
+    )
+
+
+# ── Chat Sessions (Assistant Page) ──────────────────────────────────────────
+
+
+class ChatDocument(Base):
+    __tablename__ = "chat_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_md: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    tool_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tool_args: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    tool_result: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system', 'tool_log')",
+            name="ck_chat_messages_role",
+        ),
+        Index("ix_chat_messages_document_created", "document_id", "created_at"),
     )
