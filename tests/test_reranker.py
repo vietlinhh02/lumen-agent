@@ -8,7 +8,6 @@ import pytest
 
 from app.services.reranker import rerank
 
-
 # ── Basic functionality ──────────────────────────────────────────────────────
 
 
@@ -97,10 +96,9 @@ async def test_rerank_api_error_returns_fallback():
         "app.services.reranker._call_rerank_api",
         new_callable=AsyncMock,
         return_value=None,
-    ):
-        with patch("app.services.reranker.get_settings") as mock_settings:
-            mock_settings.return_value.openrouter_api_key = "test-key"
-            result = await rerank("query", ["doc a", "doc b", "doc c"])
+    ), patch("app.services.reranker.get_settings") as mock_settings:
+        mock_settings.return_value.openrouter_api_key = "test-key"
+        result = await rerank("query", ["doc a", "doc b", "doc c"])
 
     assert len(result) == 3
     scores = [s for _, s in result]

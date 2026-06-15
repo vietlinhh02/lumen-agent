@@ -15,7 +15,6 @@ from sqlalchemy import select
 
 from app.db.models import ChatDocument, Project
 from app.services.assistant_tools.ids import coerce_uuid
-from app.services.report_chat_doc import generate_markdown_for_project
 from app.services.report_generation import generate_report as production_generate_report
 
 if TYPE_CHECKING:

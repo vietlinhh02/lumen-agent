@@ -10,11 +10,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.ai.provider import get_provider
-from app.db.models import PaperChunk, ProjectPaper
+from app.db.models import ProjectPaper
 from app.services.assistant_tools.ids import coerce_uuid
 from app.services.hybrid_retrieval import RetrievedChunk, retrieve_project_evidence
 from app.services.literature_matrix import get_existing_paper_ids, upsert_rows
@@ -98,7 +98,11 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
     if runner:
         chunk_status = (
             f"{completed_count} normalized, {raw_count} raw, {pending_count} pending. "
-            + ("Using full-text chunks." if completed_count > 0 else "No chunks ready — using abstracts/metadata.")
+            + (
+                "Using full-text chunks."
+                if completed_count > 0
+                else "No chunks ready — using abstracts/metadata."
+            )
         )
         await runner.emit(
             {
