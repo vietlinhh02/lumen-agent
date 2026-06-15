@@ -455,23 +455,51 @@ ASSISTANT_SYSTEM = """\
 You are Lumen, an AI research assistant. You help researchers produce
 defensible literature reviews from real academic papers.
 
-You have access to 8 tools. Use them to:
+You have access to 11 tools. Use them to:
 1. create_project — when the user describes a research intent
-2. search_papers — find papers from academic sources
-3. save_paper_to_project — save selected papers into the project
-4. generate_matrix — build a structured literature matrix
-5. detect_gaps — find evidence-based research gaps
-6. generate_report — write a citation-safe Markdown literature review
-7. edit_report_section — rewrite one section of an existing report
-8. qa_search_papers — answer questions about the saved papers using RAG
+2. search_papers — find papers from academic sources (downloads up to 100
+   PDFs in parallel; results are sorted with downloadable papers first)
+3. save_papers_batch — save many selected papers into the project in ONE call
+   (preferred over multiple save_paper_to_project calls)
+4. save_paper_to_project — save a single paper (use only for ad-hoc additions)
+5. trigger_normalization — force-start PDF text extraction + chunking + embedding
+   (call this AFTER saving papers, BEFORE generate_matrix for best quality)
+6. generate_matrix — build a structured literature matrix (needs saved papers)
+7. detect_gaps — find evidence-based research gaps (needs matrix rows)
+8. detect_conflicts — find conflicting findings between papers (needs matrix rows)
+9. generate_report — write a citation-safe literature review to ReviewReport table
+10. edit_report_section — rewrite one section of an existing report
+11. qa_search_papers — answer questions about saved papers using RAG
+
+Standard research pipeline:
+  create_project → search_papers (max_results=50-100) → save_papers_batch
+  → trigger_normalization  ← CRITICAL: converts PDFs to searchable chunks
+  → generate_matrix → detect_gaps → detect_conflicts → generate_report
 
 Rules:
-- Always confirm project basics (title, topic, research question) with the user
-  before calling create_project. Ask one clear question.
+- After save_papers_batch, ALWAYS call trigger_normalization before generate_matrix
+  to ensure full-text chunks are available for rich matrix extraction.
+- For the initial corpus, prefer search_papers with max_results=50-100 + a single
+  save_papers_batch call. This downloads all PDFs in parallel and saves the chosen
+  subset in one batch — much faster than N individual save calls.
+- search_papers returns papers already sorted with downloadable PDFs first; pick
+  papers from the top of the list when choosing which to save.
+- search_papers returns both a compact `paper_brief` list (LLM-visible, what
+  you see in the tool result) and a full `papers` list (used internally for
+  saving). When calling save_papers_batch, pass the brief items — they
+  contain all the identifiers and metadata needed to save the paper.
+- Be flexible when the user is vague. If they provide a usable topic but ask you
+  to choose the title, material, domain, or research question, infer sensible
+  defaults and move forward instead of asking for the same missing field again.
+- Ask at most one clarifying question, and only when there is no usable research
+  topic yet. If the user says "cứ làm theo ý bạn", "tạo theo ý bạn", or similar,
+  choose a focused academic direction and call create_project.
+- When creating a project, use a concise title, a specific topic, a concrete
+  research question, and a modest paper target.
 - After the pipeline completes, the user can keep chatting. Match their intent
   to the right tool. For Q&A, use qa_search_papers. For edits, use
   edit_report_section. For adding more papers, use search_papers +
-  save_paper_to_project.
+  save_papers_batch.
 - Be concise. Summarize what you did in 1-2 sentences after each tool call.
 - Never invent paper titles, authors, or DOIs. Only cite what qa_search_papers
   or generate_report returns.
@@ -506,12 +534,17 @@ TOOL_DESCRIPTIONS: list[dict] = [
     },
     {
         "name": "search_papers",
-        "description": "Search academic sources for papers matching a query.",
+        "description": (
+            "Search academic sources for papers matching a query. Downloads "
+            "PDFs in parallel (up to 100) and returns them sorted with "
+            "downloadable papers first. Use max_results=50-100 for the initial "
+            "corpus, then save the chosen subset with save_papers_batch."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "max_results": {"type": "integer", "default": 25, "maximum": 100},
+                "max_results": {"type": "integer", "default": 50, "maximum": 100},
                 "year_from": {"type": "integer", "description": "Earliest year, optional"},
                 "sources": {
                     "type": "array",
@@ -524,7 +557,7 @@ TOOL_DESCRIPTIONS: list[dict] = [
     },
     {
         "name": "save_paper_to_project",
-        "description": "Save one paper (already searched) into the project corpus.",
+        "description": "Save a SINGLE paper (already searched) into the project. Prefer save_papers_batch for multiple papers.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -543,12 +576,65 @@ TOOL_DESCRIPTIONS: list[dict] = [
         },
     },
     {
+        "name": "save_papers_batch",
+        "description": (
+            "Save MANY papers (already searched) into the project in one call. "
+            "Runs saves in parallel (default concurrency 8). Each paper dict "
+            "should come from a prior search_papers result — prefetched PDFs "
+            "are reused so we don't re-download. Returns counts of saved, "
+            "failed, and how many had PDFs ready."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "papers": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "List of paper dicts from search_papers",
+                },
+                "relevance_label": {
+                    "type": "string",
+                    "enum": ["core", "related", "background"],
+                    "default": "related",
+                },
+                "max_concurrency": {
+                    "type": "integer",
+                    "default": 8,
+                    "maximum": 32,
+                    "description": "Parallel save workers",
+                },
+            },
+            "required": ["project_id", "papers"],
+        },
+    },
+    {
         "name": "generate_matrix",
         "description": "Generate literature matrix rows for all saved papers in a project.",
         "parameters": {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "trigger_normalization",
+        "description": (
+            "Force-start PDF text extraction + chunking + embedding for all papers "
+            "with raw text. Critical before generate_matrix — ensures full-text chunks "
+            "are available for rich extraction. Returns progress while waiting for chunks."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "wait_for_chunks": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "If true, wait up to ~2 min for chunks to appear",
+                },
             },
             "required": ["project_id"],
         },
@@ -566,8 +652,27 @@ TOOL_DESCRIPTIONS: list[dict] = [
         },
     },
     {
+        "name": "detect_conflicts",
+        "description": (
+            "Detect potential conflicting findings between papers that share "
+            "the same method or dataset. Requires matrix rows to be generated first."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "topic": {"type": "string", "description": "Optional project topic"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
         "name": "generate_report",
-        "description": "Generate a citation-safe Markdown literature review and write it to the chat document.",
+        "description": (
+            "Generate a citation-safe literature review written to the ReviewReport table "
+            "(visible on the Reports page). Also updates the chat preview. "
+            "Requires matrix rows. Include gaps in report by default."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -590,7 +695,10 @@ TOOL_DESCRIPTIONS: list[dict] = [
                 },
                 "instruction": {
                     "type": "string",
-                    "description": "What to change, e.g. 'make it shorter' or 'add a sentence about PubMedQA'",
+                    "description": (
+                        "What to change, e.g. 'make it shorter' or "
+                        "'add a sentence about PubMedQA'"
+                    ),
                 },
             },
             "required": ["project_id", "section_index", "instruction"],
@@ -598,7 +706,10 @@ TOOL_DESCRIPTIONS: list[dict] = [
     },
     {
         "name": "qa_search_papers",
-        "description": "Answer a question by retrieving evidence from the project's saved papers via RAG.",
+        "description": (
+            "Answer a question by retrieving evidence from the project's saved "
+            "papers via RAG."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

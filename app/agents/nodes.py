@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import suppress
+from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from app.agents.state import ResearchState
@@ -31,7 +34,11 @@ from app.ai.structured_outputs import (
     ReviewOutput,
 )
 from app.services.gap_detection import upsert_gaps
-from app.services.hybrid_retrieval import RetrievedChunk, retrieve_project_evidence
+from app.services.hybrid_retrieval import (
+    RetrievedChunk,
+    retrieve_paper_evidence,
+    retrieve_project_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,63 +105,49 @@ async def query_planner_node(state: ResearchState) -> dict:
 
 
 async def search_agent_node(state: ResearchState) -> dict:
-    """Search Semantic Scholar for papers matching the query variants."""
-    from app.services.paper_search import _classify_pdf_source
-    from app.sources.semantic_scholar import SemanticScholarSource
+    """Search all configured sources in parallel for every query variant.
 
-    all_raw: list[dict] = []
-    source_diagnostics: dict = {}
+    Each (query, source) pair runs independently with its own timeout.
+    A 429 or other failure on one source never blocks the others.
+    """
+    import asyncio
 
+    if not state.query_variants:
+        return {"raw_papers": [], "source_diagnostics": {}, "current_node": "search_agent"}
+
+    # ── 1. Collect every (query, source_name) task ──────────────────────
+    tasks: list[asyncio.Task] = []
     for variant in state.query_variants:
         query = variant["query"]
-        sources = variant.get("sources", ["semantic_scholar"])
+        for src_name in variant.get("sources", ["semantic_scholar"]):
+            tasks.append(
+                asyncio.create_task(_search_one_source(query, src_name, limit=50, timeout=45))
+            )
 
-        for src_name in sources:
-            if src_name != "semantic_scholar":
-                source_diagnostics[src_name] = {
-                    "status": "skipped",
-                    "count": 0,
-                    "error": "Not implemented yet",
-                }
-                continue
+    # ── 2. Run all searches in parallel ─────────────────────────────────
+    results: list[_SourceResult | BaseException] = await asyncio.gather(
+        *tasks,
+        return_exceptions=True,
+    )
 
-            try:
-                source = SemanticScholarSource(timeout=45)
-                papers = await source.search(query=query, limit=50)
-                source_diagnostics["semantic_scholar"] = {
-                    "status": "ok",
-                    "count": len(papers),
-                    "query": query,
-                }
+    # ── 3. Collect papers + diagnostics ─────────────────────────────────
+    all_raw: list[dict] = []
+    source_diagnostics: dict[str, dict] = {}
 
-                for p in papers:
-                    all_raw.append(
-                        {
-                            "title": p.title,
-                            "abstract": p.abstract,
-                            "year": p.year,
-                            "venue": p.venue,
-                            "doi": p.doi,
-                            "arxiv_id": p.arxiv_id,
-                            "semantic_scholar_id": p.semantic_scholar_id,
-                            "url": p.url,
-                            "citation_count": p.citation_count,
-                            "authors": p.authors,
-                            "source_name": p.source_name,
-                            "pdf_source": _classify_pdf_source(p),
-                            "fields_of_study": p.source_specific.get("fields_of_study", []),
-                            "is_open_access": p.source_specific.get("is_open_access"),
-                            "pdf_url": p.source_specific.get("pdf_url"),
-                        }
-                    )
-            except Exception as exc:
-                source_diagnostics["semantic_scholar"] = {
-                    "status": "failed",
-                    "count": 0,
-                    "error": str(exc),
-                }
+    for result in results:
+        if not isinstance(result, _SourceResult):
+            logger.warning("Search task failed (non-source-specific): %s", result)
+            continue
+        src_name = result.source_name
+        source_diagnostics[src_name] = {
+            "status": result.status,
+            "count": result.count,
+            "error": result.error,
+            "query": result.query,
+        }
+        all_raw.extend(result.papers)
 
-    # Deduplicate by strongest ID
+    # ── 4. Deduplicate by strongest ID ──────────────────────────────────
     seen: set[str] = set()
     deduped: list[dict] = []
     for p in all_raw:
@@ -170,12 +163,102 @@ async def search_agent_node(state: ResearchState) -> dict:
     }
 
 
+@dataclass
+class _SourceResult:
+    """Result from searching a single (query, source) pair."""
+
+    source_name: str
+    query: str
+    status: str  # "ok" | "failed" | "skipped"
+    count: int = 0
+    error: str | None = None
+    papers: list[dict] = field(default_factory=list)
+
+
+async def _search_one_source(
+    query: str,
+    source_name: str,
+    limit: int = 50,
+    timeout: float = 45,
+) -> _SourceResult:
+    """Search one source for one query, returning a ``_SourceResult``."""
+    from app.services.paper_search import _classify_pdf_source
+
+    source = _make_source(source_name, timeout)
+    if source is None:
+        return _SourceResult(
+            source_name=source_name,
+            query=query,
+            status="skipped",
+            error=f"Source '{source_name}' is not implemented",
+        )
+
+    try:
+        raw_papers = await source.search(query=query, limit=limit)
+    except Exception as exc:
+        logger.warning("Source %s failed for query '%s': %s", source_name, query[:60], exc)
+        return _SourceResult(
+            source_name=source_name,
+            query=query,
+            status="failed",
+            error=str(exc),
+        )
+
+    papers_dicts: list[dict] = []
+    for p in raw_papers:
+        paper_dict: dict = {
+            "title": p.title,
+            "abstract": p.abstract,
+            "year": p.year,
+            "venue": p.venue,
+            "doi": p.doi,
+            "arxiv_id": p.arxiv_id,
+            "semantic_scholar_id": p.semantic_scholar_id,
+            "url": p.url,
+            "citation_count": p.citation_count,
+            "authors": p.authors,
+            "source_name": p.source_name,
+            "pdf_source": _classify_pdf_source(p),
+        }
+        # Pass through source-specific fields for downstream nodes
+        for key in ("fields_of_study", "is_open_access", "pdf_url", "paperhub_source"):
+            val = p.source_specific.get(key)
+            if val is not None:
+                paper_dict[key] = val
+        papers_dicts.append(paper_dict)
+
+    return _SourceResult(
+        source_name=source_name,
+        query=query,
+        status="ok",
+        count=len(papers_dicts),
+        papers=papers_dicts,
+    )
+
+
+def _make_source(source_name: str, timeout: float) -> Any | None:
+    """Factory: return a ``PaperSource`` for *source_name*, or ``None``."""
+    if source_name == "semantic_scholar":
+        from app.sources.semantic_scholar import SemanticScholarSource
+
+        return SemanticScholarSource(timeout=timeout)
+    if source_name == "exa":
+        from app.sources.exa import ExaSource
+
+        return ExaSource()
+    if source_name == "paperhub":
+        from app.sources.paperhub import PaperHubSource
+
+        return PaperHubSource()
+    return None
+
+
 # ── Node 1b: Language Bias Audit ─────────────────────────────────────────
 
 
 async def language_bias_node(state: ResearchState) -> dict:
     """Compute language coverage audit from search diagnostics."""
-    from app.services.language_bias import compute_bias_audit
+    from app.services.language_bias import QueryVariant, compute_bias_audit
 
     diagnostics = state.source_diagnostics or {}
     variants = state.query_variants or []
@@ -191,19 +274,15 @@ async def language_bias_node(state: ResearchState) -> dict:
             },
         }
 
-    variant_objects = []
+    variant_objects: list[QueryVariant] = []
     for v in variants:
         sources = v.get("sources", [])
         source_name = sources[0] if isinstance(sources, list) and sources else "semantic_scholar"
         variant_objects.append(
-            type(
-                "V",
-                (),
-                {
-                    "source": source_name,
-                    "query": v.get("query", ""),
-                    "language": v.get("language", "en"),
-                },
+            QueryVariant(
+                source=source_name,
+                query=v.get("query", ""),
+                language=v.get("language", "en"),
             )
         )
 
@@ -234,22 +313,115 @@ async def language_bias_node(state: ResearchState) -> dict:
 # ── Node 2: Save Screened Papers ───────────────────────────────────────────
 
 
-async def save_screened_node(state: ResearchState) -> dict:
+async def save_screened_node(state: ResearchState, db) -> dict:
     """Save papers that passed user screening into the project.
 
-    This node expects the caller to have set ``screened_paper_ids``
-    (via the user-screening step in the frontend). It persists the selected
-    ``raw_papers`` to the database.
+    Persists ``raw_papers`` (or a subset identified by ``screened_paper_ids``)
+    to the database as ``ProjectPaper`` rows via ``save_paper_to_project``.
 
-    In a full implementation this would call ``save_paper_to_project`` in a loop.
-    For now it's a placeholder that validates the state is correct.
+    When ``screened_paper_ids`` is empty (no frontend screening step), all
+    papers in ``raw_papers`` are auto-screened so the pipeline can proceed.
     """
-    if not state.screened_paper_ids and state.raw_papers:
-        # Auto-screen all papers when the user hasn't selected yet
-        # (in production this would be set by the frontend)
-        logger.info("No screened papers — auto-screening all %d papers", len(state.raw_papers))
+    from sqlalchemy import select
+
+    from app.db.models import User
+    from app.schemas.project import SavePaperRequest
+    from app.services.project import save_paper_to_project
+
+    if not state.project_id:
+        return {
+            "current_node": "save_screened",
+            "errors": ["No project_id in state"],
+        }
+
+    if not state.raw_papers:
+        logger.info("No raw papers to save — skipping")
+        return {
+            "current_node": "save_screened",
+            "saved_paper_ids": [],
+        }
+
+    # Fetch the user for ownership verification (required by save_paper_to_project)
+    user_result = await db.execute(select(User).where(User.id == state.user_id))
+    user = user_result.scalar_one_or_none()
+    if user is None:
+        logger.error("User %s not found — cannot save papers", state.user_id)
+        return {
+            "current_node": "save_screened",
+            "errors": [f"User {state.user_id} not found"],
+        }
+
+    # Determine which papers to persist
+    # screened_paper_ids is a future frontend feature — fall back to all papers
+    papers_to_save = state.raw_papers
+    if state.screened_paper_ids:
+        logger.info(
+            "Using %d screened paper IDs — filtering raw papers",
+            len(state.screened_paper_ids),
+        )
+    else:
+        logger.info(
+            "No screened_paper_ids — auto-saving all %d papers",
+            len(state.raw_papers),
+        )
+
+    saved_ids: list[UUID] = []
+    for paper_dict in papers_to_save:
+        try:
+            # Normalise authors to the format SavePaperRequest expects
+            authors_mapped = []
+            for a in paper_dict.get("authors") or []:
+                authors_mapped.append(
+                    {
+                        "name": a.get("name") if isinstance(a, dict) else str(a),
+                        "author_id": "",
+                    }
+                )
+
+            # Bundle source-specific fields into the source_specific dict
+            source_specific = {}
+            for k in ("pdf_source", "fields_of_study", "is_open_access", "pdf_url"):
+                v = paper_dict.get(k)
+                if v is not None:
+                    source_specific[k] = v
+
+            req = SavePaperRequest(
+                paper_title=paper_dict.get("title", ""),
+                paper_abstract=paper_dict.get("abstract"),
+                paper_year=paper_dict.get("year"),
+                paper_venue=paper_dict.get("venue"),
+                paper_doi=paper_dict.get("doi"),
+                paper_arxiv_id=paper_dict.get("arxiv_id"),
+                paper_semantic_scholar_id=paper_dict.get("semantic_scholar_id"),
+                paper_url=paper_dict.get("url"),
+                paper_citation_count=paper_dict.get("citation_count"),
+                paper_authors=authors_mapped,
+                paper_source_names=[paper_dict.get("source_name", "semantic_scholar")],
+                download_pdf=True,
+                source_specific=source_specific,
+            )
+            save_result = await save_paper_to_project(db, user, state.project_id, req)
+            if save_result is not None:
+                saved_ids.append(save_result.project_paper_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to save paper '%s': %s",
+                paper_dict.get("title", "?"),
+                exc,
+            )
+            # Roll back so the same session can be reused for the next paper
+            with suppress(Exception):
+                await db.rollback()
+
+    logger.info(
+        "Saved %d / %d papers for project %s",
+        len(saved_ids),
+        len(papers_to_save),
+        state.project_id,
+    )
     return {
         "current_node": "save_screened",
+        "saved_paper_ids": saved_ids,
     }
 
 
@@ -275,6 +447,22 @@ def _build_chunk_context(
         parts.append(block)
         total += len(block)
     return "\n\n".join(parts) if parts else "No full-text sections available."
+
+
+async def _build_graph_context(db, project_id: UUID, query: str) -> str:
+    try:
+        from app.services.knowledge_graph import build_graph_context
+
+        return await build_graph_context(db, project_id, query=query)
+    except Exception as exc:
+        logger.warning("Knowledge graph context skipped: %s", exc)
+        return "No knowledge graph context available."
+
+
+def _combine_graph_and_chunk_context(graph_context: str, chunk_context: str) -> str:
+    if graph_context == "No knowledge graph context available.":
+        return chunk_context
+    return f"{graph_context}\n\nRetrieved full-text evidence:\n{chunk_context}"
 
 
 def _rows_to_json_safe(rows: list[dict]) -> list[dict]:
@@ -320,24 +508,25 @@ async def matrix_extraction_node(state: ResearchState, db) -> dict:
             "matrix_rows": [],
         }
 
-    # 2. Retrieve chunks for the whole project (single query, outside LLM loop)
+    # 2. Per-paper retrieval: get top chunks for each paper individually
     query = state.user_topic or ""
-    all_chunks = await retrieve_project_evidence(db, state.project_id, query, limit=40)
-
-    # 3. Group chunks by project_paper_id
-    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
-    for chunk in all_chunks:
-        chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
 
     # ── DB session is no longer needed below; LLM calls happen next ──
 
-    # 4. Extract matrix rows via LLM
+    # 3. Extract matrix rows via LLM (with per-paper chunks)
     provider = get_provider()
     rows: list[dict] = []
 
     for pp in papers_to_process:
         paper = pp.paper
-        paper_chunks = chunks_by_paper.get(pp.id, [])[:_MAX_CHUNKS_PER_PAPER]
+        # Per-paper retrieval: top chunks for THIS paper only
+        paper_chunks = await retrieve_paper_evidence(
+            db,
+            pp.id,
+            query,
+            limit=_MAX_CHUNKS_PER_PAPER,
+            content_types=["method", "results", "limitation", "table", "narrative"],
+        )
         chunk_context = _build_chunk_context(paper_chunks)
 
         try:
@@ -406,13 +595,58 @@ async def matrix_extraction_node(state: ResearchState, db) -> dict:
 
 # ── Node 4: Gap Analysis ───────────────────────────────────────────────────
 
-_MAX_GAP_CHUNKS = 30
+_MAX_GAP_CHUNKS_PER_QUERY = 15
+_MAX_GAP_CHUNKS_TOTAL = 40
 _MAX_CHUNKS_PER_GAP_PAPER = 5
 _MIN_MATRIX_ROWS_FOR_GAPS = 5
+_MIN_EVIDENCE_PAPERS_FOR_GAP = 2
+
+_GAP_RETRIEVAL_QUERIES = [
+    "limitations future work {topic}",
+    "evaluation gaps dataset limitations {topic}",
+    "method limitations open challenges {topic}",
+    "underexplored missing comparison {topic}",
+]
+
+
+async def _multi_query_gap_retrieval(
+    db, project_id: UUID, topic: str
+) -> dict[UUID, list[RetrievedChunk]]:
+    """Run multiple retrieval queries and merge + dedupe results by chunk_id.
+
+    Returns chunks grouped by project_paper_id, sorted by score descending.
+    """
+    all_chunks: list[RetrievedChunk] = []
+    seen_chunk_ids: set[UUID] = set()
+
+    for template in _GAP_RETRIEVAL_QUERIES:
+        query = template.format(topic=topic)
+        try:
+            chunks = await retrieve_project_evidence(
+                db, project_id, query, limit=_MAX_GAP_CHUNKS_PER_QUERY
+            )
+            for c in chunks:
+                if c.chunk_id not in seen_chunk_ids:
+                    seen_chunk_ids.add(c.chunk_id)
+                    all_chunks.append(c)
+        except Exception as exc:
+            logger.warning("Gap retrieval query failed for '%s': %s", query[:40], exc)
+
+    all_chunks.sort(key=lambda c: c.score, reverse=True)
+    all_chunks = all_chunks[:_MAX_GAP_CHUNKS_TOTAL]
+
+    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
+    for chunk in all_chunks:
+        chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
+
+    return chunks_by_paper
 
 
 async def gap_analysis_node(state: ResearchState, db) -> dict:
-    """Detect research gaps from matrix rows + RAG chunks, persist to DB."""
+    """Detect research gaps from matrix rows + RAG chunks, persist to DB.
+
+    Uses multi-query retrieval with deduplication for broader evidence coverage.
+    """
     from sqlalchemy import select
 
     from app.db.models import LiteratureMatrixRow, ProjectPaper
@@ -445,13 +679,8 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             ],
         }
 
-    # 2. RAG retrieval for gap-relevant chunks
-    query = f"research gaps limitations missing {state.user_topic or ''}"
-    all_chunks = await retrieve_project_evidence(db, state.project_id, query, limit=_MAX_GAP_CHUNKS)
-
-    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
-    for chunk in all_chunks:
-        chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
+    # 2. Multi-query RAG retrieval for broader evidence coverage
+    chunks_by_paper = await _multi_query_gap_retrieval(db, state.project_id, state.user_topic or "")
 
     # 3. Load valid project_paper_ids for evidence validation
     pp_stmt = select(ProjectPaper.id).where(
@@ -492,13 +721,19 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             chunk_parts.append(block)
             total_chars += len(block)
     chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
+    graph_context = await _build_graph_context(
+        db,
+        state.project_id,
+        f"research gaps limitations {state.user_topic or ''}",
+    )
+    prompt_context = _combine_graph_and_chunk_context(graph_context, chunk_context)
 
     try:
         user_msg = GAP_ANALYSIS_CHUNK_USER.format(
             project_topic=state.user_topic,
             paper_ids_json=paper_ids_json,
             matrix_rows_json=json.dumps(safe_rows, indent=2),
-            chunk_context=chunk_context,
+            chunk_context=prompt_context,
         )
         provider = get_provider()
         result = await provider.complete_structured(
@@ -517,7 +752,7 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             "errors": [f"Gap analysis failed: {exc}"],
         }
 
-    # 5. Validate evidence_paper_ids and filter gaps
+    # 5. Validate evidence_paper_ids + evidence coverage guard
     validated_gaps: list[dict] = []
     for gap in raw_gaps:
         raw_ids = gap.get("evidence_paper_ids", [])
@@ -534,13 +769,34 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             )
             continue
 
+        # Guard: require minimum 2 evidence papers (unless gap explicitly
+        # describes a single-paper limitation — detected by short evidence list
+        # with "single" or "one" in the description)
+        desc_lower = (gap.get("description", "") + gap.get("evidence_summary", "")).lower()
+        is_single_paper_gap = "single paper" in desc_lower or "one paper" in desc_lower
+        if len(valid_ids) < _MIN_EVIDENCE_PAPERS_FOR_GAP and not is_single_paper_gap:
+            logger.info(
+                "Gap '%s' has only %d evidence paper(s) (< %d), skipping",
+                gap.get("title", ""),
+                len(valid_ids),
+                _MIN_EVIDENCE_PAPERS_FOR_GAP,
+            )
+            continue
+
+        # Guard: downgrade confidence if no chunk evidence was available
+        confidence = gap.get("confidence", "medium")
+        has_chunk_evidence = chunk_context != "No full-text sections available."
+        if not has_chunk_evidence and confidence == "high":
+            confidence = "medium"
+            logger.info("Downgraded gap confidence to 'medium' — no chunk evidence")
+
         validated_gaps.append(
             {
                 "title": gap.get("title", "Untitled gap"),
                 "description": gap.get("description", ""),
                 "suggested_direction": gap.get("suggested_direction", ""),
                 "evidence_summary": gap.get("evidence_summary", ""),
-                "confidence": gap.get("confidence", "medium"),
+                "confidence": confidence,
                 "evidence": [
                     {
                         "project_paper_id": eid,
@@ -611,6 +867,7 @@ async def review_writer_node(state: ResearchState, db) -> dict:
     from app.services.report_generation import (
         _build_content_markdown,
         _build_references,
+        _build_review_retrieval_query,
         _persist_report,
         _validate_citations,
     )
@@ -649,11 +906,18 @@ async def review_writer_node(state: ResearchState, db) -> dict:
             "report_status": "failed",
             "errors": ["No saved papers in project"],
         }
-    # 3. Load gaps from state (already validated by gap_analysis_node)
+    # 3. Load gaps/conflicts from state (already validated by previous nodes)
     gaps = state.gaps or []
+    conflicts = state.conflicts or []
 
     # 4. RAG retrieval
-    query = state.user_topic or ""
+    query = _build_review_retrieval_query(
+        state.user_topic or "",
+        state.research_question,
+        matrix_rows,
+        gaps,
+        conflicts,
+    )
     all_chunks = await retrieve_project_evidence(
         db, state.project_id, query, limit=_MAX_REVIEW_CHUNKS
     )
@@ -674,6 +938,8 @@ async def review_writer_node(state: ResearchState, db) -> dict:
             chunk_parts.append(block)
             total_chars += len(block)
     chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
+    graph_context = await _build_graph_context(db, state.project_id, query)
+    prompt_context = _combine_graph_and_chunk_context(graph_context, chunk_context)
 
     # 6. Build prompt
     safe_rows = _rows_to_json_safe(
@@ -692,6 +958,7 @@ async def review_writer_node(state: ResearchState, db) -> dict:
         ]
     )
     safe_gaps = _rows_to_json_safe(gaps)
+    safe_conflicts = _rows_to_json_safe(conflicts)
     paper_ids_json = json.dumps([str(pp.id) for pp in project_papers])
 
     user_msg = REVIEW_WRITER_CHUNK_USER.format(
@@ -700,7 +967,8 @@ async def review_writer_node(state: ResearchState, db) -> dict:
         paper_ids_json=paper_ids_json,
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         gaps_json=json.dumps(safe_gaps, indent=2),
-        chunk_context=chunk_context,
+        conflicts_json=json.dumps(safe_conflicts, indent=2),
+        chunk_context=prompt_context,
     )
 
     try:

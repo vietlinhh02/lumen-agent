@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping, Sequence
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +18,7 @@ from app.ai.prompts import (
 from app.ai.provider import get_provider
 from app.ai.structured_outputs import ReviewOutput
 from app.db.models import (
+    ConflictingFinding,
     LiteratureMatrixRow,
     Paper,
     ProjectPaper,
@@ -30,6 +33,89 @@ logger = logging.getLogger(__name__)
 _MAX_RAG_CHUNKS = 50
 _MAX_CHUNKS_PER_PAPER = 5
 _MAX_CHUNK_CONTEXT_CHARS = 12000
+_MAX_REVIEW_QUERY_TERMS = 80
+_MAX_REVIEW_QUERY_CHARS = 3000
+_REVIEW_BASE_KEYWORDS = (
+    "literature review synthesis",
+    "method comparison",
+    "dataset context",
+    "key results",
+    "limitations",
+    "research gaps",
+    "conflicting findings",
+)
+
+
+def _build_review_retrieval_query(
+    topic: str,
+    research_question: str | None,
+    matrix_rows: Sequence[object],
+    gaps: Sequence[object],
+    conflicts: Sequence[object],
+) -> str:
+    """Build a high-signal retrieval query from matrix, gap, and conflict data."""
+    terms: list[str] = []
+
+    _append_unique_term(terms, topic)
+    _append_unique_term(terms, research_question)
+    for keyword in _REVIEW_BASE_KEYWORDS:
+        _append_unique_term(terms, keyword)
+
+    for row in matrix_rows:
+        for field in (
+            "research_problem",
+            "method",
+            "dataset_or_context",
+            "key_result",
+            "limitation",
+            "contribution",
+            "relevance",
+        ):
+            _append_unique_term(terms, getattr(row, field, None))
+
+    for gap in gaps:
+        for field in ("title", "description", "suggested_direction", "evidence_summary"):
+            _append_unique_term(terms, _get_field(gap, field))
+
+    for conflict in conflicts:
+        for field in (
+            "title",
+            "description",
+            "shared_context",
+            "claim_a",
+            "claim_b",
+            "possible_explanation",
+        ):
+            _append_unique_term(terms, _get_field(conflict, field))
+
+    return " ".join(terms[:_MAX_REVIEW_QUERY_TERMS])[:_MAX_REVIEW_QUERY_CHARS]
+
+
+def _append_unique_term(terms: list[str], value: object) -> None:
+    text = _normalize_query_term(value)
+    if not text:
+        return
+    if text.lower() in {term.lower() for term in terms}:
+        return
+    terms.append(text)
+
+
+def _get_field(source: object, field: str) -> object:
+    if isinstance(source, Mapping):
+        source_map = cast(Mapping[str, object], source)
+        return source_map.get(field)
+    return getattr(source, field, None)
+
+
+def _normalize_query_term(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if text.lower() in {"not specified", "none", "null", "n/a"}:
+        return ""
+    return " ".join(text.split())
 
 
 async def generate_report(
@@ -49,7 +135,7 @@ async def generate_report(
     """
     # 1. Load matrix rows
     stmt = select(LiteratureMatrixRow).where(LiteratureMatrixRow.project_id == project_id)
-    matrix_rows = (await db.execute(stmt)).scalars().all()
+    matrix_rows = list((await db.execute(stmt)).scalars().all())
     if not matrix_rows:
         return {"error": "No matrix rows. Generate a literature matrix first.", "status": "failed"}
 
@@ -58,7 +144,7 @@ async def generate_report(
         ProjectPaper.project_id == project_id,
         ProjectPaper.status == "saved",
     )
-    project_papers = (await db.execute(pp_stmt)).scalars().all()
+    project_papers = list((await db.execute(pp_stmt)).scalars().all())
     if not project_papers:
         return {"error": "No saved papers in project.", "status": "failed"}
     valid_pp_ids = {pp.id for pp in project_papers}
@@ -69,16 +155,20 @@ async def generate_report(
         gap_stmt = select(ResearchGap).where(ResearchGap.project_id == project_id)
         if selected_gap_ids:
             gap_stmt = gap_stmt.where(ResearchGap.id.in_(selected_gap_ids))
-        gaps = (await db.execute(gap_stmt)).scalars().all()
+        gaps = list((await db.execute(gap_stmt)).scalars().all())
 
-    # 4. RAG retrieval
-    query = topic or ""
+    # 4. Load conflicts so report generation can address matrix gap/conflict findings
+    conflict_stmt = select(ConflictingFinding).where(ConflictingFinding.project_id == project_id)
+    conflicts = list((await db.execute(conflict_stmt)).scalars().all())
+
+    # 5. RAG retrieval
+    query = _build_review_retrieval_query(topic, research_question, matrix_rows, gaps, conflicts)
     all_chunks = await retrieve_project_evidence(db, project_id, query, limit=_MAX_RAG_CHUNKS)
     chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
     for chunk in all_chunks:
         chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
 
-    # 5. Build chunk context
+    # 6. Build chunk context
     chunk_parts: list[str] = []
     total_chars = 0
     for pp_id, chunks in chunks_by_paper.items():
@@ -91,7 +181,7 @@ async def generate_report(
             total_chars += len(block)
     chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
 
-    # 6. Build prompt
+    # 7. Build prompt
     safe_rows = _rows_to_json_safe(
         [
             {
@@ -118,11 +208,27 @@ async def generate_report(
             for g in gaps
         ]
     )
+    safe_conflicts = _rows_to_json_safe(
+        [
+            {
+                "title": c.title,
+                "description": c.description,
+                "paper_a_id": c.paper_a_id,
+                "paper_b_id": c.paper_b_id,
+                "shared_context": c.shared_context,
+                "claim_a": c.claim_a,
+                "claim_b": c.claim_b,
+                "possible_explanation": c.possible_explanation,
+                "confidence": c.confidence,
+            }
+            for c in conflicts
+        ]
+    )
     paper_ids_json = json.dumps([str(pp.id) for pp in project_papers])
 
     report_title = title or f"Literature Review: {topic}"
 
-    # 7. First LLM attempt
+    # 8. First LLM attempt
     sections, audit, content_markdown = await _generate_and_validate(
         db,
         project_id,
@@ -131,11 +237,12 @@ async def generate_report(
         paper_ids_json,
         safe_rows,
         safe_gaps,
+        safe_conflicts,
         chunk_context,
         valid_pp_ids,
     )
 
-    # 8. Retry if >30% invalid
+    # 9. Retry if >30% invalid
     if audit["total_citations"] > 0:
         invalid_ratio = audit["invalid_citations"] / audit["total_citations"]
         if invalid_ratio > 0.3:
@@ -150,6 +257,7 @@ async def generate_report(
                 paper_ids_json,
                 safe_rows,
                 safe_gaps,
+                safe_conflicts,
                 chunk_context,
                 valid_pp_ids,
                 retry_warning=(
@@ -159,10 +267,10 @@ async def generate_report(
             if audit2["invalid_citations"] < audit["invalid_citations"]:
                 sections, audit, content_markdown = sections2, audit2, content_markdown2
 
-    # 9. Determine validation status
+    # 10. Determine validation status
     validation_status = "valid" if audit["invalid_citations"] == 0 else "invalid"
 
-    # 10. Build references from DB
+    # 11. Build references from DB
     cited_ids = set()
     for section in sections:
         for para in section.get("paragraphs", []):
@@ -171,7 +279,7 @@ async def generate_report(
                     cited_ids.add(pid)
     references = await _build_references(db, cited_ids)
 
-    # 11. Persist
+    # 12. Persist
     report = await _persist_report(
         db,
         project_id,
@@ -200,6 +308,7 @@ async def _generate_and_validate(
     paper_ids_json: str,
     safe_rows: list[dict],
     safe_gaps: list[dict],
+    safe_conflicts: list[dict],
     chunk_context: str,
     valid_pp_ids: set[UUID],
     retry_warning: str | None = None,
@@ -211,6 +320,7 @@ async def _generate_and_validate(
         paper_ids_json=paper_ids_json,
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         gaps_json=json.dumps(safe_gaps, indent=2),
+        conflicts_json=json.dumps(safe_conflicts, indent=2),
         chunk_context=chunk_context,
     )
     if retry_warning:

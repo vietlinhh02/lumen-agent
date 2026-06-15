@@ -1,4 +1,4 @@
-"""Tests for RAG-aware gap_analysis_node."""
+"""Tests for RAG-aware gap_analysis_node with multi-query retrieval."""
 
 from __future__ import annotations
 
@@ -114,16 +114,17 @@ async def test_gap_analysis_insufficient_matrix_rows():
 
 @pytest.mark.asyncio
 async def test_gap_analysis_generates_and_persists():
-    pp_id = uuid4()
+    pp_id_1 = uuid4()
+    pp_id_2 = uuid4()
     state = _make_state()
-    rows = [_make_matrix_row(pp_id=pp_id) for _ in range(5)]
-    chunk = _make_chunk(project_paper_id=pp_id)
+    rows = [_make_matrix_row(pp_id=pp_id_1) for _ in range(5)]
+    chunk = _make_chunk(project_paper_id=pp_id_1)
 
     # 1st call: matrix rows, 2nd call: valid project_paper_ids
     db = _mock_db_sequential(
         [
             _result_with_rows(rows),
-            _result_with_rows([pp_id]),
+            _result_with_rows([pp_id_1, pp_id_2]),
         ]
     )
 
@@ -141,7 +142,7 @@ async def test_gap_analysis_generates_and_persists():
                 {
                     "title": "Low-resource language evaluation",
                     "description": "Most papers evaluate English only.",
-                    "evidence_paper_ids": [str(pp_id)],
+                    "evidence_paper_ids": [str(pp_id_1), str(pp_id_2)],
                     "evidence_summary": "Papers report English-only evaluation.",
                     "suggested_direction": "Evaluate on Vietnamese datasets.",
                     "confidence": "medium",
@@ -160,14 +161,15 @@ async def test_gap_analysis_generates_and_persists():
 async def test_gap_analysis_filters_invalid_evidence():
     state = _make_state()
     valid_pp_id = uuid4()
+    valid_pp_id_2 = uuid4()
     invalid_pp_id = uuid4()
     rows = [_make_matrix_row(pp_id=valid_pp_id) for _ in range(5)]
 
-    # 1st call: matrix rows, 2nd call: only valid_pp_id is a saved project_paper
+    # 1st call: matrix rows, 2nd call: valid project_papers
     db = _mock_db_sequential(
         [
             _result_with_rows(rows),
-            _result_with_rows([valid_pp_id]),
+            _result_with_rows([valid_pp_id, valid_pp_id_2]),
         ]
     )
 
@@ -182,8 +184,8 @@ async def test_gap_analysis_filters_invalid_evidence():
             "gaps": [
                 {
                     "title": "Gap with valid evidence",
-                    "description": "Test",
-                    "evidence_paper_ids": [str(valid_pp_id)],
+                    "description": "Test with multiple papers supporting.",
+                    "evidence_paper_ids": [str(valid_pp_id), str(valid_pp_id_2)],
                     "evidence_summary": "Valid",
                     "suggested_direction": "Test",
                     "confidence": "medium",
@@ -240,3 +242,205 @@ async def test_gap_analysis_no_project_id():
 
     assert result["gap_status"] == "failed"
     assert "No project_id" in result["errors"][0]
+
+
+# ── New tests: multi-query retrieval + evidence coverage guard ──────────────
+
+
+@pytest.mark.asyncio
+async def test_gap_analysis_multi_query_retrieval_called():
+    """Verify that retrieve_project_evidence is called multiple times (multi-query)."""
+    pp_id = uuid4()
+    state = _make_state()
+    rows = [_make_matrix_row(pp_id=pp_id) for _ in range(5)]
+
+    db = _mock_db_sequential([_result_with_rows(rows), _result_with_rows([pp_id])])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_retrieve,
+        patch("app.agents.nodes.upsert_gaps", new_callable=AsyncMock, return_value=1),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "gaps": [
+                {
+                    "title": "Gap with two papers",
+                    "description": "Needs at least two evidence papers.",
+                    "evidence_paper_ids": [str(pp_id), str(uuid4())],
+                    "evidence_summary": "Test",
+                    "suggested_direction": "Test",
+                    "confidence": "medium",
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            await gap_analysis_node(state, db)
+
+    # Multi-query: 4 retrieval queries
+    assert mock_retrieve.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_gap_analysis_rejects_fewer_than_2_evidence_papers():
+    """Gap with only 1 evidence paper is rejected (guard)."""
+    pp_id = uuid4()
+    state = _make_state()
+    rows = [_make_matrix_row(pp_id=pp_id) for _ in range(5)]
+
+    db = _mock_db_sequential([_result_with_rows(rows), _result_with_rows([pp_id])])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch("app.agents.nodes.upsert_gaps", new_callable=AsyncMock) as mock_upsert,
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "gaps": [
+                {
+                    "title": "Single paper gap",
+                    "description": "Only a unique limitation from one study.",
+                    "evidence_paper_ids": [str(pp_id)],
+                    "evidence_summary": "Limited coverage found in one source.",
+                    "suggested_direction": "Future work",
+                    "confidence": "medium",
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await gap_analysis_node(state, db)
+
+    assert result["gap_status"] == "completed"
+    assert len(result["gaps"]) == 0  # rejected: < 2 evidence papers
+    mock_upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_gap_analysis_accepts_single_paper_gap_if_explicit():
+    """Gap with 1 evidence paper is accepted if description mentions 'single paper'."""
+    pp_id = uuid4()
+    state = _make_state()
+    rows = [_make_matrix_row(pp_id=pp_id) for _ in range(5)]
+
+    db = _mock_db_sequential([_result_with_rows(rows), _result_with_rows([pp_id])])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch("app.agents.nodes.upsert_gaps", new_callable=AsyncMock, return_value=1),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "gaps": [
+                {
+                    "title": "Single paper limitation",
+                    "description": (
+                        "This single paper reports a unique limitation not found elsewhere."
+                    ),
+                    "evidence_paper_ids": [str(pp_id)],
+                    "evidence_summary": "Single paper finding",
+                    "suggested_direction": "Investigate further",
+                    "confidence": "medium",
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await gap_analysis_node(state, db)
+
+    assert len(result["gaps"]) == 1  # accepted: "single paper" in description
+
+
+@pytest.mark.asyncio
+async def test_gap_analysis_downgrades_confidence_without_chunks():
+    """When no chunks are retrieved, high confidence is downgraded to medium."""
+    pp_id_1 = uuid4()
+    pp_id_2 = uuid4()
+    state = _make_state()
+    rows = [_make_matrix_row(pp_id=pp_id_1) for _ in range(5)]
+
+    db = _mock_db_sequential([_result_with_rows(rows), _result_with_rows([pp_id_1, pp_id_2])])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch("app.agents.nodes.upsert_gaps", new_callable=AsyncMock, return_value=1),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "gaps": [
+                {
+                    "title": "Two paper gap",
+                    "description": "Two papers support this gap.",
+                    "evidence_paper_ids": [str(pp_id_1), str(pp_id_2)],
+                    "evidence_summary": "Two papers",
+                    "suggested_direction": "Future work",
+                    "confidence": "high",
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await gap_analysis_node(state, db)
+
+    assert len(result["gaps"]) == 1
+    assert result["gaps"][0]["confidence"] == "medium"  # downgraded
+
+
+@pytest.mark.asyncio
+async def test_gap_analysis_dedupes_chunks_by_id():
+    """Multi-query retrieval deduplicates chunks by chunk_id."""
+    pp_id = uuid4()
+    chunk = _make_chunk(project_paper_id=pp_id, chunk_text="Unique limitation text.")
+
+    state = _make_state()
+    rows = [_make_matrix_row(pp_id=pp_id) for _ in range(5)]
+
+    db = _mock_db_sequential([_result_with_rows(rows), _result_with_rows([pp_id])])
+
+    call_count = {"n": 0}
+
+    async def mock_retrieve(db, project_id, query, limit=15):
+        call_count["n"] += 1
+        # Return same chunk on first call, empty on rest (simulates dedup)
+        if call_count["n"] == 1:
+            return [chunk]
+        return []
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            side_effect=mock_retrieve,
+        ),
+        patch("app.agents.nodes.upsert_gaps", new_callable=AsyncMock, return_value=1),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "gaps": [
+                {
+                    "title": "Gap with deduped chunks",
+                    "description": "Supported by two papers.",
+                    "evidence_paper_ids": [str(pp_id), str(uuid4())],
+                    "evidence_summary": "Test",
+                    "suggested_direction": "Test",
+                    "confidence": "medium",
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await gap_analysis_node(state, db)
+
+    assert result["gap_status"] == "completed"
+    # All 4 queries were made
+    assert call_count["n"] == 4

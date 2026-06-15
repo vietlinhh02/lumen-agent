@@ -214,24 +214,29 @@ async def test_matrix_extraction_no_chunks_falls_back():
         return_value=[],
     ):
         with patch(
-            "app.services.literature_matrix.upsert_rows",
+            "app.services.hybrid_retrieval.encode_text",
             new_callable=AsyncMock,
-            return_value=1,
+            return_value=[0.0] * 1536,
         ):
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "research_problem": "Test problem",
-                "method": "Test method",
-                "dataset_or_context": "Test context",
-                "key_result": "Test result",
-                "limitation": "not specified",
-                "contribution": "Test contribution",
-                "relevance": "Test relevance",
-                "confidence": "medium",
-            }
+            with patch(
+                "app.services.literature_matrix.upsert_rows",
+                new_callable=AsyncMock,
+                return_value=1,
+            ):
+                mock_provider = AsyncMock()
+                mock_provider.complete_structured.return_value = {
+                    "research_problem": "Test problem",
+                    "method": "Test method",
+                    "dataset_or_context": "Test context",
+                    "key_result": "Test result",
+                    "limitation": "not specified",
+                    "contribution": "Test contribution",
+                    "relevance": "Test relevance",
+                    "confidence": "medium",
+                }
 
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await matrix_extraction_node(state, db)
+                with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+                    result = await matrix_extraction_node(state, db)
 
     assert result["matrix_status"] == "completed"
     assert len(result["matrix_rows"]) == 1
@@ -254,33 +259,38 @@ async def test_matrix_extraction_partial_failure():
         return_value=[],
     ):
         with patch(
-            "app.services.literature_matrix.upsert_rows",
+            "app.services.hybrid_retrieval.encode_text",
             new_callable=AsyncMock,
-            return_value=1,
+            return_value=[0.0] * 1536,
         ):
-            call_count = 0
+            with patch(
+                "app.services.literature_matrix.upsert_rows",
+                new_callable=AsyncMock,
+                return_value=1,
+            ):
+                call_count = 0
 
-            async def mock_complete(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    raise Exception("LLM timeout")
-                return {
-                    "research_problem": "Test",
-                    "method": "Test",
-                    "dataset_or_context": "Test",
-                    "key_result": "Test",
-                    "limitation": "not specified",
-                    "contribution": "Test",
-                    "relevance": "Test",
-                    "confidence": "medium",
-                }
+                async def mock_complete(*args, **kwargs):
+                    nonlocal call_count
+                    call_count += 1
+                    if call_count == 1:
+                        raise Exception("LLM timeout")
+                    return {
+                        "research_problem": "Test",
+                        "method": "Test",
+                        "dataset_or_context": "Test",
+                        "key_result": "Test",
+                        "limitation": "not specified",
+                        "contribution": "Test",
+                        "relevance": "Test",
+                        "confidence": "medium",
+                    }
 
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured = mock_complete
+                mock_provider = AsyncMock()
+                mock_provider.complete_structured = mock_complete
 
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await matrix_extraction_node(state, db)
+                with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+                    result = await matrix_extraction_node(state, db)
 
     assert result["matrix_status"] == "completed"
     assert len(result["matrix_rows"]) == 1  # only second paper succeeded
@@ -300,24 +310,29 @@ async def test_matrix_extraction_invalid_confidence_defaults_to_medium():
         return_value=[],
     ):
         with patch(
-            "app.services.literature_matrix.upsert_rows",
+            "app.services.hybrid_retrieval.encode_text",
             new_callable=AsyncMock,
-            return_value=1,
+            return_value=[0.0] * 1536,
         ):
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "research_problem": "Test",
-                "method": "Test",
-                "dataset_or_context": "Test",
-                "key_result": "Test",
-                "limitation": "not specified",
-                "contribution": "Test",
-                "relevance": "Test",
-                "confidence": "very_high",  # invalid
-            }
+            with patch(
+                "app.services.literature_matrix.upsert_rows",
+                new_callable=AsyncMock,
+                return_value=1,
+            ):
+                mock_provider = AsyncMock()
+                mock_provider.complete_structured.return_value = {
+                    "research_problem": "Test",
+                    "method": "Test",
+                    "dataset_or_context": "Test",
+                    "key_result": "Test",
+                    "limitation": "not specified",
+                    "contribution": "Test",
+                    "relevance": "Test",
+                    "confidence": "very_high",  # invalid
+                }
 
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await matrix_extraction_node(state, db)
+                with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+                    result = await matrix_extraction_node(state, db)
 
     assert result["matrix_rows"][0]["extraction_confidence"] == "medium"
 
@@ -336,24 +351,29 @@ async def test_matrix_extraction_persist_failure_sets_status():
         return_value=[],
     ):
         with patch(
-            "app.services.literature_matrix.upsert_rows",
+            "app.services.hybrid_retrieval.encode_text",
             new_callable=AsyncMock,
-            side_effect=Exception("DB connection lost"),
+            return_value=[0.0] * 1536,
         ):
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "research_problem": "Test",
-                "method": "Test",
-                "dataset_or_context": "Test",
-                "key_result": "Test",
-                "limitation": "not specified",
-                "contribution": "Test",
-                "relevance": "Test",
-                "confidence": "medium",
-            }
+            with patch(
+                "app.services.literature_matrix.upsert_rows",
+                new_callable=AsyncMock,
+                side_effect=Exception("DB connection lost"),
+            ):
+                mock_provider = AsyncMock()
+                mock_provider.complete_structured.return_value = {
+                    "research_problem": "Test",
+                    "method": "Test",
+                    "dataset_or_context": "Test",
+                    "key_result": "Test",
+                    "limitation": "not specified",
+                    "contribution": "Test",
+                    "relevance": "Test",
+                    "confidence": "medium",
+                }
 
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await matrix_extraction_node(state, db)
+                with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+                    result = await matrix_extraction_node(state, db)
 
     assert result["matrix_status"] == "failed"
     assert len(result["matrix_rows"]) == 1  # rows still returned for state
@@ -376,24 +396,29 @@ async def test_matrix_extraction_rows_are_json_serializable():
         return_value=[],
     ):
         with patch(
-            "app.services.literature_matrix.upsert_rows",
+            "app.services.hybrid_retrieval.encode_text",
             new_callable=AsyncMock,
-            return_value=1,
+            return_value=[0.0] * 1536,
         ):
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "research_problem": "Test",
-                "method": "Test",
-                "dataset_or_context": "Test",
-                "key_result": "Test",
-                "limitation": "not specified",
-                "contribution": "Test",
-                "relevance": "Test",
-                "confidence": "medium",
-            }
+            with patch(
+                "app.services.literature_matrix.upsert_rows",
+                new_callable=AsyncMock,
+                return_value=1,
+            ):
+                mock_provider = AsyncMock()
+                mock_provider.complete_structured.return_value = {
+                    "research_problem": "Test",
+                    "method": "Test",
+                    "dataset_or_context": "Test",
+                    "key_result": "Test",
+                    "limitation": "not specified",
+                    "contribution": "Test",
+                    "relevance": "Test",
+                    "confidence": "medium",
+                }
 
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await matrix_extraction_node(state, db)
+                with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+                    result = await matrix_extraction_node(state, db)
 
     # This should NOT raise TypeError: Object of type UUID is not JSON serializable
     json.dumps(result["matrix_rows"])

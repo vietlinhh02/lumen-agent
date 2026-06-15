@@ -17,7 +17,7 @@ class ResearchState:
     """
 
     # ── Identity ──
-    project_id: UUID
+    project_id: UUID | None
     user_id: UUID
 
     # ── Query Planning ──
@@ -49,6 +49,10 @@ class ResearchState:
         default_factory=list
     )  # [{title, description, evidence_paper_ids, ...}]
     gap_status: str = "idle"
+
+    # ── Conflict Detection ──
+    conflicts: list[dict] = field(default_factory=list)
+    conflict_status: str = "idle"
 
     # ── Review ──
     report_sections: list[dict] = field(default_factory=list)

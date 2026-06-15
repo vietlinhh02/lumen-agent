@@ -11,7 +11,7 @@ import pytest
 from app.agents.nodes import review_writer_node
 from app.agents.state import ResearchState
 from app.services.hybrid_retrieval import RetrievedChunk
-
+from app.services.report_generation import _build_review_retrieval_query
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +84,46 @@ def _result_with_rows(rows):
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 
+def test_review_retrieval_query_uses_matrix_gap_and_conflict_terms():
+    rows = [
+        _make_matrix_row(
+            method="Graph RAG with reranking",
+            dataset="Vietnamese medical QA",
+        )
+    ]
+    gaps = [
+        {
+            "title": "Low-resource language gap",
+            "description": "Vietnamese evaluation is missing",
+            "suggested_direction": "Build multilingual benchmarks",
+            "evidence_summary": "Existing studies focus on English data.",
+        }
+    ]
+    conflicts = [
+        {
+            "title": "Reranking disagreement",
+            "shared_context": "same retrieval setting",
+            "claim_a": "Reranking improves factuality",
+            "claim_b": "Reranking reduces recall",
+            "possible_explanation": "Dataset and metric differences",
+        }
+    ]
+
+    query = _build_review_retrieval_query(
+        "RAG for medical QA",
+        "How does retrieval improve clinical answers?",
+        rows,
+        gaps,
+        conflicts,
+    )
+
+    assert "Graph RAG with reranking" in query
+    assert "Vietnamese medical QA" in query
+    assert "Low-resource language gap" in query
+    assert "Reranking disagreement" in query
+    assert "Reranking reduces recall" in query
+
+
 @pytest.mark.asyncio
 async def test_review_writer_no_matrix_rows():
     state = _make_state()
@@ -124,6 +164,7 @@ async def test_review_writer_generates_with_valid_citations():
         [
             _result_with_rows(rows),  # matrix rows
             _result_with_rows([SimpleNamespace(id=pp_id)]),  # project_papers
+            _result_with_rows([]),  # knowledge graph context
             _result_with_rows([pp_id]),  # valid pp_ids for validation
             _result_with_rows([SimpleNamespace(id=pp_id, paper_id=uuid4())]),  # for references
         ]
@@ -131,27 +172,26 @@ async def test_review_writer_generates_with_valid_citations():
 
     with patch(
         "app.agents.nodes.retrieve_project_evidence", new_callable=AsyncMock, return_value=[chunk]
-    ):
-        with patch(
-            "app.services.report_generation._persist_report", new_callable=AsyncMock
-        ) as mock_persist:
-            mock_persist.return_value = SimpleNamespace(id=uuid4())
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "sections": [
-                    {
-                        "heading": "Introduction",
-                        "paragraphs": [
-                            {
-                                "text": "RAG improves factuality.",
-                                "citation_paper_ids": [str(pp_id)],
-                            }
-                        ],
-                    }
-                ]
-            }
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await review_writer_node(state, db)
+    ), patch(
+        "app.services.report_generation._persist_report", new_callable=AsyncMock
+    ) as mock_persist:
+        mock_persist.return_value = SimpleNamespace(id=uuid4())
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "sections": [
+                {
+                    "heading": "Introduction",
+                    "paragraphs": [
+                        {
+                            "text": "RAG improves factuality.",
+                            "citation_paper_ids": [str(pp_id)],
+                        }
+                    ],
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await review_writer_node(state, db)
 
     assert result["report_status"] == "completed"
     assert len(result["report_sections"]) == 1
@@ -168,6 +208,7 @@ async def test_review_writer_invalid_citations_trimmed():
         [
             _result_with_rows(rows),  # matrix rows
             _result_with_rows([SimpleNamespace(id=valid_pp)]),  # project_papers
+            _result_with_rows([]),  # knowledge graph context
             _result_with_rows([valid_pp]),  # valid pp_ids for validation
             _result_with_rows([SimpleNamespace(id=valid_pp, paper_id=uuid4())]),  # for references
         ]
@@ -175,27 +216,26 @@ async def test_review_writer_invalid_citations_trimmed():
 
     with patch(
         "app.agents.nodes.retrieve_project_evidence", new_callable=AsyncMock, return_value=[]
-    ):
-        with patch(
-            "app.services.report_generation._persist_report", new_callable=AsyncMock
-        ) as mock_persist:
-            mock_persist.return_value = SimpleNamespace(id=uuid4())
-            mock_provider = AsyncMock()
-            mock_provider.complete_structured.return_value = {
-                "sections": [
-                    {
-                        "heading": "Results",
-                        "paragraphs": [
-                            {
-                                "text": "Some claim.",
-                                "citation_paper_ids": [str(valid_pp), str(invalid_pp)],
-                            }
-                        ],
-                    }
-                ]
-            }
-            with patch("app.agents.nodes.get_provider", return_value=mock_provider):
-                result = await review_writer_node(state, db)
+    ), patch(
+        "app.services.report_generation._persist_report", new_callable=AsyncMock
+    ) as mock_persist:
+        mock_persist.return_value = SimpleNamespace(id=uuid4())
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "sections": [
+                {
+                    "heading": "Results",
+                    "paragraphs": [
+                        {
+                            "text": "Some claim.",
+                            "citation_paper_ids": [str(valid_pp), str(invalid_pp)],
+                        }
+                    ],
+                }
+            ]
+        }
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await review_writer_node(state, db)
 
     assert result["report_status"] == "completed"
     # Invalid citation should be trimmed, valid one kept

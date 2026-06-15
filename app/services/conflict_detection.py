@@ -1,4 +1,4 @@
-"""Conflict detection from literature matrix rows."""
+"""Conflict detection from literature matrix rows + full-text evidence."""
 
 from __future__ import annotations
 
@@ -10,13 +10,19 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.prompts import CONTRADICTION_DETECTION_SYSTEM, CONTRADICTION_DETECTION_USER
+from app.ai.prompts import (
+    CONTRADICTION_DETECTION_CHUNK_SYSTEM,
+    CONTRADICTION_DETECTION_CHUNK_USER,
+)
 from app.ai.provider import get_provider
 from app.db.models import ConflictingFinding, LiteratureMatrixRow, ProjectPaper
+from app.services.hybrid_retrieval import retrieve_paper_evidence
 
 logger = logging.getLogger(__name__)
 
 _MIN_MATRIX_ROWS = 4
+_MAX_CHUNKS_PER_CONFLICT_PAPER = 4
+_MAX_CHUNK_CHARS_PER_PAPER = 2000
 
 
 async def detect_and_persist_conflicts(
@@ -24,8 +30,9 @@ async def detect_and_persist_conflicts(
     project_id: UUID,
     topic: str,
 ) -> list[dict]:
-    """Load matrix rows, group by shared method/dataset, detect conflicts via LLM,
-    validate paper IDs, persist to conflicting_findings table.
+    """Load matrix rows, group by shared method/dataset, retrieve per-paper
+    full-text evidence, detect conflicts via LLM, validate paper IDs,
+    persist to conflicting_findings table.
 
     Returns list of conflict dicts for state.
     """
@@ -69,7 +76,7 @@ async def detect_and_persist_conflicts(
         logger.info("No shared method/dataset groups found for conflict detection")
         return []
 
-    # 5. Detect conflicts via LLM
+    # 5. Detect conflicts via LLM with per-paper chunk evidence
     provider = get_provider()
     conflicts: list[dict] = []
 
@@ -89,15 +96,19 @@ async def detect_and_persist_conflicts(
             indent=2,
         )
 
+        # Per-paper retrieval: get top chunks for each paper in the group
+        chunk_context = await _build_group_chunk_context(db, project_id, group, shared_context)
+
         try:
-            user_msg = CONTRADICTION_DETECTION_USER.format(
+            user_msg = CONTRADICTION_DETECTION_CHUNK_USER.format(
                 project_topic=topic,
                 paper_ids_json=paper_ids_json,
                 matrix_rows_json=rows_json,
+                chunk_context=chunk_context,
             )
             result = await provider.complete_structured(
                 messages=[{"role": "user", "content": user_msg}],
-                system=CONTRADICTION_DETECTION_SYSTEM,
+                system=CONTRADICTION_DETECTION_CHUNK_SYSTEM,
                 schema={
                     "type": "object",
                     "properties": {
@@ -132,7 +143,7 @@ async def detect_and_persist_conflicts(
             logger.warning("Conflict detection failed for group '%s': %s", shared_context[:40], exc)
             continue
 
-        # 6. Validate paper IDs and persist
+        # 6. Validate paper IDs + evidence coverage guards
         for c in detected:
             try:
                 pa_id = UUID(c["paper_a_id"])
@@ -145,17 +156,30 @@ async def detect_and_persist_conflicts(
                 logger.warning("Conflict references invalid project_paper IDs, skipping")
                 continue
 
+            # Guard: shared_context must not be empty
+            conflict_shared = c.get("shared_context", shared_context)
+            if not conflict_shared or not conflict_shared.strip():
+                logger.warning("Conflict has empty shared_context, skipping")
+                continue
+
+            # Guard: lower confidence if no chunk evidence was available
+            confidence = c.get("confidence", "medium")
+            has_chunk_evidence = chunk_context != "No full-text sections available."
+            if not has_chunk_evidence and confidence == "high":
+                confidence = "medium"
+                logger.info("Downgraded conflict confidence to 'medium' — no chunk evidence")
+
             conflicts.append(
                 {
                     "title": c.get("title", "Potential conflict"),
                     "description": c.get("description", ""),
                     "paper_a_id": pa_id,
                     "paper_b_id": pb_id,
-                    "shared_context": c.get("shared_context", shared_context),
+                    "shared_context": conflict_shared,
                     "claim_a": c.get("claim_a"),
                     "claim_b": c.get("claim_b"),
                     "possible_explanation": c.get("possible_explanation"),
-                    "confidence": c.get("confidence", "medium"),
+                    "confidence": confidence,
                 }
             )
 
@@ -164,6 +188,74 @@ async def detect_and_persist_conflicts(
         await _persist_conflicts(db, project_id, conflicts)
 
     return _serialize_conflicts(conflicts)
+
+
+async def _build_group_chunk_context(
+    db: AsyncSession,
+    project_id: UUID,
+    group: list,
+    shared_context: str,
+) -> str:
+    """Retrieve per-paper chunks for a candidate conflict group.
+
+    Builds a context query from shared_context + key_result + limitation +
+    "conflicting findings different results" to find relevant evidence.
+    """
+    parts: list[str] = []
+    total_chars = 0
+
+    graph_context = await _build_project_graph_context(db, project_id, shared_context)
+    if graph_context != "No knowledge graph context available.":
+        parts.append(graph_context)
+        total_chars += len(graph_context)
+
+    for row in group:
+        pp_id = row.project_paper_id
+
+        # Build query from shared context + row fields
+        query_parts = [
+            shared_context,
+            row.key_result or "",
+            row.limitation or "",
+            "conflicting findings different results",
+        ]
+        query = " ".join(p for p in query_parts if p.strip())
+
+        chunks = await retrieve_paper_evidence(
+            db,
+            pp_id,
+            query,
+            limit=_MAX_CHUNKS_PER_CONFLICT_PAPER,
+            content_types=["method", "results", "limitation", "narrative"],
+        )
+
+        if not chunks:
+            continue
+
+        paper_parts: list[str] = []
+        for c in chunks:
+            label = c.section_label or c.content_type or "section"
+            block = f"---{label}---\n{c.chunk_text}"
+            if total_chars + len(block) > _MAX_CHUNK_CHARS_PER_PAPER * len(group):
+                break
+            paper_parts.append(block)
+            total_chars += len(block)
+
+        if paper_parts:
+            header = f"Paper {str(pp_id)[:8]}:"
+            parts.append(header + "\n" + "\n\n".join(paper_parts))
+
+    return "\n\n".join(parts) if parts else "No full-text sections available."
+
+
+async def _build_project_graph_context(db: AsyncSession, project_id: UUID, query: str) -> str:
+    try:
+        from app.services.knowledge_graph import build_graph_context
+
+        return await build_graph_context(db, project_id, query=query)
+    except Exception as exc:
+        logger.warning("Knowledge graph context skipped for conflicts: %s", exc)
+        return "No knowledge graph context available."
 
 
 async def _persist_conflicts(
