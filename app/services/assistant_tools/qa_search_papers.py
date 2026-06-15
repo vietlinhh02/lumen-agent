@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from app.ai.provider import get_provider
+from app.services.assistant_tools.ids import coerce_uuid
 from app.services.hybrid_retrieval import retrieve_project_evidence
 
 if TYPE_CHECKING:
@@ -15,14 +15,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) -> dict:
-    project_id = UUID(args["project_id"])
+async def handle(db, user, args: dict, runner: AssistantRunner | None = None) -> dict:
+    project_id = coerce_uuid(args["project_id"])
     question = args["question"]
 
     chunks = await retrieve_project_evidence(db, project_id, question, limit=10)
     chunk_text = "\n\n".join(
-        f"[paper {str(c.project_paper_id)[:8]} | {c.section_label or c.content_type}]\n{c.chunk_text}"
-        for c in chunks[:6]
+        (
+            f"[paper {str(chunk.project_paper_id)[:8]} | "
+            f"{chunk.section_label or chunk.content_type}]\n{chunk.chunk_text}"
+        )
+        for chunk in chunks[:6]
     )
 
     system = (

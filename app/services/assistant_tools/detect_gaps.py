@@ -6,12 +6,12 @@ import json
 import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from sqlalchemy import select
 
 from app.ai.provider import get_provider
 from app.db.models import LiteratureMatrixRow
+from app.services.assistant_tools.ids import coerce_uuid
 from app.services.gap_detection import upsert_gaps, validate_evidence_ids
 
 if TYPE_CHECKING:
@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 _MIN_MATRIX_ROWS = 5
 
 
-async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) -> dict:
-    project_id = UUID(args["project_id"])
+async def handle(db, user, args: dict, runner: AssistantRunner | None = None) -> dict:
+    project_id = coerce_uuid(args["project_id"])
     max_gaps = args.get("max_gaps", 5)
 
     if runner:
@@ -90,10 +90,20 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
         "Each gap: title, description, suggested_direction, evidence_summary, "
         "evidence_paper_ids (list), confidence (high/medium/low)."
     )
+    matrix_context = [
+        {
+            "project_paper_id": str(row.project_paper_id),
+            "method": row.method,
+            "dataset_or_context": row.dataset_or_context,
+            "key_result": row.key_result,
+            "limitation": row.limitation,
+        }
+        for row in matrix_rows
+    ]
     user_msg = (
         f"Project ID: {project_id}\n\n"
         f"Matrix rows ({len(matrix_rows)} total):\n"
-        f"{json.dumps([{'project_paper_id': str(r.project_paper_id), 'method': r.method, 'dataset_or_context': r.dataset_or_context, 'key_result': r.key_result, 'limitation': r.limitation} for r in matrix_rows], indent=2, default=str)}\n\n"
+        f"{json.dumps(matrix_context, indent=2, default=str)}\n\n"
         f"Method clusters:\n{json.dumps(method_summary, indent=2, default=str)}\n\n"
         f"Valid project_paper_ids: {json.dumps([str(pid) for pid in valid_pp_ids])}\n"
     )
@@ -148,7 +158,7 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
     validated: list[dict] = []
     for g in raw_gaps[:max_gaps]:
         try:
-            ev_ids = [UUID(i) if isinstance(i, str) else i for i in g.get("evidence_paper_ids", [])]
+            ev_ids = [coerce_uuid(i) for i in g.get("evidence_paper_ids", [])]
         except (ValueError, TypeError):
             continue
         valid_ids = [eid for eid in ev_ids if eid in valid_pp_ids]

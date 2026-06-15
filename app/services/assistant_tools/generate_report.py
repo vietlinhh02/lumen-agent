@@ -1,15 +1,22 @@
-"""Tool: generate_report — generate Markdown report and write to chat_documents."""
+"""Tool: generate_report — generate citation-safe ReviewReport and update ChatDocument.
+
+This tool calls the real production report_generation service, which writes
+a ReviewReport to the DB. This makes the report visible on the Reports page.
+
+It also updates the ChatDocument so the assistant chat preview stays in sync.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from sqlalchemy import select
 
 from app.db.models import ChatDocument, Project
+from app.services.assistant_tools.ids import coerce_uuid
 from app.services.report_chat_doc import generate_markdown_for_project
+from app.services.report_generation import generate_report as production_generate_report
 
 if TYPE_CHECKING:
     from app.services.assistant_runner import AssistantRunner
@@ -17,8 +24,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) -> dict:
-    project_id = UUID(args["project_id"])
+async def handle(db, user, args: dict, runner: AssistantRunner | None = None) -> dict:
+    project_id = coerce_uuid(args["project_id"])
     include_gaps = args.get("include_gaps", True)
 
     if runner:
@@ -28,35 +35,11 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
                 "step": "report",
                 "status": "running",
                 "percent": 0,
-                "label": "Writing report",
+                "label": "Generating report",
             }
         )
 
-    # Find or create chat_documents row for this project
-    doc = (
-        (
-            await db.execute(
-                select(ChatDocument)
-                .where(ChatDocument.project_id == project_id, ChatDocument.user_id == user.id)
-                .order_by(ChatDocument.created_at.desc())
-            )
-        )
-        .scalars()
-        .first()
-    )
-
-    if doc is None:
-        doc = ChatDocument(
-            project_id=project_id,
-            user_id=user.id,
-            title="Literature Review",
-            content_md="",
-            version=0,
-        )
-        db.add(doc)
-        await db.commit()
-        await db.refresh(doc)
-
+    # Verify project exists
     project = (
         await db.execute(select(Project).where(Project.id == project_id))
     ).scalar_one_or_none()
@@ -73,17 +56,29 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
             )
         return {"error": "Project not found", "status": "failed"}
 
-    result = await generate_markdown_for_project(
-        db=db,
-        project_id=project_id,
-        document_id=doc.id,
-        user_id=user.id,
-        topic=project.topic,
-        research_question=project.research_question,
-        include_gaps=include_gaps,
-    )
+    if runner:
+        await runner.emit(
+            {
+                "type": "log",
+                "level": "info",
+                "message": "Generating citation-safe literature review...",
+            }
+        )
 
-    if "error" in result and result.get("markdown", "") == "":
+    # ── 1. Write to ReviewReport (production persistence for Reports page) ─────
+    try:
+        prod_result = await production_generate_report(
+            db=db,
+            project_id=project_id,
+            user_id=user.id,
+            topic=project.topic,
+            research_question=project.research_question,
+            title=None,
+            include_gap_section=include_gaps,
+            selected_gap_ids=None,
+        )
+    except Exception as exc:
+        logger.exception("Production report generation failed for project %s", project_id)
         if runner:
             await runner.emit(
                 {
@@ -91,17 +86,77 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
                     "step": "report",
                     "status": "failed",
                     "percent": 0,
-                    "label": result["error"],
+                    "label": str(exc),
                 }
             )
-        return {"status": "failed", "error": result["error"]}
+        return {"error": str(exc)[:200], "status": "failed"}
+
+    if "error" in prod_result and prod_result.get("status") == "failed":
+        if runner:
+            await runner.emit(
+                {
+                    "type": "progress",
+                    "step": "report",
+                    "status": "failed",
+                    "percent": 0,
+                    "label": prod_result.get("error", "Report generation failed"),
+                }
+            )
+        return {"status": "failed", "error": prod_result.get("error", "unknown error")}
+
+    report_id = prod_result.get("id")
+    validation_status = prod_result.get("validation_status", "unknown")
+    citation_audit = prod_result.get("citation_audit", {})
+
+    if runner:
+        await runner.emit(
+            {
+                "type": "log",
+                "level": "info",
+                "message": (
+                    f"Report persisted: {citation_audit.get('valid_citations', 0)} "
+                    f"valid citations ({validation_status})"
+                ),
+            }
+        )
+
+    # ── 2. Also update ChatDocument for the assistant chat preview ───────────
+    # Find or create chat_documents row
+    doc = (
+        (
+            await db.execute(
+                select(ChatDocument)
+                .where(ChatDocument.project_id == project_id, ChatDocument.user_id == user.id)
+                .order_by(ChatDocument.created_at.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if doc is None:
+        doc = ChatDocument(
+            project_id=project_id,
+            user_id=user.id,
+            title=project.topic or "Literature Review",
+            content_md=prod_result.get("content_markdown", ""),
+            version=0,
+        )
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+    else:
+        # Use the same markdown from the production report
+        doc.content_md = prod_result.get("content_markdown", "")
+        doc.version = doc.version + 1
+        await db.commit()
 
     if runner:
         await runner.emit(
             {
                 "type": "markdown_updated",
-                "content": result["markdown"],
-                "version": result["version"],
+                "content": prod_result.get("content_markdown", ""),
+                "version": doc.version,
                 "section_changed": None,
             }
         )
@@ -111,14 +166,18 @@ async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) 
                 "step": "report",
                 "status": "done",
                 "percent": 100,
-                "label": "Report done",
+                "label": (
+                    f"Report done: {citation_audit.get('valid_citations', 0)} citations, "
+                    f"status={validation_status}"
+                ),
             }
         )
 
     return {
         "status": "completed",
-        "document_id": str(doc.id),
-        "title": result["title"],
-        "version": result["version"],
-        "section_count": result["section_count"],
+        "report_id": report_id,
+        "validation_status": validation_status,
+        "title": prod_result.get("title"),
+        "version": doc.version,
+        "citations": citation_audit,
     }

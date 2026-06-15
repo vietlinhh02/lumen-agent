@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 from sqlalchemy import select
 
 from app.db.models import ChatDocument
+from app.services.assistant_tools.ids import coerce_uuid
 from app.services.report_chat_doc import edit_section
 
 if TYPE_CHECKING:
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def handle(db, user, args: dict, runner: "AssistantRunner | None" = None) -> dict:
-    project_id = UUID(args["project_id"])
+async def handle(db, user, args: dict, runner: AssistantRunner | None = None) -> dict:
+    project_id = coerce_uuid(args["project_id"])
     section_index = int(args["section_index"])
     instruction = args["instruction"]
 

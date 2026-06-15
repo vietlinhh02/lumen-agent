@@ -176,9 +176,11 @@ async def save_paper_to_project(
         await db.commit()
         await db.refresh(pp)
 
-    # Optional PDF download
+    # Optional PDF handling — pushed to background so the request returns instantly.
+    # The paper record is already committed; the background task handles
+    # download + text extraction asynchronously.
     pdf_path: str | None = None
-    full_text_status: str | None = None
+    full_text_status: str | None = "pending"
     if data.download_pdf:
         from app.sources.base import RawPaper
 
@@ -196,15 +198,19 @@ async def save_paper_to_project(
             source_name="semantic_scholar",
             source_specific=data.source_specific or {},
         )
-        settings = get_settings()
-        downloader = PDFDownloader(output_dir=Path(settings.paper_pdf_dir), timeout=60)
-        pdf_result = await downloader.download(raw)
-        if pdf_result is not None:
-            pdf_path = str(pdf_result)
-            # Run PDF ingestion pipeline
-            from app.services.pdf_ingestion import ingest_pdf
 
-            full_text_status = await ingest_pdf(db, pp.id, pdf_result)
+        # If the caller already has the PDF on disk (e.g. search_papers
+        # downloaded it in parallel), skip the redundant network fetch.
+        prefetched: str | None = data.prefetched_pdf_path
+        if prefetched:
+            pdf_path = prefetched
+            full_text_status = "ingesting"
+
+        import asyncio
+
+        asyncio.ensure_future(
+            _download_and_ingest_bg(pp.id, raw, pdf_path=prefetched)
+        )
 
     return SavePaperResponse(
         project_paper_id=pp.id,
@@ -235,7 +241,43 @@ async def list_project_papers(
         .order_by(ProjectPaper.saved_at.desc())
     )
     rows = result.all()
-    return [_to_project_paper_response(pp, paper, project_id) for pp, paper in rows]
+
+    from app.db.models import LiteratureMatrixRow, PaperEnrichment
+
+    pp_ids = [pp.id for pp, _ in rows]
+
+    matrix_ids: set[UUID] = set()
+    enrichment_ids: set[UUID] = set()
+    if pp_ids:
+        matrix_result = await db.execute(
+            select(LiteratureMatrixRow.project_paper_id).where(
+                LiteratureMatrixRow.project_paper_id.in_(pp_ids)
+            )
+        )
+        matrix_ids = set(matrix_result.scalars().all())
+
+        enrichment_result = await db.execute(
+            select(PaperEnrichment.project_paper_id).where(
+                PaperEnrichment.project_paper_id.in_(pp_ids),
+                PaperEnrichment.enrichment_status == "completed",
+            )
+        )
+        enrichment_ids = set(enrichment_result.scalars().all())
+
+    import asyncio
+
+    return await asyncio.gather(
+        *[
+            _to_project_paper_response(
+                pp,
+                paper,
+                project_id,
+                has_matrix=pp.id in matrix_ids,
+                has_enrichment=pp.id in enrichment_ids,
+            )
+            for pp, paper in rows
+        ]
+    )
 
 
 async def update_project_paper(
@@ -274,7 +316,26 @@ async def update_project_paper(
 
     await db.commit()
     await db.refresh(pp)
-    return _to_project_paper_response(pp, paper, project_id)
+
+    from app.db.models import LiteratureMatrixRow, PaperEnrichment
+
+    has_matrix = (
+        await db.execute(
+            select(LiteratureMatrixRow.id).where(LiteratureMatrixRow.project_paper_id == pp.id)
+        )
+    ).first() is not None
+    has_enrichment = (
+        await db.execute(
+            select(PaperEnrichment.id).where(
+                PaperEnrichment.project_paper_id == pp.id,
+                PaperEnrichment.enrichment_status == "completed",
+            )
+        )
+    ).first() is not None
+
+    return await _to_project_paper_response(
+        pp, paper, project_id, has_matrix=has_matrix, has_enrichment=has_enrichment
+    )
 
 
 async def remove_project_paper(
@@ -307,43 +368,134 @@ async def remove_project_paper(
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
+async def _download_and_ingest_bg(
+    project_paper_id: UUID, raw: object, *, pdf_path: object | None = None
+) -> None:
+    """Background task: download PDF for *raw* paper and extract text.
+
+    Opens its own DB session so the caller's session can return immediately.
+    If *pdf_path* is provided (pre-downloaded), skips download + Firecrawl.
+    Never raises — failures are logged, not propagated.
+    """
+
+    from app.db.session import async_session_factory
+    from app.services.pdf_ingestion import ingest_pdf
+    from app.sources.firecrawl import crawl_pdf_links
+
+    try:
+        pdf_result = Path(pdf_path) if pdf_path else None
+
+        if pdf_result is None:
+            # Enrich with PDF links via Firecrawl if none available yet
+            if not raw.arxiv_id and not raw.source_specific.get("pdf_url"):
+                try:
+                    await crawl_pdf_links([raw])
+                except Exception as exc:
+                    logger.debug("Firecrawl enrichment skipped: %s", exc)
+
+            settings = get_settings()
+            downloader = PDFDownloader(output_dir=Path(settings.paper_pdf_dir), timeout=60)
+            pdf_result = await downloader.download(raw)
+
+        if pdf_result is None or not pdf_result.exists():
+            async with async_session_factory() as bg_db:
+                await _update_paper_status(bg_db, project_paper_id, "failed")
+            return
+
+        # Ingest PDF text via Gemma API
+        async with async_session_factory() as bg_db:
+            status = await ingest_pdf(bg_db, project_paper_id, pdf_result)
+            logger.info(
+                "Background download+ingest done for %s: %s (%s)",
+                project_paper_id,
+                pdf_result.name,
+                status,
+            )
+
+        if status == "raw_extracted":
+            await _maybe_trigger_normalization(project_paper_id)
+    except Exception as exc:
+        logger.exception("Background download+ingest failed for %s: %s", project_paper_id, exc)
+
+
+async def _update_paper_status(db, project_paper_id: UUID, status: str) -> None:
+    """Update the full_text_status on the ProjectPaper row."""
+    from sqlalchemy import select
+
+    from app.db.models import ProjectPaper
+
+    result = await db.execute(select(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+    pp = result.scalar_one_or_none()
+    if pp is not None:
+        pp.full_text_status = status
+        await db.commit()
+
+
+async def _maybe_trigger_normalization(project_paper_id: UUID) -> None:
+    """After a paper is ingested, check if the project has enough raw papers
+    to trigger batch normalization automatically."""
+    import asyncio
+
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as bg_db:
+        from sqlalchemy import select
+
+        from app.db.models import ProjectPaper
+
+        result = await bg_db.execute(
+            select(ProjectPaper).where(ProjectPaper.id == project_paper_id)
+        )
+        pp = result.scalar_one_or_none()
+        if pp is None:
+            return
+        project_id = pp.project_id
+
+        from app.services.pdf_normalizer import count_raw_papers
+
+        raw_count = await count_raw_papers(bg_db, project_id)
+        if raw_count < 3:
+            return
+
+    async def _bg_normalize():
+        try:
+            async with async_session_factory() as norm_db:
+                from app.services.pdf_normalizer import normalize_project_papers
+
+                await normalize_project_papers(norm_db, project_id)
+        except Exception as exc:
+            logger.exception("Auto-normalize crashed for project %s: %s", project_id, exc)
+
+    asyncio.ensure_future(_bg_normalize())
+    logger.info(
+        "Auto-triggered batch normalization for project %s (%d raw papers)",
+        project_id,
+        raw_count,
+    )
+
+
 async def _upsert_paper(db: AsyncSession, data: SavePaperRequest) -> Paper:
     """Find existing paper or create a new one. Deduplicates by strongest ID.
 
-    Uses asyncio.gather to run all three identifier lookups in parallel.
+    Identifier lookups run sequentially because SQLAlchemy AsyncSession is not
+    safe for concurrent operations.
     """
-    import asyncio
-
     paper: Paper | None = None
 
-    # Run all three lookups in parallel
-    async def _by_ss():
-        if data.paper_semantic_scholar_id:
-            r = await db.execute(
-                select(Paper).where(Paper.semantic_scholar_id == data.paper_semantic_scholar_id)
-            )
-            return r.scalar_one_or_none()
-        return None
-
-    async def _by_arxiv():
-        if data.paper_arxiv_id:
-            r = await db.execute(select(Paper).where(Paper.arxiv_id == data.paper_arxiv_id))
-            return r.scalar_one_or_none()
-        return None
-
-    async def _by_doi():
-        if data.paper_doi:
-            r = await db.execute(select(Paper).where(Paper.doi == data.paper_doi))
-            return r.scalar_one_or_none()
-        return None
-
-    results = await asyncio.gather(_by_ss(), _by_arxiv(), _by_doi())
-
     # Priority: semantic_scholar > arxiv > doi
-    for candidate in results:
-        if candidate is not None:
-            paper = candidate
-            break
+    if data.paper_semantic_scholar_id:
+        result = await db.execute(
+            select(Paper).where(Paper.semantic_scholar_id == data.paper_semantic_scholar_id)
+        )
+        paper = result.scalar_one_or_none()
+
+    if paper is None and data.paper_arxiv_id:
+        result = await db.execute(select(Paper).where(Paper.arxiv_id == data.paper_arxiv_id))
+        paper = result.scalar_one_or_none()
+
+    if paper is None and data.paper_doi:
+        result = await db.execute(select(Paper).where(Paper.doi == data.paper_doi))
+        paper = result.scalar_one_or_none()
 
     if paper is not None:
         # Merge missing fields
@@ -411,16 +563,16 @@ def _to_project_response(p: Project, paper_count: int) -> ProjectResponse:
     )
 
 
-def _to_project_paper_response(
+async def _to_project_paper_response(
     pp: ProjectPaper,
     paper: Paper,
     project_id: UUID,
+    *,
+    has_matrix: bool = False,
+    has_enrichment: bool = False,
 ) -> ProjectPaperResponse:
-    has_matrix = False
-    has_enrichment = False
-
-    # Check if a PDF file exists for this paper locally
-    from pathlib import Path
+    # Check if a PDF file exists for this paper locally (async to not block event loop)
+    import asyncio
 
     from app.core.config import get_settings
     from app.services.pdf_downloader import _make_filename
@@ -443,7 +595,10 @@ def _to_project_paper_response(
     )
     filename = _make_filename(raw)
     dest = pdf_dir / filename
-    pdf_path = f"/api/pdf-files/{filename}" if dest.exists() and dest.stat().st_size > 0 else None
+
+    loop = asyncio.get_running_loop()
+    pdf_exists = await loop.run_in_executor(None, lambda: dest.exists() and dest.stat().st_size > 0)
+    pdf_path = f"/api/pdf-files/{filename}" if pdf_exists else None
 
     return ProjectPaperResponse(
         id=pp.id,

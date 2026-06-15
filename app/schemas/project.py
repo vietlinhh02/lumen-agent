@@ -60,6 +60,10 @@ class SavePaperRequest(BaseModel):
     user_note: str | None = None
     download_pdf: bool = False
     source_specific: dict = Field(default_factory=dict)
+    # If the caller already downloaded the PDF (e.g. search_papers did it),
+    # pass the local path here so we skip the network round-trip entirely.
+    prefetched_pdf_path: str | None = None
+    prefetched_pdf_source: str | None = None
 
 
 class SavePaperResponse(BaseModel):
