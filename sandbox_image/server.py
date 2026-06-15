@@ -112,10 +112,17 @@ class PipInstallReq(BaseModel):
 def _workspace_path(rel: str) -> Path:
     """Resolve *rel* to an absolute path inside /workspace.
 
-    Reject any path that escapes the workspace (no parent traversal).
+    Accepts both Docker-canonical "/workspace/..." and host-relative paths.
+    Reject any path that escapes the workspace (no parent traversal,
+    no absolute path outside /workspace).
     """
-    if not rel:
+    if not rel or rel == "/workspace":
         return WORKSPACE
+    if rel.startswith("/workspace/"):
+        rel = rel[len("/workspace"):]
+    elif rel.startswith("/"):
+        # Any other absolute path is outside /workspace by definition.
+        raise HTTPException(400, f"path outside workspace: {rel}")
     candidate = (WORKSPACE / rel.lstrip("/")).resolve()
     if not str(candidate).startswith(str(WORKSPACE.resolve())):
         raise HTTPException(400, f"path escapes workspace: {rel}")
