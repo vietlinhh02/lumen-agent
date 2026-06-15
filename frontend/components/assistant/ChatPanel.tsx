@@ -44,9 +44,9 @@ export function ChatPanel() {
 
   return (
     <div className="flex flex-col h-full bg-canvas">
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 md:px-4">
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2 md:px-3">
         {state.messages.length === 0 && (
-          <div className="text-sm text-charcoal/70 text-center mt-10 px-3 md:mt-12 md:px-6">
+          <div className="text-[12px] text-charcoal/70 text-center mt-6 px-3 md:mt-8 md:px-6">
             Describe a research topic to start. The agent will create a project, find papers,
             build a literature matrix, and write a Markdown review.
           </div>
@@ -75,20 +75,20 @@ export function ChatPanel() {
         <div ref={bottomRef} />
       </div>
       <ToolLog />
-      <div className="border-t border-hairline px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-end gap-2 bg-canvas md:px-3">
+      <div className="border-t border-hairline px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-end gap-2 bg-canvas md:px-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKey}
           rows={2}
           placeholder={placeholder}
-          className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-card px-3 py-2 text-sm focus:outline-none focus:border-primary"
+          className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-card px-3 py-1.5 text-[13px] leading-snug focus:outline-none focus:border-primary"
           disabled={disabled}
         />
         {agentBusy ? (
           <button
             onClick={onStop}
-            className="shrink-0 rounded-full bg-red-500 text-white px-3 py-2 text-sm font-medium hover:bg-red-600 md:px-4"
+            className="shrink-0 rounded-full bg-red-500 text-white px-3 py-1.5 text-[12px] font-medium hover:bg-red-600 md:px-4"
           >
             Stop
           </button>
@@ -96,7 +96,7 @@ export function ChatPanel() {
           <button
             onClick={send}
             disabled={!input.trim() || !connected}
-            className="shrink-0 rounded-full bg-primary text-on-primary px-3 py-2 text-sm font-semibold hover:bg-primary-deep disabled:opacity-50 md:px-4"
+            className="shrink-0 rounded-full bg-primary text-on-primary px-3 py-1.5 text-[12px] font-semibold hover:bg-primary-deep disabled:opacity-50 md:px-4"
           >
             Send
           </button>

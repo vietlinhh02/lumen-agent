@@ -20,6 +20,9 @@ export default function AssistantSessionPage() {
   const { setIdentity, reset, handleEvent, state, togglePreview } =
     useAssistantStore();
   const [isMobile, setIsMobile] = useState(false);
+  // Silence "unused" if togglePreview ever stops being called: it powers
+  // the global header's "Show preview" button, which lives in AppShell.
+  void togglePreview;
 
   useEffect(() => {
     reset();
@@ -83,11 +86,7 @@ export default function AssistantSessionPage() {
   return (
     <AssistantContextProvider projectId={projectId} token={token}>
       <div className="fixed inset-0 top-[60px] flex flex-col ml-0 xl:ml-[56px]">
-        <AssistantHeader
-          onTogglePreview={togglePreview}
-          previewOpen={previewOpen}
-          hasDoc={hasDoc}
-        />
+        <AssistantHeader />
         <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0">
           <SessionSidebar activeProjectId={projectId} />
           <div className="flex-1 min-w-0 min-h-0 flex flex-col">

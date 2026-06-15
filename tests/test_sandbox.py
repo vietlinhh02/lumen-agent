@@ -1,5 +1,6 @@
 """Tests for the sandbox subsystem (manager, stub, router)."""
 import asyncio
+import os
 import shutil
 import tempfile
 import uuid
@@ -25,7 +26,18 @@ from app.services.sandbox.router import (
 # ── Config ────────────────────────────────────────────────────────────────
 
 
-def test_default_config_is_stub_mode():
+def test_default_config_is_stub_mode(monkeypatch):
+    # The .env fallback feature means from_env() will pick up whatever
+    # the project .env says. For this test we want to assert the
+    # *default* in the absence of any LUMEN_SANDBOX_* env var, so we
+    # (a) wipe them all out, and (b) stub the .env loader so it doesn't
+    # re-populate them.
+    for k in [k for k in os.environ if k.startswith("LUMEN_SANDBOX_")]:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(
+        sandbox_config, "_load_env_file_into_environ", lambda: None
+    )
+    sandbox_config._cached = None
     cfg = SandboxConfig.from_env()
     # Default mode is "stub" so dev/test work without docker.
     assert cfg.mode == "stub"
@@ -48,6 +60,50 @@ def test_get_sandbox_config_cached():
     a = sandbox_config.get_sandbox_config()
     b = sandbox_config.get_sandbox_config()
     assert a is b
+
+
+def test_env_file_fallback_overrides_defaults(monkeypatch, tmp_path):
+    """The .env fallback should populate LUMEN_SANDBOX_* even when the
+    parent shell has nothing set. We simulate by pointing the loader at
+    a fake .env file and clearing the parent env.
+    """
+    fake_env = tmp_path / ".env"
+    fake_env.write_text(
+        "LUMEN_SANDBOX_MODE=docker\n"
+        "LUMEN_SANDBOX_IMAGE=my-custom-image:v2\n"
+        "LUMEN_SANDBOX_IDLE_TTL=42\n"
+        "# unrelated var should be ignored\n"
+        "FOO_BAR=baz\n",
+        encoding="utf-8",
+    )
+    for k in [k for k in os.environ if k.startswith("LUMEN_SANDBOX_")]:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(sandbox_config, "_cached", None)
+    # Reload the module function by reading the actual loader (the
+    # real implementation reads Settings().model_config["env_file"], so
+    # we patch the env_file location for this test).
+    from app.core.config import get_settings
+    monkeypatch.setitem(
+        get_settings().model_config, "env_file", str(fake_env)
+    )
+    cfg = SandboxConfig.from_env()
+    assert cfg.mode == "docker"
+    assert cfg.image == "my-custom-image:v2"
+    assert cfg.idle_ttl_seconds == 42
+    # The unrelated var must not have leaked in.
+    assert "FOO_BAR" not in os.environ
+
+
+def test_reload_sandbox_config_picks_up_edits(monkeypatch):
+    """``reload_sandbox_config()`` should re-read .env and return the
+    new config, so /api/sandbox/reload can hot-swap at runtime.
+    """
+    for k in [k for k in os.environ if k.startswith("LUMEN_SANDBOX_")]:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(sandbox_config, "_cached", None)
+    # The project's .env has LUMEN_SANDBOX_MODE=docker.
+    cfg = sandbox_config.reload_sandbox_config()
+    assert cfg.mode == "docker"
 
 
 # ── Router ────────────────────────────────────────────────────────────────

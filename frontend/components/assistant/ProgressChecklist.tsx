@@ -18,8 +18,8 @@ export function ProgressChecklist() {
   const { state } = useAssistantStore();
   const progress = state.progress;
   return (
-    <div className="bg-surface-bone/40 px-2 py-2 md:px-4">
-      <ol className="flex items-center gap-2 text-[11px] md:text-xs overflow-x-auto whitespace-nowrap scrollbar-hide">
+    <div className="bg-surface-bone/40 px-2 py-1 md:px-3">
+      <ol className="flex items-center gap-1.5 text-[10px] md:text-[11px] overflow-x-auto whitespace-nowrap scrollbar-hide">
         {STEPS.map(({ key, label }, i) => {
           const p = progress[key];
           const icon =
@@ -35,10 +35,10 @@ export function ProgressChecklist() {
           return (
             <li
               key={key}
-              className={`flex shrink-0 items-center gap-2 rounded-full border border-hairline bg-canvas px-2.5 py-1 ${color}`}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border border-hairline bg-canvas px-2 py-0.5 ${color}`}
             >
               {i > 0 && <span className="hidden md:inline text-charcoal/30">·</span>}
-              <span className="flex items-center gap-1.5 min-w-0">
+              <span className="flex items-center gap-1 min-w-0">
                 <span className="w-3 inline-block text-center font-mono">{icon}</span>
                 <span className="hidden sm:inline">{label}</span>
                 {p.status === "running" && (

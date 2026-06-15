@@ -5,20 +5,18 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { createDocument } from "@/lib/api/assistant";
 import { useAssistantStore } from "@/lib/stores/assistantStore";
-import { StatusBadge } from "./StatusBadge";
 import { SandboxStatusPill } from "./SandboxStatusPill";
-import { Terminal } from "@phosphor-icons/react";
 
 const ASSISTANT_LOGO_URL =
   "https://api.dicebear.com/7.x/bottts-neutral/svg?seed=LumenResearch&backgroundColor=fff3ed";
 
-interface Props {
-  onTogglePreview: () => void;
-  previewOpen: boolean;
-  hasDoc: boolean;
-}
-
-export function AssistantHeader({ onTogglePreview, previewOpen, hasDoc }: Props) {
+/**
+ * Page-level header for the assistant. Sandbox / Show preview / Ready
+ * are now part of the global AppShell header (see AssistantTopControls);
+ * this header is intentionally narrow: just the title and a "New"
+ * session shortcut.
+ */
+export function AssistantHeader() {
   const { state, reset } = useAssistantStore();
   const { token } = useAuth();
   const router = useRouter();
@@ -36,63 +34,30 @@ export function AssistantHeader({ onTogglePreview, previewOpen, hasDoc }: Props)
     }
   };
 
-  const sandboxOpen = state.sandboxPanelOpen;
-  const toggleSandbox = () => {
-    useAssistantStore.setState((s) => ({
-      state: { ...s.state, sandboxPanelOpen: !s.state.sandboxPanelOpen },
-    }));
-  };
-
   return (
-    <header className="flex items-center justify-between gap-2 border-b border-hairline bg-canvas px-3 py-2 md:px-6 md:py-3">
-      <div className="flex items-center gap-2 min-w-0 md:gap-3">
-        <button
-          onClick={onNew}
-          disabled={!token || creating}
-          className="shrink-0 text-xs text-charcoal hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-          title="Start a new session"
-        >
-          {creating ? "Creating..." : "New"}
-        </button>
-        <div
-          className="hidden h-9 w-9 shrink-0 rounded-full border border-hairline bg-surface-card bg-cover bg-center sm:block"
-          role="img"
-          aria-label="Lumen assistant"
-          style={{ backgroundImage: `url(${ASSISTANT_LOGO_URL})` }}
-        />
-        <h1 className="font-display text-sm font-semibold text-ink truncate md:text-base">
-          {state.documentTitle || "New assistant session"}
-        </h1>
-        {state.documentVersion > 0 && (
-          <span className="text-xs text-charcoal">v{state.documentVersion}</span>
-        )}
-        <SandboxStatusPill compact />
-      </div>
-      <div className="flex shrink-0 items-center gap-2 md:gap-3">
-        <button
-          onClick={toggleSandbox}
-          aria-pressed={sandboxOpen}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-colors md:px-3 ${
-            sandboxOpen
-              ? "border-primary bg-primary text-on-primary"
-              : "border-hairline bg-surface-card text-ink hover:border-hairline-strong"
-          }`}
-          title="Open the sandbox panel"
-        >
-          <Terminal size={12} weight="bold" />
-          <span className="hidden sm:inline">Sandbox</span>
-        </button>
-        <button
-          onClick={onTogglePreview}
-          disabled={!hasDoc}
-          className="rounded-full border border-hairline bg-surface-card px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-hairline-strong disabled:opacity-40 disabled:cursor-not-allowed md:px-3"
-          title={hasDoc ? "Toggle Markdown preview" : "Preview appears once a document is generated"}
-        >
-          <span className="hidden sm:inline">{previewOpen ? "Hide preview" : "Show preview"}</span>
-          <span className="sm:hidden">{previewOpen ? "Chat" : "Doc"}</span>
-        </button>
-        <StatusBadge status={state.agentStatus} connected={state.sseConnected} />
-      </div>
+    <header className="flex items-center gap-2 border-b border-hairline bg-canvas px-3 py-1.5 md:px-4">
+      <button
+        onClick={onNew}
+        disabled={!token || creating}
+        className="shrink-0 text-[11px] font-semibold text-charcoal hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+        title="Start a new session"
+      >
+        {creating ? "Creating..." : "+ New"}
+      </button>
+      <div
+        className="hidden h-7 w-7 shrink-0 rounded-full border border-hairline bg-surface-card bg-cover bg-center sm:block"
+        role="img"
+        aria-label="Lumen assistant"
+        style={{ backgroundImage: `url(${ASSISTANT_LOGO_URL})` }}
+      />
+      <h1 className="font-display text-[13px] font-semibold text-ink truncate md:text-sm">
+        {state.documentTitle || "New assistant session"}
+      </h1>
+      {state.documentVersion > 0 && (
+        <span className="text-[11px] text-charcoal/70">v{state.documentVersion}</span>
+      )}
+      <div className="flex-1" />
+      <SandboxStatusPill compact />
     </header>
   );
 }

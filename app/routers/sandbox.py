@@ -26,8 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.services.sandbox.config import SandboxConfig, get_sandbox_config
-from app.services.sandbox.manager import get_sandbox_manager
+from app.services.sandbox.config import (
+    SandboxConfig,
+    get_sandbox_config,
+    reload_sandbox_config,
+)
+from app.services.sandbox.manager import (
+    get_sandbox_manager,
+    reset_sandbox_manager,
+)
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
@@ -186,4 +193,34 @@ async def sandbox_files(
         "size_bytes": size,
         "truncated": size > max_bytes,
         "content": data.decode("utf-8", errors="replace"),
+    }
+
+
+@router.post("/reload")
+async def sandbox_reload(
+    reap: bool = Query(default=False, description="Also teardown live sandboxes"),
+    _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Re-read LUMEN_SANDBOX_* env vars and swap the SandboxManager.
+
+    Call this after editing .env (mode/image/limits/network/ttl) — the
+    running uvicorn process keeps the old env otherwise. By default
+    existing sandbox handles are preserved; pass ``?reap=true`` to
+    tear them down (e.g. when changing from docker → stub).
+    """
+    new_cfg = reload_sandbox_config()
+    if reap:
+        await reset_sandbox_manager()
+    else:
+        # Hot-swap the manager's config so the next spawn uses the new
+        # values, but keep live handles around.
+        try:
+            mgr = get_sandbox_manager()
+            mgr.config = new_cfg  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    return {
+        "reloaded": True,
+        "reaped_existing": reap,
+        "config": _config_dict(new_cfg),
     }

@@ -65,3 +65,14 @@ export async function readSandboxFile(
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+export async function reloadSandboxConfig(
+  token: string,
+  reap = false,
+): Promise<SandboxStatusFE> {
+  const qs = reap ? "?reap=true" : "";
+  return apiFetch<SandboxStatusFE>(`/sandbox/reload${qs}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
