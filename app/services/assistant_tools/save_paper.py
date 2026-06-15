@@ -90,10 +90,7 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
             {
                 "type": "log",
                 "level": "info",
-                "message": (
-                    f"✓ Saved: {paper.get('title', 'Untitled')[:50]}. "
-                    f"PDF: {pdf_status}"
-                ),
+                "message": (f"✓ Saved: {paper.get('title', 'Untitled')[:50]}. PDF: {pdf_status}"),
             }
         )
         await runner.emit(

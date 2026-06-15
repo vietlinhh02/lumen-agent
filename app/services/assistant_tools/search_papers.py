@@ -148,10 +148,7 @@ async def handle(db, user: User, args: dict, runner: AssistantRunner | None = No
                 "step": "search_papers",
                 "status": "done",
                 "percent": 100,
-                "label": (
-                    f"Found {total} papers · "
-                    f"{downloaded} PDFs ready (sorted to top)"
-                ),
+                "label": (f"Found {total} papers · {downloaded} PDFs ready (sorted to top)"),
             }
         )
 

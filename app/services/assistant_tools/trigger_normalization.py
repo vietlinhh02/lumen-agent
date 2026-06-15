@@ -153,9 +153,8 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
             percent = min(int(attempt / 30 * 95), 95)
 
         if runner:
-            label = (
-                f"Normalizing... {total_chunks} chunks ({elapsed}s elapsed)"
-                + (" — done!" if total_chunks > last_known_chunks * 1.5 else "")
+            label = f"Normalizing... {total_chunks} chunks ({elapsed}s elapsed)" + (
+                " — done!" if total_chunks > last_known_chunks * 1.5 else ""
             )
             await runner.emit(
                 {
@@ -202,9 +201,8 @@ async def _run_normalization_with_progress(
             if runner:
                 processed = result.get("processed", 0)
                 failed = result.get("failed", 0)
-                label = (
-                    f"Normalization complete: {processed} papers processed"
-                    + (f", {failed} failed" if failed else "")
+                label = f"Normalization complete: {processed} papers processed" + (
+                    f", {failed} failed" if failed else ""
                 )
                 await runner.emit(
                     {

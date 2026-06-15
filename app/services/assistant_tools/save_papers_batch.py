@@ -46,9 +46,7 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
             {
                 "type": "log",
                 "level": "info",
-                "message": (
-                    f"💾 Batch-saving {len(papers)} papers"
-                ),
+                "message": (f"💾 Batch-saving {len(papers)} papers"),
             }
         )
 
@@ -65,9 +63,7 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
             authors = []
             for author in paper.get("authors") or []:
                 if isinstance(author, dict):
-                    authors.append(
-                        {"name": author.get("name", str(author)), "author_id": ""}
-                    )
+                    authors.append({"name": author.get("name", str(author)), "author_id": ""})
                 else:
                     authors.append({"name": str(author), "author_id": ""})
 

@@ -16,9 +16,10 @@ from app.services.assistant_tools.save_paper import handle as save_paper_handle
 from app.services.assistant_tools.search_papers import handle as search_papers_handle
 
 
-def test_all_11_tools_registered():
-    """Verify all production tools are registered, including the new ones."""
+def test_all_19_tools_registered():
+    """Verify all production tools are registered, including the new sandbox ones."""
     expected = {
+        # Local fast path
         "create_project",
         "search_papers",
         "save_paper_to_project",
@@ -30,6 +31,15 @@ def test_all_11_tools_registered():
         "generate_report",
         "edit_report_section",
         "qa_search_papers",
+        # Sandbox path
+        "run_python",
+        "run_shell",
+        "read_file",
+        "write_file",
+        "list_files",
+        "open_pdf_page",
+        "grep_pdf",
+        "install_packages",
     }
     assert set(TOOL_REGISTRY.keys()) == expected
 

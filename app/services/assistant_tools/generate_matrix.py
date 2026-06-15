@@ -85,12 +85,8 @@ async def handle(db, user, args: dict, runner: AssistantRunner | None = None) ->
         return {"rows_created": 0, "status": "failed", "error": "no_saved_papers"}
 
     # Check how many papers have completed full-text normalization
-    completed_count = sum(
-        1 for pp in project_papers if pp.full_text_status == "completed"
-    )
-    raw_count = sum(
-        1 for pp in project_papers if pp.full_text_status == "raw_extracted"
-    )
+    completed_count = sum(1 for pp in project_papers if pp.full_text_status == "completed")
+    raw_count = sum(1 for pp in project_papers if pp.full_text_status == "raw_extracted")
     pending_count = sum(
         1 for pp in project_papers if pp.full_text_status in {"pending", None, "failed"}
     )

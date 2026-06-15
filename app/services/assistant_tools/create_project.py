@@ -28,9 +28,7 @@ _SCRATCH_TITLE = "New conversation"
 async def _is_scratch(db, project_id) -> bool:
     """Return True if *project_id* is still a scratch project (placeholder
     title set by the WS handler)."""
-    row = (
-        await db.execute(select(Project).where(Project.id == project_id))
-    ).scalar_one_or_none()
+    row = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
     return row is not None and row.title == _SCRATCH_TITLE
 
 
@@ -69,9 +67,7 @@ async def handle(
     if update_existing:
         # Reuse the scratch project + chat document created at WS open
         project_id = runner.project_id
-        project = (
-            await db.execute(select(Project).where(Project.id == project_id))
-        ).scalar_one()
+        project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one()
         project.title = title
         project.topic = topic
         if research_question is not None:
@@ -80,9 +76,7 @@ async def handle(
         await db.refresh(project)
 
         doc = (
-            await db.execute(
-                select(ChatDocument).where(ChatDocument.project_id == project_id)
-            )
+            await db.execute(select(ChatDocument).where(ChatDocument.project_id == project_id))
         ).scalar_one()
         doc.title = title
         await db.commit()
@@ -92,9 +86,7 @@ async def handle(
     else:
         # No scratch → create a brand-new project (legacy behavior, or the
         # agent is creating a second project within the same WS session).
-        data = ProjectCreate(
-            title=title, topic=topic, research_question=research_question
-        )
+        data = ProjectCreate(title=title, topic=topic, research_question=research_question)
         resp = await svc_create_project(db, user, data)
         project_id = coerce_uuid(resp.id)
 
