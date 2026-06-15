@@ -6,6 +6,8 @@ import { useAuth } from "@/lib/auth";
 import { createDocument } from "@/lib/api/assistant";
 import { useAssistantStore } from "@/lib/stores/assistantStore";
 import { StatusBadge } from "./StatusBadge";
+import { SandboxStatusPill } from "./SandboxStatusPill";
+import { Terminal } from "@phosphor-icons/react";
 
 const ASSISTANT_LOGO_URL =
   "https://api.dicebear.com/7.x/bottts-neutral/svg?seed=LumenResearch&backgroundColor=fff3ed";
@@ -34,6 +36,13 @@ export function AssistantHeader({ onTogglePreview, previewOpen, hasDoc }: Props)
     }
   };
 
+  const sandboxOpen = state.sandboxPanelOpen;
+  const toggleSandbox = () => {
+    useAssistantStore.setState((s) => ({
+      state: { ...s.state, sandboxPanelOpen: !s.state.sandboxPanelOpen },
+    }));
+  };
+
   return (
     <header className="flex items-center justify-between gap-2 border-b border-hairline bg-canvas px-3 py-2 md:px-6 md:py-3">
       <div className="flex items-center gap-2 min-w-0 md:gap-3">
@@ -57,8 +66,22 @@ export function AssistantHeader({ onTogglePreview, previewOpen, hasDoc }: Props)
         {state.documentVersion > 0 && (
           <span className="text-xs text-charcoal">v{state.documentVersion}</span>
         )}
+        <SandboxStatusPill compact />
       </div>
       <div className="flex shrink-0 items-center gap-2 md:gap-3">
+        <button
+          onClick={toggleSandbox}
+          aria-pressed={sandboxOpen}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-colors md:px-3 ${
+            sandboxOpen
+              ? "border-primary bg-primary text-on-primary"
+              : "border-hairline bg-surface-card text-ink hover:border-hairline-strong"
+          }`}
+          title="Open the sandbox panel"
+        >
+          <Terminal size={12} weight="bold" />
+          <span className="hidden sm:inline">Sandbox</span>
+        </button>
         <button
           onClick={onTogglePreview}
           disabled={!hasDoc}

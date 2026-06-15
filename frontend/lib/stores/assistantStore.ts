@@ -6,6 +6,7 @@ import type {
   AssistantEvent,
   ChatMessageFE,
   PipelineStep,
+  SandboxStatusFE,
 } from "@/lib/types";
 
 interface ProgressState {
@@ -29,6 +30,13 @@ interface AssistantState {
   /** True when the SSE hook has a project + token and can stream. */
   sseConnected: boolean;
   previewDismissed: boolean;
+  // ── Sandbox panel state ──
+  sandboxPanelOpen: boolean;
+  sandboxStatus: SandboxStatusFE | null;
+  sandboxLoading: boolean;
+  sandboxError: string | null;
+  sandboxToolCalls: number; // total sandbox tools invoked this session
+  sandboxLastTool: { name: string; ok: boolean; ts: number } | null;
 }
 
 const DEFAULT_PROGRESS: Record<PipelineStep, ProgressState> = {
@@ -56,7 +64,24 @@ const initial: AssistantState = {
   agentStatus: "idle",
   sseConnected: false,
   previewDismissed: false,
+  sandboxPanelOpen: false,
+  sandboxStatus: null,
+  sandboxLoading: false,
+  sandboxError: null,
+  sandboxToolCalls: 0,
+  sandboxLastTool: null,
 };
+
+const SANDBOX_TOOLS = new Set([
+  "run_python",
+  "run_shell",
+  "read_file",
+  "write_file",
+  "list_files",
+  "open_pdf_page",
+  "grep_pdf",
+  "install_packages",
+]);
 
 type Action = AssistantEvent | { type: "reset" } | {
   type:
@@ -110,6 +135,9 @@ function applyEvent(state: AssistantState, e: AssistantEvent): AssistantState {
       return {
         ...state,
         agentStatus: "running",
+        sandboxToolCalls: SANDBOX_TOOLS.has(e.tool)
+          ? state.sandboxToolCalls
+          : state.sandboxToolCalls,
         messages: [
           ...state.messages,
           {
@@ -141,15 +169,31 @@ function applyEvent(state: AssistantState, e: AssistantEvent): AssistantState {
         tool_status: (e.ok ? "ok" : "error") as "ok" | "error",
         created_at: new Date().toISOString(),
       };
+      const isSandbox = SANDBOX_TOOLS.has(e.tool);
+      const lastTool = isSandbox
+        ? { name: e.tool, ok: e.ok, ts: Date.now() }
+        : state.sandboxLastTool;
       if (idx >= 0) {
         const messages = [...state.messages];
         messages[idx] = { ...messages[idx], ...updated };
-        return { ...state, agentStatus: "running", messages };
+        return {
+          ...state,
+          agentStatus: "running",
+          messages,
+          sandboxToolCalls: isSandbox
+            ? state.sandboxToolCalls + 1
+            : state.sandboxToolCalls,
+          sandboxLastTool: lastTool,
+        };
       }
       return {
         ...state,
         agentStatus: "running",
         messages: [...state.messages, updated],
+        sandboxToolCalls: isSandbox
+          ? state.sandboxToolCalls + 1
+          : state.sandboxToolCalls,
+        sandboxLastTool: lastTool,
       };
     }
     case "log":
@@ -201,6 +245,11 @@ interface AssistantStore {
   appendLocalMessage: (msg: ChatMessageFE) => void;
   handleEvent: (event: AssistantEvent) => void;
   togglePreview: () => void;
+  toggleSandboxPanel: () => void;
+  setSandboxPanel: (open: boolean) => void;
+  setSandboxStatus: (status: SandboxStatusFE | null) => void;
+  setSandboxLoading: (loading: boolean) => void;
+  setSandboxError: (error: string | null) => void;
 }
 
 export const useAssistantStore = create<AssistantStore>((set) => ({
@@ -223,6 +272,18 @@ export const useAssistantStore = create<AssistantStore>((set) => ({
   handleEvent: (event) => set((s) => ({ state: applyEvent(s.state, event) })),
   togglePreview: () =>
     set((s) => ({ state: { ...s.state, previewDismissed: !s.state.previewDismissed } })),
+  toggleSandboxPanel: () =>
+    set((s) => ({
+      state: { ...s.state, sandboxPanelOpen: !s.state.sandboxPanelOpen },
+    })),
+  setSandboxPanel: (open) =>
+    set((s) => ({ state: { ...s.state, sandboxPanelOpen: open } })),
+  setSandboxStatus: (status) =>
+    set((s) => ({ state: { ...s.state, sandboxStatus: status } })),
+  setSandboxLoading: (loading) =>
+    set((s) => ({ state: { ...s.state, sandboxLoading: loading } })),
+  setSandboxError: (error) =>
+    set((s) => ({ state: { ...s.state, sandboxError: error } })),
 }));
 
 export type { AssistantState, AssistantStore, Action };

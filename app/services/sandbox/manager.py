@@ -125,6 +125,10 @@ class SandboxManager:
             h.touch()
         return h
 
+    def snapshot(self) -> list[SandboxHandle]:
+        """Return a list of all currently-alive handles (read-only)."""
+        return list(self._instances.values())
+
     # ── Execute endpoint (router uses this) ───────────────────────────
 
     async def execute(

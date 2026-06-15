@@ -520,3 +520,56 @@ export interface ChatDocumentListResponse {
 export interface ChatDocumentDetailResponse extends ChatDocumentResponse {
   messages: ChatMessageFE[];
 }
+
+// ── Sandbox subsystem ───────────────────────────────────────────────────
+
+export type SandboxMode = "docker" | "stub" | "disabled" | string;
+
+export interface SandboxConfigFE {
+  mode: SandboxMode;
+  enabled: boolean;
+  image: string;
+  port: number;
+  memory_limit: string;
+  cpu_limit: number;
+  idle_ttl_seconds: number;
+  spawn_timeout_seconds: number;
+  network: string;
+  workspace_root: string;
+}
+
+export interface SandboxHandleFE {
+  project_id: string;
+  mode: string;
+  container_id: string | null;
+  base_url: string | null;
+  workspace: string;
+  last_used: number;
+  idle_for_seconds: number;
+  workspace_bytes: number;
+  workspace_files: number;
+}
+
+export interface WorkspaceEntryFE {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size_bytes: number | null;
+  modified_ts: number;
+}
+
+export interface SandboxStatusFE {
+  config: SandboxConfigFE;
+  handles: SandboxHandleFE[];
+  active_projects: number;
+  project_id?: string;
+  workspace_exists?: boolean;
+  files?: WorkspaceEntryFE[];
+}
+
+export interface SandboxFileReadFE {
+  path: string;
+  size_bytes: number;
+  truncated: boolean;
+  content: string;
+}

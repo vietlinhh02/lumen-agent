@@ -10,6 +10,7 @@ import { PreviewPanel } from "@/components/assistant/PreviewPanel";
 import { ProgressChecklist } from "@/components/assistant/ProgressChecklist";
 import { AssistantHeader } from "@/components/assistant/AssistantHeader";
 import { SessionSidebar } from "@/components/assistant/SessionSidebar";
+import { SandboxPanel } from "@/components/assistant/SandboxPanel";
 import { getDocument, listDocuments } from "@/lib/api/assistant";
 
 export default function AssistantSessionPage() {
@@ -113,6 +114,7 @@ export default function AssistantSessionPage() {
             </div>
           </div>
         </div>
+        <SandboxPanel />
       </div>
     </AssistantContextProvider>
   );

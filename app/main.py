@@ -22,6 +22,7 @@ from app.routers.matrix import router as matrix_router
 from app.routers.paper import router as paper_router
 from app.routers.project import router as project_router
 from app.routers.reports import router as reports_router
+from app.routers.sandbox import router as sandbox_router
 from app.routers.search_session import router as search_session_router
 from app.routers.stats import router as stats_router
 from app.services.sandbox.config import get_sandbox_config
@@ -204,6 +205,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router, prefix="/api")
     app.include_router(assistant_router, prefix="/api")
     app.include_router(assistant_sse_router, prefix="/api")
+    app.include_router(sandbox_router, prefix="/api")
 
     # Serve PDF files statically
     os.makedirs(settings.paper_pdf_dir, exist_ok=True)
