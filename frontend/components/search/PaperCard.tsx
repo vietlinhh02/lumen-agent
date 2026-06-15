@@ -1,6 +1,6 @@
 "use client";
 
-import { User, Calendar, Buildings, Quotes, BookmarkSimple } from "@phosphor-icons/react";
+import { User, Calendar, Buildings, Quotes, BookmarkSimple, CheckCircle, DownloadSimple } from "@phosphor-icons/react";
 import type { PaperResult } from "@/lib/types";
 
 function formatAuthors(authors: Array<{ name: string; author_id?: string | null }>) {
@@ -55,12 +55,25 @@ export function PaperCard({
   score?: string;
 }) {
   const authorsStr = formatAuthors(paper.authors);
+  const isDownloaded = paper.pdf_downloaded;
   return (
-    <div className="rounded-[12px] bg-surface-card p-5 transition-all duration-200"
-      style={{ border: "1px solid var(--hairline)" }}>
+    <div
+      className={`rounded-[12px] bg-surface-card p-5 transition-all duration-200 ${
+        isDownloaded ? "ring-1 ring-emerald-300/60" : ""
+      }`}
+      style={{ border: "1px solid var(--hairline)" }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink">{paper.title}</h3>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink">{paper.title}</h3>
+          </div>
+          {isDownloaded && (
+            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+              <CheckCircle size={12} weight="fill" />
+              PDF ready to read
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {score && <span className={`font-ui shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${scoreBadgeClass(score)}`}>{score}</span>}
@@ -87,7 +100,8 @@ export function PaperCard({
         ) : (
           <button onClick={() => onSave(paper)} disabled={!projectId || saving}
             className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-            <BookmarkSimple size={14} weight="bold" />Save
+            {isDownloaded ? <DownloadSimple size={14} weight="bold" /> : <BookmarkSimple size={14} weight="bold" />}
+            {isDownloaded ? "Save & analyze" : "Save"}
           </button>
         )}
       </div>

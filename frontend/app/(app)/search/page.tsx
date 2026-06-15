@@ -77,6 +77,9 @@ export default function SearchPage() {
   const { poll: pollAutoSave } = useJobPolling({
     onSuccess: (result) => `${result.saved ?? 0} papers auto-saved`,
   });
+  const { poll: pollSearch } = useJobPolling({
+    onSuccess: () => "Search completed",
+  });
 
   useEffect(() => {
     if (projects.length > 0 && !selectedProjectId) {
@@ -164,14 +167,26 @@ export default function SearchPage() {
     setPage(1);
     savedIdsRef.current = new Set();
     try {
-      const data = await apiFetch<SessionDetailResponse>("/papers/search/sessions", {
+      const data = await apiFetch<{ job_id: string; session_id: string; status: string }>("/papers/search/sessions", {
         method: "POST",
         body: JSON.stringify({ project_id: selectedProjectId, query: qs, limit: 100 }),
         headers: { Authorization: `Bearer ${token}` },
       });
-      setSessionId(data.id);
-      setSessionData(data);
-      router.push(`/search?session=${data.id}&page=1`, { scroll: false });
+      // Navigate immediately so the user sees the session
+      setSessionId(data.session_id);
+      router.push(`/search?session=${data.session_id}&page=1`, { scroll: false });
+
+      toast.info("Searching papers in background...");
+      const result = await pollSearch(data.job_id);
+      if (result) {
+        // Job completed — load session data
+        const fresh = await apiFetch<SessionDetailResponse>(
+          `/papers/search/sessions/${data.session_id}?page=1`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        setSessionData(fresh);
+        toast.success(`Found ${fresh.total_results} papers`);
+      }
       fetchSessions();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Search failed");

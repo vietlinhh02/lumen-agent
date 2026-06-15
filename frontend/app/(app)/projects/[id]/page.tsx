@@ -31,6 +31,7 @@ export default function ProjectDetailPage() {
   const [fullTextPaperId, setFullTextPaperId] = useState<string | null>(null);
   const [fullTextData, setFullTextData] = useState<FullTextResponse | null>(null);
   const [normalizing, setNormalizing] = useState(false);
+  const [normalizeProgress, setNormalizeProgress] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -147,22 +148,60 @@ export default function ProjectDetailPage() {
 
   async function handleNormalizeAll() {
     setNormalizing(true);
+    setNormalizeProgress("Starting...");
     try {
       const result = await apiFetch<NormalizeResponse>(
         `/projects/${id}/papers:normalize`,
         { method: "POST", headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.info(`Normalization started — ${result.skipped} paper(s) processing in background. Refresh in a moment.`);
-      // Poll for completion
+      const totalPapers = result.skipped;
+      setNormalizeProgress(`Processing 0/${totalPapers}...`);
+      toast.info(`Normalization started — ${totalPapers} paper(s) queued.`);
+
+      // Poll for completion (refresh papers + track progress)
       const pollInterval = setInterval(async () => {
-        await fetchPapers();
-      }, 5000);
-      setTimeout(() => clearInterval(pollInterval), 120000);
+        try {
+          const data = await apiFetch<ProjectPaperResponse[]>(`/projects/${id}/papers`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const papers = Array.isArray(data) ? data : [];
+          setPapers(papers);
+
+          const raw = papers.filter((p) => p.full_text_status === "raw_extracted" || p.full_text_status === "normalizing").length;
+          const done = papers.filter((p) => p.full_text_status === "completed").length;
+          const failed = papers.filter((p) => p.full_text_status === "failed").length;
+          const processed = done + failed;
+
+          if (raw === 0) {
+            clearInterval(pollInterval);
+            setNormalizing(false);
+            setNormalizeProgress(null);
+            if (failed > 0) {
+              toast.warning(`Processing complete: ${done} succeeded, ${failed} failed`);
+            } else {
+              toast.success(`All ${done} papers processed successfully`);
+            }
+          } else {
+            setNormalizeProgress(`Processing ${processed}/${totalPapers} (${raw} remaining${failed > 0 ? `, ${failed} failed` : ""})`);
+          }
+        } catch {
+          // ignore poll errors
+        }
+      }, 4000);
+
+      // Safety timeout: 10 minutes max
+      const safetyTimer = setTimeout(() => {
+        clearInterval(pollInterval);
+        setNormalizing(false);
+        setNormalizeProgress(null);
+        fetchPapers();
+      }, 600000);
+      // Initial fetch
       fetchPapers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to process papers");
-    } finally {
       setNormalizing(false);
+      setNormalizeProgress(null);
     }
   }
 
@@ -315,8 +354,11 @@ export default function ProjectDetailPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {papers.some((p) => p.full_text_status === "raw_extracted") && (
-            <div className="flex justify-end">
+          {(papers.some((p) => p.full_text_status === "raw_extracted") || normalizing) && (
+            <div className="flex items-center justify-end gap-3">
+              {normalizeProgress && (
+                <span className="font-ui text-[12px] text-ash">{normalizeProgress}</span>
+              )}
               <button
                 onClick={handleNormalizeAll}
                 disabled={normalizing}

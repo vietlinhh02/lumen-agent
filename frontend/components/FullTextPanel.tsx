@@ -65,10 +65,33 @@ function parseMarkdownSections(md: string): MarkdownSection[] {
   }
   if (current) sections.push(current);
 
-  return sections.map((s) => ({
+  const cleaned = sections.map((s) => ({
     ...s,
     body: s.body.replace(/\n+$/, "").trim(),
   }));
+
+  // Filter out empty sections (e.g. "## Methodology" with no body before next heading)
+  return cleaned.filter((s) => s.body.length > 0 || s.level === 0);
+}
+
+function normalizeExtractedText(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
+function chunksToMarkdown(chunks: FullTextChunk[]): string {
+  return groupChunks(chunks)
+    .map((group) => {
+      const body = group.chunks
+        .map((chunk) => normalizeExtractedText(chunk.chunk_text))
+        .filter(Boolean)
+        .join("\n\n");
+      return `## ${group.label}\n\n${body}`;
+    })
+    .join("\n\n");
 }
 
 export function FullTextPanel({
@@ -90,16 +113,25 @@ export function FullTextPanel({
   }, [onClose]);
 
   const isRaw = data.full_text_status === "raw_extracted";
-  const hasMarkdown = !!data.crawled_markdown;
+  const hasMarkdown = !!data.crawled_markdown?.trim();
+  const displayMarkdown = useMemo(() => {
+    if (hasMarkdown) return data.crawled_markdown!.trim();
+    if (data.full_text_status === "completed" && data.chunks.length > 0) {
+      return chunksToMarkdown(data.chunks);
+    }
+    return "";
+  }, [data.chunks, data.crawled_markdown, data.full_text_status, hasMarkdown]);
+  const hasDisplayMarkdown = displayMarkdown.length > 0;
+  const hasLlmMarkdown = hasMarkdown;
 
   const markdownSections = useMemo(() => {
-    if (!hasMarkdown) return [];
-    return parseMarkdownSections(data.crawled_markdown!);
-  }, [data.crawled_markdown, hasMarkdown]);
+    if (!hasDisplayMarkdown) return [];
+    return parseMarkdownSections(displayMarkdown);
+  }, [displayMarkdown, hasDisplayMarkdown]);
 
   const groupedChunks = useMemo(
-    () => (isRaw || hasMarkdown ? [] : groupChunks(data.chunks)),
-    [data.chunks, isRaw, hasMarkdown]
+    () => (isRaw || hasDisplayMarkdown ? [] : groupChunks(data.chunks)),
+    [data.chunks, isRaw, hasDisplayMarkdown]
   );
 
   return (
@@ -122,8 +154,8 @@ export function FullTextPanel({
             <p className="mt-0.5 text-[12px] text-ash">
               {isRaw
                 ? "Raw text — LLM normalization pending"
-                : hasMarkdown
-                  ? `${markdownSections.length} sections`
+                : hasDisplayMarkdown
+                  ? `${markdownSections.length} sections${hasLlmMarkdown ? "" : " · indexed fallback"}`
                   : `${groupedChunks.length} sections · ${data.total_chunks} chunks`}
               {" · "}{data.total_chars.toLocaleString()} chars
             </p>
@@ -131,11 +163,13 @@ export function FullTextPanel({
           <div className="flex items-center gap-2 shrink-0">
             <span className={`font-ui rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
               isRaw ? "bg-amber-50 text-amber-700" :
-              data.full_text_status === "completed" ? "bg-emerald-50 text-emerald-700" :
+              data.full_text_status === "completed" && hasLlmMarkdown ? "bg-emerald-50 text-emerald-700" :
+              data.full_text_status === "completed" ? "bg-sky-50 text-sky-700" :
               "bg-ash/10 text-ash"
             }`}>
               {isRaw ? "Raw" :
-               data.full_text_status === "completed" ? "Normalized" : data.full_text_status}
+               data.full_text_status === "completed" && hasLlmMarkdown ? "Normalized" :
+               data.full_text_status === "completed" ? "Indexed" : data.full_text_status}
             </span>
             <button
               onClick={onClose}
@@ -147,7 +181,7 @@ export function FullTextPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto raw-text-scroll">
-          {data.chunks.length === 0 && !hasMarkdown ? (
+          {data.chunks.length === 0 && !hasDisplayMarkdown ? (
             <div className="px-6 py-4">
               <p className="text-sm text-ash">No text available.</p>
             </div>
@@ -177,7 +211,7 @@ export function FullTextPanel({
                 );
               })}
             </div>
-          ) : hasMarkdown ? (
+          ) : hasDisplayMarkdown ? (
             <div className="px-6 py-4 space-y-1">
               {markdownSections.map((section, i) => {
                 const isOpen = expandedSection === `m${i}`;
