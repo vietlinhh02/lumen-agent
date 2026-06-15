@@ -189,11 +189,6 @@ async def test_generate_report_writes_to_review_report():
             new_callable=AsyncMock,
             return_value=prod_result,
         ) as prod_mock,
-        patch(
-            "app.services.assistant_tools.generate_report.generate_markdown_for_project",
-            new_callable=AsyncMock,
-            return_value={"markdown": "# Report", "version": 1},
-        ),
     ):
         runner = SimpleNamespace(emit=AsyncMock())
         result = await generate_report_handle(
