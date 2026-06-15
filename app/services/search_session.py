@@ -317,6 +317,11 @@ async def _run_auto_save_job(
                         paper_dict.get("title", "?"),
                         exc,
                     )
+                    # Roll back so the session is usable for the next paper
+                    try:
+                        await bg_db.rollback()
+                    except Exception:
+                        pass
                     skipped += 1
 
             job.status = "completed"
@@ -369,3 +374,141 @@ async def get_job_status(
         "created_at": str(job.created_at),
         "completed_at": str(job.completed_at) if job.completed_at else None,
     }
+
+
+# ── Background search job ──────────────────────────────────────────────────
+
+
+async def start_search_job(
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+    query: str,
+    limit: int = 100,
+) -> dict:
+    """Create a SearchRun + BackgroundJob and launch the search in background.
+
+    Returns immediately with ``{job_id, session_id, status}`` so the caller
+    can poll for completion.
+    """
+    from app.db.models import BackgroundJob
+
+    # Create an empty SearchRun as a placeholder — results populate later
+    run = SearchRun(
+        project_id=project_id,
+        user_query=query,
+        total_results=0,
+        results_json=[],
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    # Create a background job record
+    job = BackgroundJob(
+        job_type="paper_search",
+        project_id=project_id,
+        user_id=user.id,
+        status="pending",
+        total=limit,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Launch background worker
+    import asyncio
+
+    asyncio.ensure_future(
+        _run_search_job(job.id, run.id, project_id, user.id, query, limit)
+    )
+
+    return {
+        "job_id": str(job.id),
+        "session_id": str(run.id),
+        "status": "running",
+    }
+
+
+async def _run_search_job(
+    job_id: UUID,
+    session_id: UUID,
+    project_id: UUID,
+    user_id: UUID,
+    query: str,
+    limit: int,
+) -> None:
+    """Background worker: run search_and_download, persist results to SearchRun."""
+    from datetime import datetime
+
+    from app.db.session import async_session_factory
+    from app.schemas.paper import PaperSearchRequest
+
+    async with async_session_factory() as bg_db:
+        job = None
+        try:
+            from app.db.models import BackgroundJob, SearchRun
+
+            # Load job
+            job_result = await bg_db.execute(
+                select(BackgroundJob).where(BackgroundJob.id == job_id)
+            )
+            job = job_result.scalar_one_or_none()
+            if not job:
+                return
+
+            job.status = "running"
+            await bg_db.commit()
+
+            # Run search — always try to download PDFs in parallel so the
+            # user immediately sees which papers are downloadable (sorted to top)
+            from app.services.paper_search import search_and_download
+
+            search_req = PaperSearchRequest(query=query, limit=limit, download_pdfs=True)
+            outcome = await search_and_download(search_req)
+            results_dicts = [p.model_dump() for p in outcome.response.papers]
+
+            audit_data = outcome.response.language_bias_audit
+
+            # Update SearchRun with results
+            session_result = await bg_db.execute(
+                select(SearchRun).where(SearchRun.id == session_id)
+            )
+            run = session_result.scalar_one_or_none()
+            if run is None:
+                job.status = "failed"
+                job.error_message = "Session not found"
+                await bg_db.commit()
+                return
+
+            run.user_query = query
+            run.total_results = len(results_dicts)
+            run.results_json = results_dicts
+            run.detected_language = outcome.response.detected_language
+            run.query_variants = [v.model_dump() for v in outcome.response.query_variants]
+            run.source_diagnostics = outcome.response.source_diagnostics or []
+            if audit_data:
+                run.english_dominance_score = audit_data.english_dominance_score
+                run.language_bias_audit = audit_data.model_dump()
+            await bg_db.commit()
+
+            # Mark job complete
+            job.status = "completed"
+            job.progress = len(results_dicts)
+            job.result = {
+                "total_found": len(results_dicts),
+                "session_id": str(session_id),
+            }
+            job.completed_at = datetime.utcnow()
+            await bg_db.commit()
+
+        except Exception as exc:
+            logger.exception("Background search job failed: %s", exc)
+            try:
+                if job is not None:
+                    job.status = "failed"
+                    job.error_message = str(exc)[:500]
+                    job.completed_at = datetime.utcnow()
+                    await bg_db.commit()
+            except Exception:
+                pass

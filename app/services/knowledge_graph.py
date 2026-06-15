@@ -27,6 +27,8 @@ EDGE_HAS_LIMITATION = "has_limitation"
 EDGE_SHARES_METHOD = "shares_method"
 EDGE_SHARES_DATASET = "shares_dataset"
 
+_CONCEPT_TYPES = {NODE_TYPE_METHOD, NODE_TYPE_DATASET, NODE_TYPE_LIMITATION}
+
 
 async def build_knowledge_graph(
     db: AsyncSession,
@@ -240,10 +242,134 @@ async def build_knowledge_graph(
     return {"nodes": nodes, "links": links, "stats": stats}
 
 
+async def expand_query_with_graph_context(
+    db: AsyncSession,
+    project_id: UUID,
+    query: str,
+    max_terms: int = 8,
+) -> str:
+    """Expand a retrieval query with project graph concepts.
+
+    The graph remains computed from current matrix rows, but retrieval can now
+    use the same concept structure that the visual map shows.
+    """
+    graph = await build_knowledge_graph(db, project_id)
+    concept_terms = _rank_graph_concepts(
+        graph["nodes"],
+        query,
+        max_terms=max_terms,
+    )
+    if not concept_terms:
+        return query
+    return f"{query} {' '.join(concept_terms)}"
+
+
+async def build_graph_context(
+    db: AsyncSession,
+    project_id: UUID,
+    query: str | None = None,
+    max_concepts_per_type: int = 5,
+    max_relationships: int = 8,
+) -> str:
+    """Return prompt-ready graph context for downstream AI tasks."""
+    graph = await build_knowledge_graph(db, project_id)
+    nodes = graph["nodes"]
+    links = graph["links"]
+    if not nodes:
+        return "No knowledge graph context available."
+
+    node_by_id = {node["id"]: node for node in nodes}
+    query_text = query or ""
+
+    def top_concepts(node_type: str) -> list[str]:
+        candidates = [node for node in nodes if node["type"] == node_type]
+        ranked = sorted(
+            candidates,
+            key=lambda node: _concept_rank(node, query_text),
+            reverse=True,
+        )
+        return [
+            _compact_label(str(node.get("full_label") or node.get("label")))
+            for node in ranked[:max_concepts_per_type]
+            if node.get("full_label") or node.get("label")
+        ]
+
+    relationship_lines: list[str] = []
+    for link in links:
+        if link["relation"] not in {EDGE_SHARES_METHOD, EDGE_SHARES_DATASET}:
+            continue
+        source = node_by_id.get(link["source"])
+        target = node_by_id.get(link["target"])
+        if not source or not target:
+            continue
+        relation = "shared method" if link["relation"] == EDGE_SHARES_METHOD else "shared dataset"
+        source_label = _compact_label(str(source.get("full_label") or source.get("label")))
+        target_label = _compact_label(str(target.get("full_label") or target.get("label")))
+        relationship_lines.append(f"- {source_label} <-> {target_label}: {relation}")
+        if len(relationship_lines) >= max_relationships:
+            break
+
+    sections = ["Knowledge graph context:"]
+    for label, node_type in (
+        ("Central methods", NODE_TYPE_METHOD),
+        ("Central datasets or contexts", NODE_TYPE_DATASET),
+        ("Recurring limitations", NODE_TYPE_LIMITATION),
+    ):
+        concepts = top_concepts(node_type)
+        if concepts:
+            sections.append(f"{label}: {', '.join(concepts)}")
+    if relationship_lines:
+        sections.append("Shared paper relationships:\n" + "\n".join(relationship_lines))
+
+    return "\n".join(sections)
+
+
 def _truncate(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1] + "\u2026"
+
+
+def _rank_graph_concepts(nodes: list[dict], query: str, max_terms: int) -> list[str]:
+    ranked = sorted(
+        [node for node in nodes if node.get("type") in _CONCEPT_TYPES],
+        key=lambda node: _concept_rank(node, query),
+        reverse=True,
+    )
+    terms: list[str] = []
+    seen: set[str] = set()
+    for node in ranked:
+        label = _compact_label(str(node.get("full_label") or node.get("label") or ""))
+        if not label:
+            continue
+        key = label.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        terms.append(label)
+        if len(terms) >= max_terms:
+            break
+    return terms
+
+
+def _concept_rank(node: dict, query: str) -> float:
+    label = str(node.get("full_label") or node.get("label") or "")
+    query_tokens = set(_simple_tokens(query))
+    label_tokens = set(_simple_tokens(label))
+    overlap = len(query_tokens & label_tokens)
+    return overlap * 10.0 + float(node.get("connections", 0))
+
+
+def _simple_tokens(text: str) -> list[str]:
+    return [part.lower() for part in text.replace("/", " ").replace("-", " ").split() if part]
+
+
+def _compact_label(text: str, max_words: int = 10, max_chars: int = 120) -> str:
+    words = text.strip().split()
+    compact = " ".join(words[:max_words])
+    if len(compact) > max_chars:
+        compact = compact[: max_chars - 1].rstrip()
+    return compact
 
 
 def _clean_value(value: str | None) -> str | None:

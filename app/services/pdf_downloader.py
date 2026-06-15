@@ -5,6 +5,7 @@ Priority: arXiv CDN (if arxiv_id) → Semantic Scholar openAccessPdf.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -95,14 +96,36 @@ class PDFDownloader:
         logger.info("Downloaded PDF: %s (%d bytes)", dest, len(content))
         return dest
 
-    async def download_many(self, papers: list[RawPaper]) -> dict[str, Path | None]:
-        """Download PDFs for a batch of papers.
+    async def download_many(
+        self,
+        papers: list[RawPaper],
+        concurrency: int = 8,
+    ) -> dict[str, Path | None]:
+        """Download PDFs for a batch of papers in parallel.
+
+        Uses an asyncio.Semaphore to cap concurrent downloads so we don't
+        overwhelm upstream servers (especially arXiv). Default concurrency=8
+        strikes a good balance between speed and politeness.
 
         Returns a dict mapping paper title → local Path or None.
         """
+        if not papers:
+            return {}
+
+        sem = asyncio.Semaphore(concurrency)
         results: dict[str, Path | None] = {}
-        for p in papers:
-            results[p.title] = await self.download(p)
+
+        async def _one(paper: RawPaper) -> None:
+            async with sem:
+                try:
+                    results[paper.title] = await self.download(paper)
+                except Exception as exc:
+                    logger.warning(
+                        "Parallel download failed for '%s': %s", paper.title[:60], exc
+                    )
+                    results[paper.title] = None
+
+        await asyncio.gather(*[_one(p) for p in papers])
         return results
 
 

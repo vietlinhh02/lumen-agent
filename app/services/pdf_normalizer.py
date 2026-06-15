@@ -11,7 +11,7 @@ Triggered automatically when a project has ≥3 papers with
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import re
 from contextlib import suppress
@@ -52,12 +52,17 @@ _DEFAULT_MAX_TOKENS = 400
 _OVERLAP_TOKENS = 40  # ~10% of default chunk size
 _MIN_CHUNK_WORDS = 5  # minimum words to keep a chunk
 
-_LLM_CONTEXT_MAX_CHARS = 50000
+_LLM_CONTEXT_MAX_CHARS = 15000  # reduced from 30K for faster LLM calls
 _PIPEINE_VERSION = "paper-tree-v2"
 _STRUCTURE_LINES_PER_BATCH = 220
 _MAX_HEADING_LENGTH = 120
 _MIN_ACCEPTABLE_SECTION_SCORE = 0.55
 _MIN_LLM_ADVANTAGE = 0.08
+_LLM_NORMALIZE_TIMEOUT = 90  # seconds for readable markdown cleanup
+_LLM_STRUCTURE_TIMEOUT = 30  # seconds for section parsing batches
+_PAPER_TIMEOUT = 120  # reserved for future per-paper timeout guard
+_CONCURRENCY = 2  # papers processed in parallel; leave DB pool headroom for API requests
+_NORMALIZATION_LOCKS: dict[UUID, asyncio.Lock] = {}
 _CORE_SECTION_KEYWORDS = (
     "abstract",
     "introduction",
@@ -90,6 +95,15 @@ _PDF_STRUCTURE_SCHEMA = {
     "required": ["headings"],
     "additionalProperties": False,
 }
+
+
+def _get_normalization_lock(project_id: UUID) -> asyncio.Lock:
+    """Return the in-process lock that prevents duplicate project normalization jobs."""
+    lock = _NORMALIZATION_LOCKS.get(project_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _NORMALIZATION_LOCKS[project_id] = lock
+    return lock
 
 
 def _approx_tokens(text: str) -> int:
@@ -142,6 +156,23 @@ async def normalize_project_papers(
 
     Returns a summary dict with counts of processed / skipped / failed.
     """
+    lock = _get_normalization_lock(project_id)
+    if lock.locked():
+        logger.info(
+            "Normalization already running for project %s; skipping duplicate job",
+            project_id,
+        )
+        return {"processed": 0, "skipped": 0, "failed": 0}
+
+    async with lock:
+        return await _normalize_project_papers_locked(db, project_id)
+
+
+async def _normalize_project_papers_locked(
+    db: AsyncSession,
+    project_id: UUID,
+) -> dict:
+    """Run project normalization after the per-project lock is acquired."""
     provider = get_provider()
 
     # Load papers needing normalization
@@ -160,67 +191,142 @@ async def normalize_project_papers(
     rows = result.all()
 
     if not rows:
+        with suppress(Exception):
+            await db.rollback()
         return {"processed": 0, "skipped": 0, "failed": 0}
 
+    # Filter to papers with raw_text
+    ready = [
+        (pp.id, paper.title, env.raw_text.strip())
+        for pp, paper, env in rows
+        if env and env.raw_text
+    ]
+    skipped = len(rows) - len(ready)
+    if not ready:
+        with suppress(Exception):
+            await db.rollback()
+        return {"processed": 0, "skipped": skipped, "failed": 0}
+
+    # Release the caller's connection before LLM, embedding, and per-paper DB work.
+    with suppress(Exception):
+        await db.rollback()
+
     processed = 0
-    skipped = 0
     failed = 0
 
-    for pp, paper, enrichment in rows:
-        if not enrichment or not enrichment.raw_text:
-            skipped += 1
-            continue
+    # Process papers in parallel — each paper gets its own DB session
+    semaphore = asyncio.Semaphore(_CONCURRENCY)
 
-        raw_text = enrichment.raw_text.strip()
+    async def _normalize_one(
+        pp_id: UUID,
+        paper_title: str,
+        raw_text: str,
+    ) -> bool:
+        """Process a single paper in its own DB session."""
+        async with semaphore:
+            from app.db.session import async_session_factory
 
-        try:
-            # 1. LLM normalize only for a readable markdown view. Do not use it
-            # as the evidence source because the model may omit details.
-            normalized = await _normalize_text(provider, paper.title, _llm_context(raw_text))
-            if normalized:
-                enrichment.crawled_markdown = normalized
+            async with async_session_factory() as session:
+                try:
+                    # Reload entities in this session
+                    pp = await session.get(ProjectPaper, pp_id)
+                    if not pp:
+                        return False
 
-            # 2. Use the LLM as a structure parser over numbered raw lines.
-            sections = await _detect_sections_with_llm(provider, paper.title, raw_text)
+                    pp.full_text_status = "normalizing"
+                    await session.commit()
 
-            # 3. Chunk raw text using section boundaries and token-aware size guards.
-            chunks = _chunk_raw_evidence(raw_text, sections)
-            if not chunks:
-                skipped += 1
-                continue
+                    logger.info("Normalizing paper: %s (%d chars)", paper_title[:60], len(raw_text))
 
-            # 4. Embed contextualized text, but store only raw chunk text.
-            embed_indices = [i for i, chunk in enumerate(chunks) if chunk.get("embed", True)]
-            texts = [_embedding_text(paper.title, chunks[i]) for i in embed_indices]
-            try:
-                from app.core.embeddings import (
-                    encode_batch,
-                    get_embedding_dimension,
-                    get_embedding_model_name,
-                )
+                    # 1. LLM normalize for readable markdown (optional, timeout-protected)
+                    try:
+                        context = _llm_context(raw_text)
+                        normalized = await asyncio.wait_for(
+                            _normalize_text(provider, paper_title, context),
+                            timeout=_LLM_NORMALIZE_TIMEOUT,
+                        )
+                        if normalized:
+                            enrich_result = await session.execute(
+                                select(PaperEnrichment).where(
+                                    PaperEnrichment.project_paper_id == pp_id,
+                                )
+                            )
+                            enrichment = enrich_result.scalar_one_or_none()
+                            if enrichment:
+                                enrichment.crawled_markdown = normalized
+                                await session.commit()
+                    except Exception as exc:
+                        logger.warning(
+                            "LLM normalize skipped for '%s': %s",
+                            paper_title[:50],
+                            exc,
+                        )
 
-                if texts:
-                    embeddings = encode_batch(texts)
-                    for i, emb in zip(embed_indices, embeddings, strict=True):
-                        chunks[i]["embedding"] = emb
-                        chunks[i]["embedding_model"] = get_embedding_model_name()
-                        chunks[i]["embedding_dimension"] = get_embedding_dimension()
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Embedding dependency is missing. Run `uv sync` to install."
-                ) from exc
+                    # 2. Section detection with LLM, regex fallback on timeout
+                    try:
+                        sections = await asyncio.wait_for(
+                            _detect_sections_with_llm(provider, paper_title, raw_text),
+                            timeout=_LLM_STRUCTURE_TIMEOUT,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "LLM section detection skipped for '%s': %s",
+                            paper_title[:50],
+                            exc,
+                        )
+                        sections = _detect_sections(raw_text)
 
-            # 5. Store
-            await _store_chunks(db, pp.id, chunks)
-            await _update_status(db, pp.id, "completed")
+                    # 3. Chunk
+                    chunks = _chunk_raw_evidence(raw_text, sections)
+                    if not chunks:
+                        return False
+
+                    # 4. Embed
+                    embed_indices = [
+                        i for i, chunk in enumerate(chunks) if chunk.get("embed", True)
+                    ]
+                    texts = [_embedding_text(paper_title, chunks[i]) for i in embed_indices]
+                    if texts:
+                        try:
+                            from app.core.embeddings import (
+                                encode_batch,
+                                get_embedding_dimension,
+                                get_embedding_model_name,
+                            )
+
+                            embeddings = await encode_batch(texts)
+                            for i, emb in zip(embed_indices, embeddings, strict=True):
+                                chunks[i]["embedding"] = emb
+                                chunks[i]["embedding_model"] = get_embedding_model_name()
+                                chunks[i]["embedding_dimension"] = get_embedding_dimension()
+                        except ImportError as exc:
+                            raise RuntimeError(
+                                "Embedding dependency missing. Run `uv sync`."
+                            ) from exc
+
+                    # 5. Store
+                    await _store_chunks(session, pp_id, chunks)
+                    await _update_status(session, pp_id, "completed")
+                    logger.info("Normalized: %s (%d chunks)", paper_title[:60], len(chunks))
+                    return True
+
+                except Exception as exc:
+                    logger.exception("Normalization failed for %s: %s", paper_title[:60], exc)
+                    with suppress(Exception):
+                        await session.rollback()
+                    await _update_status(session, pp_id, "failed")
+                    return False
+
+    # Launch all papers concurrently; the semaphore keeps DB pool usage bounded.
+    tasks = [_normalize_one(pp_id, title, raw_text) for pp_id, title, raw_text in ready]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for r in results:
+        if isinstance(r, Exception):
+            failed += 1
+        elif r is True:
             processed += 1
-            logger.info("Normalized: %s (%d chunks)", paper.title[:60], len(chunks))
-
-        except Exception as exc:
-            logger.exception("Normalization failed for %s: %s", paper.title[:60], exc)
-            with suppress(Exception):
-                await db.rollback()
-            await _update_status(db, pp.id, "failed")
+        elif r is False:
             failed += 1
 
     return {"processed": processed, "skipped": skipped, "failed": failed}
@@ -240,7 +346,7 @@ async def _normalize_text(
         result = await provider.complete(
             messages=[{"role": "user", "content": user_msg}],
             system=PDF_NORMALIZE_SYSTEM,
-            max_tokens=16000,
+            max_tokens=8000,
         )
         if not result:
             return None
@@ -264,29 +370,35 @@ async def _detect_sections_with_llm(provider, title: str, raw_text: str) -> list
         batch_lines = lines[start : start + _STRUCTURE_LINES_PER_BATCH]
         numbered_lines = _format_numbered_lines(batch_lines, start)
         try:
-            result = await provider.complete_structured(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": PDF_STRUCTURE_USER.format(
-                            title=title,
-                            line_offset=start,
-                            numbered_lines=numbered_lines,
-                        ),
-                    }
-                ],
-                schema=_PDF_STRUCTURE_SCHEMA,
-                tool_name="paper_structure",
-                system=PDF_STRUCTURE_SYSTEM,
-                max_tokens=2048,
+            result = await asyncio.wait_for(
+                provider.complete_structured(
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": PDF_STRUCTURE_USER.format(
+                                title=title,
+                                line_offset=start,
+                                numbered_lines=numbered_lines,
+                            ),
+                        }
+                    ],
+                    schema=_PDF_STRUCTURE_SCHEMA,
+                    tool_name="paper_structure",
+                    system=PDF_STRUCTURE_SYSTEM,
+                    max_tokens=2048,
+                ),
+                timeout=_LLM_STRUCTURE_TIMEOUT,
             )
         except Exception as exc:
             logger.warning("LLM section parsing failed for batch %d: %s", start, exc)
-            return _detect_sections(raw_text)
+            continue
 
         headings.extend(_valid_headings(result, lines, start, len(batch_lines)))
 
     fallback_sections = _detect_sections(raw_text)
+    if not headings:
+        return fallback_sections
+
     llm_sections = _sections_from_headings(lines, headings)
     llm_score = _section_quality_score(llm_sections)
     fallback_score = _section_quality_score(fallback_sections)
@@ -823,7 +935,7 @@ async def _store_chunks(
     )
 
     for c in chunks:
-        embedding_json = json.dumps(c["embedding"]) if c.get("embedding") else None
+        embedding_list = c.get("embedding")
         section = c.get("section_label")
         if section and len(section) > 60:
             section = section[:60]
@@ -840,7 +952,7 @@ async def _store_chunks(
                 content_type=c.get("content_type"),
                 pipeline_version=c.get("pipeline_version"),
                 content_hash=c.get("content_hash"),
-                embedding=embedding_json,
+                embedding=embedding_list,
                 embedding_model=c.get("embedding_model"),
                 embedding_dimension=c.get("embedding_dimension"),
             )

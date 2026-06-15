@@ -1,18 +1,21 @@
 import asyncio
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 from app.services.pdf_ingestion import Section, _detect_sections
 from app.services.pdf_normalizer import (
     _DEFAULT_MAX_TOKENS,
     _LLM_CONTEXT_MAX_CHARS,
-    _OVERLAP_TOKENS,
     _approx_tokens,
     _chunk_raw_evidence,
     _detect_sections_with_llm,
     _embedding_text,
+    _get_normalization_lock,
     _llm_context,
     _policy_for_section,
     _split_section_text,
     _tokens_to_chars,
+    normalize_project_papers,
 )
 
 
@@ -45,6 +48,21 @@ class NoisyStructureProvider:
         }
 
 
+def test_duplicate_project_normalization_skips_without_db_work() -> None:
+    async def run_check() -> None:
+        project_id = uuid4()
+        lock = _get_normalization_lock(project_id)
+        await lock.acquire()
+        try:
+            result = await normalize_project_papers(db=AsyncMock(), project_id=project_id)
+        finally:
+            lock.release()
+
+        assert result == {"processed": 0, "skipped": 0, "failed": 0}
+
+    asyncio.run(run_check())
+
+
 def test_llm_context_keeps_tail_for_long_papers() -> None:
     raw_text = "A" * 60000 + "LIMITATION_SENTINEL"
 
@@ -59,7 +77,9 @@ def test_raw_evidence_chunking_uses_text_after_llm_context_limit() -> None:
     raw_text = (
         "Introduction\n"
         + ("A " * 20000)
-        + "\n\nLimitations\nTAIL_SENTINEL shows the paper ending is preserved and is a long enough section to pass filtering."
+        + "\n\nLimitations\n"
+        + "TAIL_SENTINEL shows the paper ending is preserved and is a long enough "
+        + "section to pass filtering."
     )
     sections = [
         Section(name="Introduction", start_line=0, end_line=2),

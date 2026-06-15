@@ -119,26 +119,6 @@ async def save_paper_endpoint(
     result = await save_paper_to_project(db, user, project_id, body)
     if result is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
-
-    # Auto-trigger LLM normalization when ≥3 papers have raw text
-    if result.full_text_status == "raw_extracted":
-        from app.services.pdf_normalizer import count_raw_papers, normalize_project_papers
-
-        raw_count = await count_raw_papers(db, project_id)
-        if raw_count >= 3:
-            from app.db.session import async_session_factory
-
-            async def _bg_normalize():
-                async with async_session_factory() as bg_db:
-                    await normalize_project_papers(bg_db, project_id)
-
-            asyncio.ensure_future(_bg_normalize())
-            logger.info(
-                "Auto-triggered batch normalization for project %s (%d papers)",
-                project_id,
-                raw_count,
-            )
-
     return result
 
 
@@ -173,10 +153,16 @@ async def normalize_papers_endpoint(
     from app.db.session import async_session_factory
 
     async def _bg_normalize():
-        async with async_session_factory() as bg_db:
-            from app.services.pdf_normalizer import normalize_project_papers
+        try:
+            async with async_session_factory() as bg_db:
+                from app.services.pdf_normalizer import normalize_project_papers
 
-            await normalize_project_papers(bg_db, project_id)
+                result = await normalize_project_papers(bg_db, project_id)
+                logger.info(
+                    "Normalization done for project %s: %s", project_id, result
+                )
+        except Exception as exc:
+            logger.exception("Background normalization crashed for project %s: %s", project_id, exc)
 
     asyncio.ensure_future(_bg_normalize())
     logger.info(
@@ -398,23 +384,37 @@ async def download_paper_pdf_endpoint(
         source_specific={"pdf_url": open_access_url} if open_access_url else {},
     )
 
-    downloader = PDFDownloader(output_dir=Path(settings.paper_pdf_dir), timeout=60)
-    pdf_result = await downloader.download(raw)
+    # Kick off download + ingest in background — API returns immediately
+    import asyncio
 
-    if pdf_result is None:
-        raise HTTPException(
-            status_code=502, detail="Failed to download PDF (no open access or server error)"
-        )
+    from app.services.project import _download_and_ingest_bg
 
-    # Run PDF ingestion pipeline
-    from app.services.pdf_ingestion import ingest_pdf
-
-    await ingest_pdf(db, pp.id, pdf_result)
+    asyncio.ensure_future(_download_and_ingest_bg(pp.id, raw))
+    pp.full_text_status = "pending"
+    await db.commit()
+    await db.refresh(pp)
 
     # Return updated paper status
+    from app.db.models import LiteratureMatrixRow, PaperEnrichment
     from app.services.project import _to_project_paper_response
 
-    return _to_project_paper_response(pp, paper, project_id)
+    has_matrix = (
+        await db.execute(
+            select(LiteratureMatrixRow.id).where(LiteratureMatrixRow.project_paper_id == pp.id)
+        )
+    ).first() is not None
+    has_enrichment = (
+        await db.execute(
+            select(PaperEnrichment.id).where(
+                PaperEnrichment.project_paper_id == pp.id,
+                PaperEnrichment.enrichment_status == "completed",
+            )
+        )
+    ).first() is not None
+
+    return _to_project_paper_response(
+        pp, paper, project_id, has_matrix=has_matrix, has_enrichment=has_enrichment
+    )
 
 
 @router.get(

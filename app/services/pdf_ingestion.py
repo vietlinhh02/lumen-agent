@@ -1,26 +1,28 @@
-"""PDF Ingestion Pipeline.
+"""PDF ingestion pipeline.
 
-Extracts text from downloaded PDFs, detects sections, chunks the
-content, and generates embeddings.  Designed to be called inline
-after a PDF is downloaded so the enriched text is immediately
-available for matrix/gap/review workflows.
+Extracts raw text from downloaded PDFs and stores it for the later
+normalization/chunking/embedding batch. Local extraction uses Poppler when
+available, falls back to pypdf, then uses Gemini OCR for image-only PDFs.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import re
+import shutil
+import subprocess
+from contextlib import suppress
 from dataclasses import dataclass
-from operator import itemgetter
 from pathlib import Path
 from uuid import UUID
 
-import pdfplumber
+from pypdf import PdfReader
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import PaperChunk, ProjectPaper
+from app.core.config import get_settings
+from app.db.models import PaperChunk, PaperEnrichment, ProjectPaper
 
 logger = logging.getLogger(__name__)
 
@@ -115,30 +117,31 @@ async def ingest_pdf(
 
     Returns ``"raw_extracted"``, ``"failed"``, or ``"ocr_required"``.
     """
-    text = _extract_text(pdf_path)
+    text = await _extract_text(pdf_path)
+    if text is not None:
+        # Strip null bytes that PostgreSQL UTF8 encoding rejects
+        text = text.replace("\x00", "")
     if text is None or len(text.strip()) < 50:
         await _update_status(db, project_paper_id, "ocr_required")
+        await db.commit()
         logger.info("PDF appears image-only (no text layer): %s", pdf_path)
         return "ocr_required"
 
     try:
-        # Store raw text in PaperEnrichment
-        from app.db.models import PaperEnrichment
-
-        result = await db.execute(
-            select(PaperEnrichment).where(PaperEnrichment.project_paper_id == project_paper_id)
-        )
-        enrichment = result.scalar_one_or_none()
-        if enrichment is None:
-            enrichment = PaperEnrichment(
+        # Store raw text in PaperEnrichment (upsert: may already exist)
+        stmt = (
+            pg_insert(PaperEnrichment)
+            .values(
                 project_paper_id=project_paper_id,
                 raw_text=text,
                 enrichment_status="completed",
             )
-            db.add(enrichment)
-        else:
-            enrichment.raw_text = text
-            enrichment.enrichment_status = "completed"
+            .on_conflict_do_update(
+                index_elements=["project_paper_id"],
+                set_={"raw_text": text, "enrichment_status": "completed"},
+            )
+        )
+        await db.execute(stmt)
 
         await _update_status(db, project_paper_id, "raw_extracted")
         await db.commit()
@@ -151,84 +154,129 @@ async def ingest_pdf(
 
     except Exception as exc:
         logger.exception("Raw text extraction failed for %s: %s", pdf_path, exc)
-        await _update_status(db, project_paper_id, "failed")
+        with suppress(Exception):
+            await db.rollback()
+        with suppress(Exception):
+            await _update_status(db, project_paper_id, "failed")
         return "failed"
 
 
-# ── Stage 1: Text Extraction ─────────────────────────────────────────────
+# ── Stage 1: Text Extraction (Poppler + pypdf + Gemini OCR fallback) ─────
 
 
-def _extract_text(pdf_path: Path) -> str | None:
-    """Extract text from a PDF using pdfplumber (memory-efficient)."""
+def _extract_text_poppler(pdf_path: Path) -> str | None:
+    """Extract text with Poppler's pdftotext when available.
+
+    Poppler generally preserves spaces and two-column reading order better than
+    pypdf for academic PDFs. It is an optional system binary, so callers must
+    fall back when it is missing or returns too little usable text.
+    """
+    if shutil.which("pdftotext") is None:
+        return None
+
     try:
-        lines: list[str] = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                words = page.extract_words(x_tolerance=2, y_tolerance=2)
-                if not words:
-                    continue
-                _extract_page_lines(words, page.width, lines)
-        full_text = "\n".join(lines)
-        return full_text if full_text.strip() else None
+        result = subprocess.run(
+            ["pdftotext", "-layout", "-enc", "UTF-8", str(pdf_path), "-"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("pdftotext extraction failed for %s: %s", pdf_path, exc)
+        return None
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        logger.warning("pdftotext extraction failed for %s: %s", pdf_path, stderr)
+        return None
+
+    text = result.stdout.replace("\f", "\n").strip()
+    return text or None
+
+
+def _extract_text_pypdf(pdf_path: Path) -> str | None:
+    """Extract text from a PDF using pypdf (fast, local, no network).
+
+    Handles both single- and multi-column layouts natively.
+    """
+    try:
+        reader = PdfReader(pdf_path)
+        parts: list[str] = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                parts.append(text)
+        full_text = "\n".join(parts)
+        return full_text.strip() or None
     except Exception as exc:
-        logger.warning("Failed to extract text from %s: %s", pdf_path, exc)
+        logger.warning("pypdf extraction failed for %s: %s", pdf_path, exc)
         return None
 
 
-def _extract_page_lines(
-    words: list[dict],
-    page_width: float,
-    lines: list[str],
-) -> None:
-    """Extract lines from one page, handling two-column layout."""
-    boundary = _detect_column_boundary(words, page_width)
-
-    if boundary is not None:
-        left = sorted(
-            [w for w in words if w["x0"] < boundary],
-            key=lambda w: (w["top"], w["x0"]),
-        )
-        right = sorted(
-            [w for w in words if w["x0"] >= boundary],
-            key=lambda w: (w["top"], w["x0"]),
-        )
-        for col_words in (left, right):
-            if len(col_words) < 3:
-                continue
-            groups = pdfplumber.utils.cluster_objects(
-                col_words,
-                itemgetter("top"),
-                1.6,
-            )
-            for group in groups:
-                line = " ".join(w["text"] for w in group)
-                lines.append(line)
-    else:
-        groups = pdfplumber.utils.cluster_objects(
-            words,
-            itemgetter("top"),
-            1.6,
-        )
-        for group in groups:
-            line = " ".join(w["text"] for w in group)
-            lines.append(line)
+_OCR_MODEL = "gemini-2.5-flash"
+_OCR_PROMPT = (
+    "Extract all visible text from this scanned document. "
+    "Return only the extracted text, preserving paragraphs and section structure."
+)
 
 
-def _detect_column_boundary(words: list[dict], page_width: float) -> float | None:
-    """Detect two-column layout and return x boundary, or None."""
-    if len(words) < 50:
+async def _extract_text_ocr(pdf_path: Path) -> str | None:
+    """Fallback: use Gemini vision to OCR an image-only PDF.
+
+    Only called when pypdf returns empty text (scanned/image PDFs).
+    """
+    from google import genai
+    from google.genai import types
+
+    settings = get_settings()
+    if not settings.google_api_key:
+        logger.warning("GOOGLE_API_KEY not set, cannot OCR")
         return None
-    x_vals = sorted(w["x0"] for w in words)
-    max_gap = 0.0
-    boundary: float | None = None
-    for i in range(len(x_vals) - 1):
-        gap = x_vals[i + 1] - x_vals[i]
-        if gap > max_gap and gap > page_width * 0.12:
-            max_gap = gap
-            boundary = (x_vals[i] + x_vals[i + 1]) / 2
-    if boundary and page_width * 0.2 < boundary < page_width * 0.8:
-        return boundary
-    return None
+
+    try:
+        pdf_bytes = pdf_path.read_bytes()
+    except Exception as exc:
+        logger.warning("Failed to read PDF for OCR %s: %s", pdf_path, exc)
+        return None
+
+    client = genai.Client(api_key=settings.google_api_key)
+
+    try:
+        response = await client.aio.models.generate_content(
+            model=_OCR_MODEL,
+            contents=[
+                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                _OCR_PROMPT,
+            ],
+        )
+        text = response.text
+        if text and text.strip():
+            logger.info("OCR extracted %d chars from %s", len(text), pdf_path.name)
+            return text
+        return None
+    except Exception as exc:
+        logger.warning("OCR failed for %s: %s", pdf_path, exc)
+        return None
+
+
+async def _extract_text(pdf_path: Path) -> str | None:
+    """Extract text using the best available deterministic extractor."""
+    text = _extract_text_poppler(pdf_path)
+    if text is not None and len(text.strip()) >= 50:
+        logger.info("Extracted text with pdftotext: %s (%d chars)", pdf_path.name, len(text))
+        return text
+
+    text = _extract_text_pypdf(pdf_path)
+    if text is not None and len(text.strip()) >= 50:
+        logger.info("Extracted text with pypdf: %s (%d chars)", pdf_path.name, len(text))
+        return text
+
+    logger.info(
+        "Local PDF extractors returned too little text - trying Gemini OCR for %s",
+        pdf_path.name,
+    )
+    return await _extract_text_ocr(pdf_path)
 
 
 # ── Stage 2: Section Detection ────────────────────────────────────────────
@@ -410,14 +458,13 @@ async def _store_chunks(
     model_name = get_embedding_model_name()
 
     for chunk in chunks:
-        embedding_str = json.dumps(chunk.embedding) if chunk.embedding else None
         db.add(
             PaperChunk(
                 project_paper_id=project_paper_id,
                 chunk_text=chunk.text,
                 chunk_type=chunk.chunk_type,
                 section_label=chunk.section_label,
-                embedding=embedding_str,
+                embedding=chunk.embedding,
                 embedding_model=model_name,
                 embedding_dimension=dim if chunk.embedding else None,
             )
@@ -434,9 +481,11 @@ async def _update_status(
     project_paper_id: UUID,
     status: str,
 ) -> None:
-    """Update the ``full_text_status`` on the ProjectPaper row."""
+    """Update the ``full_text_status`` on the ProjectPaper row.
+
+    Does NOT commit — the caller is responsible for that.
+    """
     result = await db.execute(select(ProjectPaper).where(ProjectPaper.id == project_paper_id))
     pp = result.scalar_one_or_none()
     if pp is not None:
         pp.full_text_status = status
-        await db.commit()

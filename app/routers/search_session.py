@@ -25,13 +25,10 @@ from app.db.models import Paper, ProjectPaper, User
 from app.db.session import get_db
 from app.routers.paper import _parse_screening_scores
 from app.schemas.paper import (
-    PaperSearchRequest,
     ScreenPapersResponse,
 )
-from app.services.paper_search import search_and_download
 from app.services.search_session import (
     auto_save_high_papers,
-    create_search_session,
     get_saved_paper_ids,
     get_search_session,
     list_search_sessions,
@@ -86,58 +83,24 @@ class SessionDetailResponse(BaseModel):
 # ── Routes ───────────────────────────────────────────────────────────────
 
 
-@router.post("/search/sessions", status_code=http_status.HTTP_201_CREATED)
+@router.post("/search/sessions", status_code=http_status.HTTP_202_ACCEPTED)
 async def create_session(
     request: CreateSessionRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> SessionDetailResponse:
-    search_req = PaperSearchRequest(query=request.query, limit=request.limit, download_pdfs=False)
-    outcome = await search_and_download(search_req)
-    results = [p.model_dump() for p in outcome.response.papers]
+) -> dict:
+    """Start a search in the background.
 
-    audit_data = outcome.response.language_bias_audit
-    run = await create_search_session(
-        db,
-        user,
-        request.project_id,
-        request.query,
-        results,
-        outcome.response.total_found,
-        detected_language=outcome.response.detected_language,
-        english_dominance_score=audit_data.english_dominance_score if audit_data else None,
-        query_variants=[v.model_dump() for v in outcome.response.query_variants],
-        language_bias_audit=audit_data.model_dump() if audit_data else None,
-        source_diagnostics=outcome.response.source_diagnostics,
+    Returns ``{job_id, session_id, status}`` immediately.
+    The frontend polls ``GET /api/papers/search/jobs/{job_id}`` for completion,
+    then loads the session detail via ``GET /api/papers/search/sessions/{session_id}``.
+    """
+    from app.services.search_session import start_search_job
+
+    result = await start_search_job(
+        db, user, request.project_id, request.query, request.limit,
     )
-
-    page_size = 20
-    total = len(results)
-    total_pages = max(1, (total + page_size - 1) // page_size)
-    page_result = results[:page_size]
-    saved_ids = await get_saved_paper_ids(db, request.project_id, page_result)
-
-    audit = outcome.response.language_bias_audit
-    resp_audit = audit.model_dump() if audit else None
-    resp_variants = [v.model_dump() for v in outcome.response.query_variants]
-
-    return SessionDetailResponse(
-        id=run.id,
-        project_id=run.project_id,
-        user_query=run.user_query,
-        total_results=run.total_results,
-        screening_scores=[],
-        created_at=str(run.created_at),
-        page=1,
-        page_size=page_size,
-        total_pages=total_pages,
-        papers=page_result,
-        saved_paper_ids=saved_ids,
-        detected_language=outcome.response.detected_language,
-        query_variants=resp_variants,
-        language_bias_audit=resp_audit,
-        source_diagnostics=outcome.response.source_diagnostics,
-    )
+    return result
 
 
 @router.get("/search/sessions")

@@ -1,8 +1,12 @@
-"""Citation-aware hybrid retrieval over saved project paper chunks."""
+"""Citation-aware hybrid retrieval over saved project paper chunks.
+
+Uses pgvector DB-side cosine distance for vector search instead of loading
+all chunks into Python. Pipeline: DB vector search → keyword scoring →
+blend → rerank → top-K.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import re
@@ -59,37 +63,59 @@ async def retrieve_project_evidence(
 ) -> list[RetrievedChunk]:
     """Retrieve citation-ready evidence chunks for a project query.
 
-    Pipeline: DB fetch → hybrid scoring (keyword + vector) → rerank → top-K.
+    Pipeline: DB-side vector search (pgvector HNSW) → keyword scoring →
+    blend → rerank → top-K.
+
     When ``use_reranker`` is True (default), retrieves ``reranker_top_n``
     candidates first, reranks with the cross-encoder, then returns top-K.
     """
     from app.core.config import get_settings
 
     settings = get_settings()
-    query_tokens = _tokens(query)
-    query_embedding = encode_text(query) if query.strip() else []
 
-    # Retrieve more candidates when reranking (reranker will prune)
+    if not query.strip():
+        return []
+
+    retrieval_query = await _expand_query_with_graph(db, project_id, query)
+    query_tokens = _tokens(retrieval_query)
+
+    query_embedding = await encode_text(retrieval_query)
+    if not query_embedding or all(v == 0.0 for v in query_embedding):
+        logger.warning("Query produced zero embedding, falling back to keyword-only")
+        return await _keyword_only_fallback(db, project_id, query_tokens, limit, content_types)
+
+    # Retrieve more candidates when reranking
     candidate_limit = settings.reranker_top_n if use_reranker else limit
+    # Fetch extra for keyword scoring headroom
+    fetch_limit = min(candidate_limit * 3, 200)
+
+    # DB-side vector search using pgvector cosine distance
+    # cosine_distance = 1 - cosine_similarity, so lower = more similar
+    cosine_dist = PaperChunk.embedding.cosine_distance(query_embedding)
 
     stmt = (
-        select(ProjectPaper, Paper, PaperChunk)
+        select(ProjectPaper, Paper, PaperChunk, cosine_dist.label("vector_dist"))
         .join(Paper, ProjectPaper.paper_id == Paper.id)
         .join(PaperChunk, PaperChunk.project_paper_id == ProjectPaper.id)
         .where(
             ProjectPaper.project_id == project_id,
             ProjectPaper.status == "saved",
             PaperChunk.chunk_type == "full_text",
+            PaperChunk.embedding.isnot(None),
         )
+        .order_by(cosine_dist)
+        .limit(fetch_limit)
     )
     if content_types:
         stmt = stmt.where(PaperChunk.content_type.in_(content_types))
 
     rows = (await db.execute(stmt)).all()
+
     ranked: list[RetrievedChunk] = []
-    for project_paper, paper, chunk in rows:
+    for project_paper, paper, chunk, vector_dist in rows:
+        # Convert distance to similarity score (0-1 range)
+        vector_score = max(0.0, 1.0 - vector_dist)
         keyword_score = _keyword_score(query_tokens, paper, chunk)
-        vector_score = _vector_score(query_embedding, chunk.embedding)
         score = _combined_score(keyword_score, vector_score, chunk.content_type)
         if score <= 0:
             continue
@@ -122,7 +148,7 @@ async def retrieve_project_evidence(
             from app.services.reranker import rerank
 
             docs = [c.chunk_text for c in candidates]
-            reranked = rerank(query, docs, top_k=limit)
+            reranked = await rerank(retrieval_query, docs, top_k=limit)
             # Filter by score threshold to exclude irrelevant chunks
             min_score = 0.05
             candidates = [
@@ -137,6 +163,139 @@ async def retrieve_project_evidence(
         candidates = candidates[:limit]
 
     return candidates
+
+
+async def _expand_query_with_graph(db: AsyncSession, project_id: UUID, query: str) -> str:
+    """Use the project's knowledge graph concepts to improve evidence retrieval."""
+    try:
+        from app.services.knowledge_graph import expand_query_with_graph_context
+
+        return await expand_query_with_graph_context(db, project_id, query)
+    except Exception as exc:
+        logger.warning("Knowledge graph query expansion skipped: %s", exc)
+        return query
+
+
+async def retrieve_paper_evidence(
+    db: AsyncSession,
+    project_paper_id: UUID,
+    query: str,
+    limit: int = 8,
+    content_types: list[str] | None = None,
+) -> list[RetrievedChunk]:
+    """Retrieve top chunks for a single paper, used by matrix extraction.
+
+    Uses DB-side vector search scoped to one project_paper_id.
+    """
+    query_tokens = _tokens(query)
+
+    if not query.strip():
+        return []
+
+    query_embedding = await encode_text(query)
+    if not query_embedding or all(v == 0.0 for v in query_embedding):
+        return []
+
+    cosine_dist = PaperChunk.embedding.cosine_distance(query_embedding)
+
+    stmt = (
+        select(ProjectPaper, Paper, PaperChunk, cosine_dist.label("vector_dist"))
+        .join(Paper, ProjectPaper.paper_id == Paper.id)
+        .join(PaperChunk, PaperChunk.project_paper_id == ProjectPaper.id)
+        .where(
+            ProjectPaper.id == project_paper_id,
+            PaperChunk.chunk_type == "full_text",
+            PaperChunk.embedding.isnot(None),
+        )
+        .order_by(cosine_dist)
+        .limit(limit * 2)
+    )
+    if content_types:
+        stmt = stmt.where(PaperChunk.content_type.in_(content_types))
+
+    rows = (await db.execute(stmt)).all()
+
+    ranked: list[RetrievedChunk] = []
+    for project_paper, paper, chunk, vector_dist in rows:
+        vector_score = max(0.0, 1.0 - vector_dist)
+        keyword_score = _keyword_score(query_tokens, paper, chunk)
+        score = _combined_score(keyword_score, vector_score, chunk.content_type)
+        if score <= 0:
+            continue
+        ranked.append(
+            RetrievedChunk(
+                project_paper_id=project_paper.id,
+                paper_id=paper.id,
+                chunk_id=chunk.id,
+                title=paper.title,
+                chunk_text=chunk.chunk_text,
+                section_label=chunk.section_label,
+                section_path=chunk.section_path,
+                chunk_index=chunk.chunk_index,
+                content_type=chunk.content_type,
+                page_start=chunk.page_start,
+                page_end=chunk.page_end,
+                content_hash=chunk.content_hash,
+                score=score,
+                keyword_score=keyword_score,
+                vector_score=vector_score,
+            )
+        )
+
+    ranked.sort(key=lambda item: item.score, reverse=True)
+    return ranked[:limit]
+
+
+async def _keyword_only_fallback(
+    db: AsyncSession,
+    project_id: UUID,
+    query_tokens: set[str],
+    limit: int,
+    content_types: list[str] | None = None,
+) -> list[RetrievedChunk]:
+    """Fallback when embedding is unavailable — keyword scoring only."""
+    stmt = (
+        select(ProjectPaper, Paper, PaperChunk)
+        .join(Paper, ProjectPaper.paper_id == Paper.id)
+        .join(PaperChunk, PaperChunk.project_paper_id == ProjectPaper.id)
+        .where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.status == "saved",
+            PaperChunk.chunk_type == "full_text",
+        )
+    )
+    if content_types:
+        stmt = stmt.where(PaperChunk.content_type.in_(content_types))
+
+    rows = (await db.execute(stmt)).all()
+    ranked: list[RetrievedChunk] = []
+    for project_paper, paper, chunk in rows:
+        keyword_score = _keyword_score(query_tokens, paper, chunk)
+        score = _combined_score(keyword_score, 0.0, chunk.content_type)
+        if score <= 0:
+            continue
+        ranked.append(
+            RetrievedChunk(
+                project_paper_id=project_paper.id,
+                paper_id=paper.id,
+                chunk_id=chunk.id,
+                title=paper.title,
+                chunk_text=chunk.chunk_text,
+                section_label=chunk.section_label,
+                section_path=chunk.section_path,
+                chunk_index=chunk.chunk_index,
+                content_type=chunk.content_type,
+                page_start=chunk.page_start,
+                page_end=chunk.page_end,
+                content_hash=chunk.content_hash,
+                score=score,
+                keyword_score=keyword_score,
+                vector_score=0.0,
+            )
+        )
+
+    ranked.sort(key=lambda item: item.score, reverse=True)
+    return ranked[:limit]
 
 
 def _keyword_score(query_tokens: set[str], paper: Paper, chunk: PaperChunk) -> float:
@@ -157,35 +316,10 @@ def _keyword_score(query_tokens: set[str], paper: Paper, chunk: PaperChunk) -> f
     return overlap / math.sqrt(len(query_tokens) * len(text_tokens))
 
 
-def _vector_score(query_embedding: list[float], embedding_json: str | None) -> float:
-    """Score semantic similarity using stored JSON embeddings."""
-    if not query_embedding or not embedding_json:
-        return 0.0
-    try:
-        embedding = json.loads(embedding_json)
-    except json.JSONDecodeError:
-        return 0.0
-    if not isinstance(embedding, list):
-        return 0.0
-    return _cosine(query_embedding, embedding)
-
-
 def _combined_score(keyword_score: float, vector_score: float, content_type: str | None) -> float:
     """Blend keyword, vector, and section/content priors."""
     boost = _SECTION_BOOSTS.get(content_type or "", 0.0)
     return keyword_score * 0.45 + vector_score * 0.55 + boost
-
-
-def _cosine(left: list[float], right: list[float]) -> float:
-    """Return cosine similarity for two embedding vectors."""
-    if len(left) != len(right):
-        return 0.0
-    dot = sum(a * b for a, b in zip(left, right, strict=True))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    if left_norm == 0 or right_norm == 0:
-        return 0.0
-    return dot / (left_norm * right_norm)
 
 
 def _tokens(text: str) -> set[str]:

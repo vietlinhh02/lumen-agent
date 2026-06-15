@@ -20,6 +20,9 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://litreview:litreview@localhost:5434/litreview"
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
+    db_pool_timeout: int = 30
 
     # JWT
     jwt_secret_key: str = "change-me-in-production"
@@ -30,8 +33,8 @@ class Settings(BaseSettings):
     semantic_scholar_api_key: str = ""
 
     # PaperHub multi-source search
-    paperhub_provider_names: str = "semantic_scholar,openalex,arxiv,europepmc,pmc"
-    paperhub_provider_timeout_seconds: float = 15.0
+    paperhub_provider_names: str = "semantic_scholar,openalex,arxiv"
+    paperhub_provider_timeout_seconds: float = 8.0
     paperhub_crossref_mailto: str = ""
     paperhub_openalex_email: str = ""
     paperhub_unpaywall_email: str = ""
@@ -50,7 +53,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     embedding_provider: str = "openrouter"
     embedding_model: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-    embedding_dimension: int = 2048
+    embedding_dimension: int = 2000  # pgvector HNSW limit; API returns 2048, truncated to 2000
     embedding_base_url: str = "https://openrouter.ai/api/v1"
 
     # Reranker (NVIDIA Nemotron via OpenRouter /v1/rerank)
@@ -62,6 +65,9 @@ class Settings(BaseSettings):
 
     # Firecrawl
     firecrawl_api_key: str = ""
+
+    # Google AI (Gemini / Gemma API)
+    google_api_key: str = ""
 
     # Paper search defaults
     paper_search_max_results: int = 100

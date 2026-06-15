@@ -7,8 +7,11 @@ or a script.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import NamedTuple
 
@@ -27,16 +30,68 @@ from app.schemas.paper import (
     QueryVariant as QueryVariantSchema,
 )
 from app.services.language_bias import (
+    QueryVariant,
     compute_bias_audit,
     detect_and_generate_variants,
 )
 from app.services.pdf_downloader import PDFDownloader
 from app.sources.base import RawPaper
 from app.sources.exa import ExaSource
-from app.sources.firecrawl import crawl_pdf_links
 from app.sources.paperhub import PaperHubSource
 
 logger = logging.getLogger(__name__)
+
+# ── Search result cache ───────────────────────────────────────────────────
+# Simple in-memory LRU cache for search results
+# Key: hash of (query, limit, year_from, year_to)
+# Value: (raw_papers, source_diagnostics, detected_lang, variants)
+_SEARCH_CACHE: OrderedDict[str, tuple] = OrderedDict()
+_CACHE_MAX_SIZE = 100
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+
+def _cache_key(query: str, limit: int, year_from: int | None, year_to: int | None) -> str:
+    """Generate a cache key for search parameters."""
+    raw = f"{query}:{limit}:{year_from}:{year_to}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _get_cached_search(
+    cache_key: str,
+) -> tuple[list[RawPaper], list[dict], str, list[QueryVariant]] | None:
+    """Return cached search results if available and not expired."""
+    if cache_key not in _SEARCH_CACHE:
+        return None
+    raw_papers, source_diagnostics, detected_lang, variants, cached_at = _SEARCH_CACHE[cache_key]
+    import time as _time
+
+    if _time.time() - cached_at > _CACHE_TTL_SECONDS:
+        del _SEARCH_CACHE[cache_key]
+        return None
+    # Move to end (most recently used)
+    _SEARCH_CACHE.move_to_end(cache_key)
+    return raw_papers, source_diagnostics, detected_lang, variants
+
+
+def _cache_search_result(
+    cache_key: str,
+    raw_papers: list[RawPaper],
+    source_diagnostics: list[dict],
+    detected_lang: str,
+    variants: list[QueryVariant],
+) -> None:
+    """Cache search results with LRU eviction."""
+    import time as _time
+
+    _SEARCH_CACHE[cache_key] = (
+        raw_papers,
+        source_diagnostics,
+        detected_lang,
+        variants,
+        _time.time(),
+    )
+    while len(_SEARCH_CACHE) > _CACHE_MAX_SIZE:
+        _SEARCH_CACHE.popitem(last=False)
 
 
 class SearchOutcome(NamedTuple):
@@ -68,82 +123,64 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     settings = get_settings()
     pdf_dir = Path(settings.paper_pdf_dir)
 
-    # ── 1. Language bias: detect + generate variants ─────────────────────
-    detected_lang = "en"
-    variants: list = []
-    source_diagnostics: list[dict] = []
+    # ── 0. Check cache first ─────────────────────────────────────────────
+    cache_key = _cache_key(request.query, request.limit, request.year_from, request.year_to)
+    cached = _get_cached_search(cache_key)
+    search_ms: float = 0.0
 
-    try:
-        variants, detected_lang = await detect_and_generate_variants(
-            request.query,
-            request.target_languages or [detected_lang, "en"],
-        )
-    except Exception as exc:
-        logger.warning("Language bias detection failed: %s", exc)
+    if cached:
+        all_raw, source_diagnostics, detected_lang, variants = cached
+        logger.debug("Search cache hit for query: %s", request.query[:50])
+    else:
+        # ── 1. Language bias: detect + generate variants ─────────────────────
+        detected_lang = "en"
+        variants: list[QueryVariant] = []
+        source_diagnostics: list[dict] = []
 
-    # ── 2. Search ────────────────────────────────────────────────────────
-    t0 = time.monotonic()
-    all_raw: list[RawPaper] = []
-
-    # Normalize source names and collect queries per canonical source
-    _CANONICAL_SOURCES = {"semantic_scholar", "arxiv", "exa", "firecrawl", "openalex"}
-    source_query_map: dict[str, str] = {}
-    for v in variants:
-        canonical = _normalize_source_name(v.source, _CANONICAL_SOURCES)
-        if canonical:
-            # Keep the first (best) query per source
-            if canonical not in source_query_map:
-                source_query_map[canonical] = v.query
-
-    if not source_query_map:
-        source_query_map["semantic_scholar"] = request.query
-
-    for src_name, src_query in source_query_map.items():
         try:
-            if src_name in ("semantic_scholar", "arxiv", "openalex"):
-                source = PaperHubSource()
-            elif src_name == "exa":
-                source = ExaSource()
-            else:
-                # firecrawl handled separately after search
-                continue
-
-            papers = await source.search(
-                query=src_query,
-                limit=min(request.limit, 100),
-                year_from=request.year_from,
-                year_to=request.year_to,
-            )
-            all_raw.extend(papers)
-            source_diagnostics.append(
-                {
-                    "source": src_name,
-                    "status": "ok",
-                    "result_count": len(papers),
-                }
+            variants, detected_lang = await detect_and_generate_variants(
+                request.query,
+                request.target_languages or [detected_lang, "en"],
             )
         except Exception as exc:
-            logger.warning("Source %s failed: %s", src_name, exc)
-            source_diagnostics.append(
-                {
-                    "source": src_name,
-                    "status": "failed",
-                    "result_count": 0,
-                    "message": str(exc)[:200],
-                }
-            )
+            logger.warning("Language bias detection failed: %s", exc)
+            # Fallback: use default English variants for common sources
+            variants = [
+                QueryVariant(source="semantic_scholar", query=request.query, language="en"),
+                QueryVariant(source="arxiv", query=request.query, language="en"),
+            ]
 
-    search_ms = round((time.monotonic() - t0) * 1000, 1)
+        # ── 2. Build source query map ───────────────────────────────────
+        t0 = time.monotonic()
+        _CANONICAL_SOURCES = {"semantic_scholar", "arxiv", "exa", "firecrawl", "openalex"}
+        source_query_map: dict[str, str] = {}
+        for v in variants:
+            canonical = _normalize_source_name(v.source, _CANONICAL_SOURCES)
+            if canonical:
+                if canonical not in source_query_map:
+                    source_query_map[canonical] = v.query
+
+        if not source_query_map:
+            source_query_map["semantic_scholar"] = request.query
+
+        # ── 3. Search all sources in parallel with early exit ────────────
+        all_raw, source_diagnostics = await _search_sources_parallel(
+            source_query_map,
+            request.limit,
+            request.year_from,
+            request.year_to,
+        )
+
+        search_ms = round((time.monotonic() - t0) * 1000, 1)
+        logger.debug("Search took %dms for query: %s", search_ms, request.query[:50])
+
+        # Cache the results
+        _cache_search_result(cache_key, all_raw, source_diagnostics, detected_lang, variants)
+
     raw_papers = _deduplicate_raw_books(all_raw)
     raw_papers = raw_papers[: request.limit]
 
-    # ── 2.5. Enrich PDF links via Firecrawl ─────────────────────────────
-    try:
-        all_raw = await crawl_pdf_links(all_raw)
-    except Exception as exc:
-        logger.warning("Firecrawl crawl failed: %s", exc)
-
-    # ── 3. Build paper results ───────────────────────────────────────────
+    # ── 4. Build paper results ───────────────────────────────────────────
     results: list[PaperResult] = []
     pdf_statuses: list[PaperPDFStatus] = []
 
@@ -151,7 +188,7 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     pdfs_failed = 0
     download_ms: float | None = None
 
-    # ── 3. Download PDFs (optional) ──────────────────────────────────────
+    # ── 5. Download PDFs (optional) ──────────────────────────────────────
     if request.download_pdfs and raw_papers:
         t_dl = time.monotonic()
         downloader = PDFDownloader(output_dir=pdf_dir, timeout=90)
@@ -160,7 +197,7 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     else:
         pdf_map: dict[str, Path | None] = {}
 
-    # ── 4. Assemble output ───────────────────────────────────────────────
+    # ── 6. Assemble output ───────────────────────────────────────────────
     for paper in raw_papers:
         pdf_path = pdf_map.get(paper.title)
         pdf_source = _classify_pdf_source(paper)
@@ -211,21 +248,23 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
         results.append(result)
         pdf_statuses.append(pdf_status)
 
-    # Sort results to prioritize papers with a direct PDF route.
-    # We zip results and pdf_statuses to keep their order synchronized
+    # Sort results to prioritize papers with a downloadable PDF.
+    # Tier 0: already downloaded this run
+    # Tier 1: arXiv ID — extremely reliable to download on retry
+    # Tier 2: direct open PDF URL from S2
+    # Tier 3: needs DOI/OpenAlex fallback or has no known PDF route
     zipped = list(zip(results, pdf_statuses, raw_papers, strict=True))
 
     def sort_key(item):
         res, _, raw = item
         year_rank = -(res.year or 0)
-        # Priority 1: Has arXiv ID (extremely reliable to download)
-        if res.arxiv_id:
+        if res.pdf_downloaded:
             return (0, year_rank)
-        # Priority 2: Has a direct open PDF URL from any PaperHub provider
-        if raw.source_specific.get("pdf_url"):
+        if res.arxiv_id:
             return (1, year_rank)
-        # Priority 3: Needs DOI/OpenAlex fallback or has no known PDF route
-        return (2, year_rank)
+        if raw.source_specific.get("pdf_url"):
+            return (2, year_rank)
+        return (3, year_rank)
 
     zipped.sort(key=sort_key)
 
@@ -337,3 +376,109 @@ def _failure_reason(paper: RawPaper) -> str:
     if not paper.arxiv_id and not paper.source_specific.get("pdf_url"):
         return "no direct PDF source available from PaperHub search"
     return "download failed (server error, paywall, or non-PDF response)"
+
+
+async def _search_sources_parallel(
+    source_query_map: dict[str, str],
+    limit: int,
+    year_from: int | None,
+    year_to: int | None,
+) -> tuple[list[RawPaper], list[dict]]:
+    """Search all configured sources in parallel with early exit optimization.
+
+    Stops collecting results once we have >= `limit` deduplicated papers,
+    to avoid unnecessary processing when the first source(s) return enough.
+    """
+    # Track papers as they arrive to enable early exit
+    collected: list[RawPaper] = []
+    seen_ids: set[str] = set()
+    diagnostics: list[dict] = []
+    found_enough = asyncio.Event()
+    lock = asyncio.Lock()
+
+    async def _search_one_source(src_name: str, src_query: str) -> None:
+        """Search a single source, add to collected, update diagnostics."""
+        if found_enough.is_set():
+            return
+
+        try:
+            if src_name == "semantic_scholar":
+                from app.sources.semantic_scholar import SemanticScholarSource
+                from app.core.config import get_settings as _gs
+
+                s2_settings = _gs()
+                source = SemanticScholarSource(
+                    api_key=s2_settings.semantic_scholar_api_key or None,
+                    timeout=30,  # Reduced from 45s
+                )
+            elif src_name in ("arxiv", "openalex"):
+                source = PaperHubSource()
+            elif src_name == "exa":
+                source = ExaSource()
+            else:
+                async with lock:
+                    diagnostics.append(
+                        {
+                            "source": src_name,
+                            "status": "skipped",
+                            "result_count": 0,
+                        }
+                    )
+                return
+
+            papers = await source.search(
+                query=src_query,
+                limit=min(limit * 2, 100),  # Fetch extra to account for dedup
+                year_from=year_from,
+                year_to=year_to,
+            )
+
+            async with lock:
+                for p in papers:
+                    key = p.semantic_scholar_id or p.arxiv_id or p.doi or p.title.lower().strip()
+                    if key not in seen_ids:
+                        seen_ids.add(key)
+                        collected.append(p)
+                diagnostics.append(
+                    {
+                        "source": src_name,
+                        "status": "ok",
+                        "result_count": len(papers),
+                    }
+                )
+
+                # Early exit if we have enough deduplicated results
+                if len(collected) >= limit:
+                    found_enough.set()
+
+        except Exception as exc:
+            logger.warning("Source %s failed: %s", src_name, exc)
+            async with lock:
+                diagnostics.append(
+                    {
+                        "source": src_name,
+                        "status": "failed",
+                        "result_count": 0,
+                        "message": str(exc)[:200],
+                    }
+                )
+
+    # Launch all source searches concurrently as Tasks
+    task_objs: list[asyncio.Task] = [
+        asyncio.create_task(_search_one_source(src_name, src_query))
+        for src_name, src_query in source_query_map.items()
+    ]
+
+    # Wait for all tasks, but early exit if we have enough results
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*task_objs, return_exceptions=True),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Search sources timed out after 30s")
+        for t in task_objs:
+            if not t.done():
+                t.cancel()
+
+    return collected, diagnostics
