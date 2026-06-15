@@ -455,7 +455,9 @@ ASSISTANT_SYSTEM = """\
 You are Lumen, an AI research assistant. You help researchers produce
 defensible literature reviews from real academic papers.
 
-You have access to 11 tools. Use them to:
+You have access to 19 tools. Use them to:
+
+Fast-path tools (in-process; low latency, no sandbox needed):
 1. create_project — when the user describes a research intent
 2. search_papers — find papers from academic sources (downloads up to 100
    PDFs in parallel; results are sorted with downloadable papers first)
@@ -470,6 +472,25 @@ You have access to 11 tools. Use them to:
 9. generate_report — write a citation-safe literature review to ReviewReport table
 10. edit_report_section — rewrite one section of an existing report
 11. qa_search_papers — answer questions about saved papers using RAG
+
+Sandbox tools (per-project isolated runtime; latency 10-500ms per call):
+12. run_python — execute Python code in the project sandbox; ad-hoc analysis,
+    parsing, math, regex on raw text. Stdout/stderr come back as the result.
+    Set timeout (seconds, default 30, max 600) for long jobs.
+13. run_shell — run a whitelisted shell command (ls, cat, grep, wc, jq, head,
+    tail, awk, sed, sort, uniq, find, …). Anything not in the whitelist is
+    rejected. Use this for quick file inspection.
+14. read_file — read a file from /workspace. Returns content + size; auto-
+    truncated if larger than max_bytes (default 200K).
+15. write_file — write/append content to a file in /workspace.
+16. list_files — list files in /workspace (or a sub-path). Optional glob pattern.
+17. open_pdf_page — extract text from one page of a PDF already in /workspace.
+    Use this when the user wants a quote or a specific page from a saved paper.
+18. grep_pdf — regex search across a PDF. Returns up to 20 matches with
+    surrounding context. Good for finding the page where a method is described.
+19. install_packages — pip-install Python packages in the sandbox (e.g.
+    pandas, scikit-learn, requests). Use only when run_python truly needs
+    a missing package.
 
 Standard research pipeline:
   create_project → search_papers (max_results=50-100) → save_papers_batch
@@ -504,6 +525,14 @@ Rules:
 - Never invent paper titles, authors, or DOIs. Only cite what qa_search_papers
   or generate_report returns.
 - If a tool fails, report the error to the user and suggest a next step.
+- Use sandbox tools (run_python, run_shell, read_file, open_pdf_page, …) for
+  ad-hoc work that doesn't fit the fast-path tools: e.g. compute a metric
+  over 200 papers, parse a CSV the user uploaded, look at page 7 of a saved
+  PDF, regex-grep a downloaded file. They run in an isolated per-project
+  container and persist files in /workspace between calls.
+- The sandbox is per-project, not per-call. Variables/files you create in
+  run_python don't survive across calls, but files you write_file or
+  write from Python to /workspace DO persist for the next sandbox call.
 """
 
 
@@ -717,6 +746,133 @@ TOOL_DESCRIPTIONS: list[dict] = [
                 "question": {"type": "string"},
             },
             "required": ["project_id", "question"],
+        },
+    },
+    # ── Sandbox tools (12-19) ─────────────────────────────────────────
+    {
+        "name": "run_python",
+        "description": (
+            "Run Python code in the project's sandbox container. Use for ad-hoc "
+            "analysis, parsing, regex, math, or anything that doesn't fit a "
+            "fast-path tool. Returns {ok, stdout, stderr, exit_code, duration_ms}. "
+            "Sandbox has no internet by default; install packages first with "
+            "install_packages if you need pandas/sklearn/etc."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Python source to run"},
+                "timeout": {"type": "integer", "default": 30, "maximum": 600},
+            },
+            "required": ["code"],
+        },
+    },
+    {
+        "name": "run_shell",
+        "description": (
+            "Run a whitelisted shell command in the sandbox (ls, cat, head, tail, "
+            "grep, wc, find, sort, uniq, awk, sed, jq, file, du, xxd, …). Anything "
+            "not whitelisted (rm, mv, cp, chmod, sudo, curl, wget, ssh, etc.) is "
+            "REJECTED before execution. Use read_file/write_file for non-shell file ops."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Shell command to run"},
+                "timeout": {"type": "integer", "default": 30, "maximum": 600},
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Read a file from the sandbox workspace. Path is relative to /workspace "
+            "(or absolute under /workspace). Auto-truncates above max_bytes."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_bytes": {"type": "integer", "default": 200000, "maximum": 5000000},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": (
+            "Write or append content to a file in the sandbox workspace. Path is "
+            "relative to /workspace. Files survive across sandbox calls within the "
+            "same project."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "mode": {"type": "string", "enum": ["w", "a"], "default": "w"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "list_files",
+        "description": "List files in the sandbox workspace. Optional glob pattern.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "default": "/workspace"},
+                "pattern": {"type": "string", "description": "Glob pattern, e.g. '*.pdf'"},
+            },
+        },
+    },
+    {
+        "name": "open_pdf_page",
+        "description": (
+            "Extract text from one page of a PDF in /workspace. Good for quoting a "
+            "specific page or reading a specific section. Returns {content, total_pages}."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "page": {"type": "integer", "minimum": 1},
+                "max_chars": {"type": "integer", "default": 20000, "maximum": 200000},
+            },
+            "required": ["path", "page"],
+        },
+    },
+    {
+        "name": "grep_pdf",
+        "description": (
+            "Regex search across a PDF in /workspace. Returns up to max_matches "
+            "occurrences with surrounding context and the page number."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "pattern": {"type": "string"},
+                "context": {"type": "integer", "default": 120, "maximum": 1000},
+                "max_matches": {"type": "integer", "default": 20, "maximum": 200},
+            },
+            "required": ["path", "pattern"],
+        },
+    },
+    {
+        "name": "install_packages",
+        "description": (
+            "pip-install Python packages into the sandbox. Use when run_python "
+            "needs a package that isn't pre-installed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "packages": {"type": "array", "items": {"type": "string"}},
+                "timeout": {"type": "integer", "default": 120, "maximum": 600},
+            },
+            "required": ["packages"],
         },
     },
 ]

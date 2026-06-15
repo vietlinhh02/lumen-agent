@@ -24,6 +24,8 @@ from app.routers.project import router as project_router
 from app.routers.reports import router as reports_router
 from app.routers.search_session import router as search_session_router
 from app.routers.stats import router as stats_router
+from app.services.sandbox.config import get_sandbox_config
+from app.services.sandbox.manager import get_sandbox_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +46,14 @@ async def lifespan(app: FastAPI):
     # Phase 0: Init async HTTP clients
     await init_async_client()
     await init_rerank_client()
+
+    # Phase 0.5: Start sandbox reaper (only meaningful in docker mode)
+    if get_sandbox_config().enabled:
+        try:
+            get_sandbox_manager().start_reaper(interval_seconds=60)
+            logger.info("Sandbox reaper started (mode=%s)", get_sandbox_config().mode)
+        except Exception as exc:
+            logger.warning("Sandbox reaper failed to start: %s", exc)
 
     # Phase 1: pgvector extension
     async with engine.begin() as conn:
@@ -153,9 +163,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup: close async HTTP clients
+    # Cleanup: close async HTTP clients + shut down sandbox manager
     await close_async_client()
     await close_rerank_client()
+    try:
+        mgr = get_sandbox_manager()
+        await mgr.shutdown()
+    except Exception:
+        pass
 
 
 def create_app() -> FastAPI:
