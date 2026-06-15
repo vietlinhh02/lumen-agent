@@ -1,5 +1,17 @@
-import type { ChatDocumentDetailResponse, ChatDocumentListResponse } from "@/lib/types";
+import type {
+  ChatDocumentDetailResponse,
+  ChatDocumentListResponse,
+  ChatDocumentResponse,
+} from "@/lib/types";
 import { apiFetch } from "@/lib/api";
+
+export async function createDocument(token: string): Promise<ChatDocumentResponse> {
+  return apiFetch<ChatDocumentResponse>("/assistant/documents", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ title: "New assistant session" }),
+  });
+}
 
 export async function listDocuments(token: string): Promise<ChatDocumentListResponse> {
   return apiFetch<ChatDocumentListResponse>("/assistant/documents", {

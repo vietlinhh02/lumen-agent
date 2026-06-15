@@ -11,9 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
-from app.db.models import ChatDocument, ChatMessage, User
+from app.db.models import ChatDocument, ChatMessage, Project, User
 from app.db.session import get_db
 from app.schemas.assistant import (
+    ChatDocumentCreateRequest,
     ChatDocumentDetailResponse,
     ChatDocumentListResponse,
     ChatDocumentResponse,
@@ -35,6 +36,37 @@ def _doc_to_response(doc: ChatDocument) -> ChatDocumentResponse:
         created_at=doc.created_at.isoformat() if doc.created_at else "",
         updated_at=doc.updated_at.isoformat() if doc.updated_at else "",
     )
+
+
+@router.post("/documents", response_model=ChatDocumentResponse)
+async def create_document(
+    body: ChatDocumentCreateRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatDocumentResponse:
+    title = (body.title if body else None) or "New assistant session"
+    title = title.strip() or "New assistant session"
+    project = Project(
+        owner_id=user.id,
+        title=title,
+        topic="",
+        research_question=None,
+        status="active",
+    )
+    db.add(project)
+    await db.flush()
+
+    doc = ChatDocument(
+        project_id=project.id,
+        user_id=user.id,
+        title=title,
+        content_md="",
+        version=0,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return _doc_to_response(doc)
 
 
 @router.get("/documents", response_model=ChatDocumentListResponse)
@@ -62,8 +94,8 @@ async def get_document(
 ) -> ChatDocumentDetailResponse:
     try:
         did = uuid.UUID(doc_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid doc_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid doc_id") from exc
 
     doc = (
         await db.execute(
@@ -106,8 +138,8 @@ async def export_document(
 ):
     try:
         did = uuid.UUID(doc_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid doc_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid doc_id") from exc
 
     doc = (
         await db.execute(
@@ -132,8 +164,8 @@ async def delete_document(
 ) -> Response:
     try:
         did = uuid.UUID(doc_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid doc_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid doc_id") from exc
 
     doc = (
         await db.execute(

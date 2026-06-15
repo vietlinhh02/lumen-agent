@@ -3,20 +3,22 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { AssistantProvider, useAssistantStore } from "@/lib/stores/assistantStore";
-import { useAssistantWS } from "@/lib/hooks/useAssistantWS";
+import { useAssistantStore } from "@/lib/stores/assistantStore";
+import { AssistantContextProvider } from "@/components/assistant/AssistantContext";
 import { ChatPanel } from "@/components/assistant/ChatPanel";
 import { PreviewPanel } from "@/components/assistant/PreviewPanel";
 import { ProgressChecklist } from "@/components/assistant/ProgressChecklist";
 import { AssistantHeader } from "@/components/assistant/AssistantHeader";
+import { SessionSidebar } from "@/components/assistant/SessionSidebar";
 import { getDocument, listDocuments } from "@/lib/api/assistant";
 
-function SessionInner() {
+export default function AssistantSessionPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params?.projectId as string;
   const { token } = useAuth();
-  const { setIdentity, reset, handleEvent } = useAssistantStore();
-  const [loaded, setLoaded] = useState(false);
+  const { setIdentity, reset, handleEvent, state, togglePreview } =
+    useAssistantStore();
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     reset();
@@ -44,34 +46,24 @@ function SessionInner() {
         }
       } catch (err) {
         console.error("Failed to load chat document", err);
-      } finally {
-        setLoaded(true);
       }
     })();
   }, [token, projectId, setIdentity, handleEvent]);
 
-  useAssistantWS(loaded ? projectId : null, token);
+  // Track viewport so we can swap the preview behaviour between desktop
+  // (side-by-side) and mobile (preview replaces chat).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
-  return (
-    <div className="fixed inset-0 top-[60px] flex flex-col ml-0 xl:ml-[56px]">
-      <AssistantHeader />
-      <div className="flex-1 flex min-h-0">
-        <div className="w-full md:w-[420px] shrink-0 flex flex-col border-r border-hairline">
-          <ProgressChecklist />
-          <div className="flex-1 min-h-0">
-            <ChatPanel token={token || ""} />
-          </div>
-        </div>
-        <div className="flex-1 min-w-0 hidden md:block">
-          <PreviewPanel />
-        </div>
-      </div>
-    </div>
-  );
-}
+  const hasDoc = Boolean(state.currentMarkdown);
+  const previewOpen = hasDoc && !state.previewDismissed;
 
-export default function AssistantSessionPage() {
-  const { token } = useAuth();
   if (!token) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-60px)]">
@@ -79,9 +71,49 @@ export default function AssistantSessionPage() {
       </div>
     );
   }
+
+  // Mobile: when preview is open it replaces chat so the user can still read
+  // the document; otherwise chat fills the available space.
+  const showChat = !previewOpen || !isMobile;
+  const showPreview = previewOpen;
+
+  // SSE transport only requires projectId + token; we don't gate on `loaded`
+  // because the chat can start before the document is fetched.
   return (
-    <AssistantProvider>
-      <SessionInner />
-    </AssistantProvider>
+    <AssistantContextProvider projectId={projectId} token={token}>
+      <div className="fixed inset-0 top-[60px] flex flex-col ml-0 xl:ml-[56px]">
+        <AssistantHeader
+          onTogglePreview={togglePreview}
+          previewOpen={previewOpen}
+          hasDoc={hasDoc}
+        />
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0">
+          <SessionSidebar activeProjectId={projectId} />
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <div className="border-b border-hairline">
+              <ProgressChecklist />
+            </div>
+            <div className="flex-1 min-h-0 min-w-0 flex">
+              {showChat && (
+                <div className="flex-1 min-w-0 min-h-0">
+                  <ChatPanel />
+                </div>
+              )}
+              {showPreview && (
+                <div
+                  className={
+                    isMobile
+                      ? "flex-1 min-w-0 min-h-0"
+                      : "flex-1 min-w-0 min-h-0 border-l border-hairline"
+                  }
+                >
+                  <PreviewPanel />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </AssistantContextProvider>
   );
 }

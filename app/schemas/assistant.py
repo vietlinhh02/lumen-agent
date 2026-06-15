@@ -5,6 +5,10 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class ChatDocumentCreateRequest(BaseModel):
+    title: str | None = None
+
+
 class ChatMessageResponse(BaseModel):
     id: str
     document_id: str

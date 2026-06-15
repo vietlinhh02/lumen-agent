@@ -385,8 +385,10 @@ export type PipelineStep =
   | "create_project"
   | "search_papers"
   | "save_papers"
+  | "normalization"
   | "matrix"
   | "gaps"
+  | "conflicts"
   | "report";
 
 export type AgentStatus =
@@ -403,6 +405,12 @@ export interface ChatMessageFE {
   role: "user" | "assistant" | "system" | "tool_log";
   content: string;
   tool_name?: string | null;
+  tool_call_id?: string | null;
+  tool_args?: Record<string, unknown> | null;
+  tool_summary?: string | null;
+  tool_duration_ms?: number | null;
+  tool_ok?: boolean | null;
+  tool_status?: "running" | "ok" | "error";
   created_at?: string;
 }
 
@@ -443,6 +451,12 @@ export interface LogEvent {
   message: string;
 }
 
+export interface AgentChunkEvent {
+  type: "agent_chunk";
+  delta: string;
+  call_id: string;
+}
+
 export interface ConnectedEvent {
   type: "connected";
   session_id: string;
@@ -477,6 +491,7 @@ export type AssistantEvent =
   | LogEvent
   | ToolCallEvent
   | ToolResultEvent
+  | AgentChunkEvent
   | MarkdownUpdatedEvent
   | { type: "agent_message"; content: string; role: "assistant" }
   | DoneEvent
@@ -487,19 +502,21 @@ export type AssistantEvent =
   | { type: "message_history"; messages: ChatMessageFE[] }
   | { type: "pong" };
 
+export interface ChatDocumentResponse {
+  id: string;
+  project_id: string;
+  title: string;
+  content_md: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChatDocumentListResponse {
-  items: Array<{
-    id: string;
-    project_id: string;
-    title: string;
-    content_md: string;
-    version: number;
-    created_at: string;
-    updated_at: string;
-  }>;
+  items: ChatDocumentResponse[];
   total: number;
 }
 
-export interface ChatDocumentDetailResponse extends ChatDocumentListResponse {
+export interface ChatDocumentDetailResponse extends ChatDocumentResponse {
   messages: ChatMessageFE[];
 }

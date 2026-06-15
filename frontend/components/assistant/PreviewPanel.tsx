@@ -1,5 +1,7 @@
 "use client";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAssistantStore } from "@/lib/stores/assistantStore";
 
 export function PreviewPanel() {
@@ -17,10 +19,12 @@ export function PreviewPanel() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-canvas px-8 py-6">
-      <pre className="text-sm text-ink whitespace-pre-wrap font-sans">
-        {state.currentMarkdown}
-      </pre>
+    <div className="h-full overflow-y-auto bg-canvas px-5 py-5 md:px-8 md:py-6">
+      <article className="prose prose-sm max-w-none text-ink prose-headings:font-display prose-a:text-primary prose-code:text-ink prose-pre:bg-surface-dark">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {state.currentMarkdown}
+        </ReactMarkdown>
+      </article>
     </div>
   );
 }

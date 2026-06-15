@@ -1,8 +1,5 @@
-"""WS + REST tests for AI assistant endpoints."""
+"""REST tests for AI assistant endpoints (replaces the old WS tests)."""
 
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,44 +18,35 @@ def client():
     return TestClient(app)
 
 
-def test_ws_rejects_invalid_token(client):
-    with client.websocket_connect(
-        "/api/assistant/ws?project_id=00000000-0000-0000-0000-000000000000&token=garbage"
-    ) as ws:
-        msg = ws.receive_json()
-        assert msg["type"] == "error"
+def test_sse_message_route_is_registered():
+    """The /api/assistant/message SSE route should be in the app routes."""
+    routes = [r.path for r in app.routes if hasattr(r, "path")]
+    assert "/api/assistant/message" in routes
 
 
-def test_ws_accepts_valid_token_and_sends_connected(client):
-    user_id = uuid4()
-    token = _fake_token(user_id)
-    pid = "00000000-0000-0000-0000-000000000001"
-
-    with patch("app.routers.assistant_ws.AssistantRunner") as mock_runner_cls:
-        mock_runner = MagicMock()
-        mock_runner.run_turn = AsyncMock()
-        mock_runner_cls.return_value = mock_runner
-
-        with client.websocket_connect(f"/api/assistant/ws?project_id={pid}&token={token}") as ws:
-            msg = ws.receive_json()
-            assert msg["type"] in ("connected", "error")
+def test_sse_stop_route_is_registered():
+    """The /api/assistant/stop route should be in the app routes."""
+    routes = [r.path for r in app.routes if hasattr(r, "path")]
+    assert "/api/assistant/stop" in routes
 
 
-def test_rest_list_documents(client):
-    """Verify the route is registered. Skip actual call — TestClient +
-    async session teardown has a known event-loop-closed issue that's
-    unrelated to the route logic. We confirm the route is in the app
-    routes list.
-    """
-    from app.main import app
-
+def test_rest_list_documents_route_is_registered():
+    """The /api/assistant/documents REST route should be in the app routes."""
     routes = [r.path for r in app.routes if hasattr(r, "path")]
     assert "/api/assistant/documents" in routes
 
 
-def test_rest_get_document_404(client):
-    """Verify the parameterized route is registered."""
-    from app.main import app
+def test_rest_create_document_route_is_registered():
+    """POST /api/assistant/documents should create a persisted chat session."""
+    routes = [
+        r
+        for r in app.routes
+        if hasattr(r, "path") and r.path == "/api/assistant/documents"
+    ]
+    assert any("POST" in getattr(route, "methods", set()) for route in routes)
 
+
+def test_rest_get_document_route_is_registered():
+    """The parameterized /api/assistant/documents/{doc_id} should be registered."""
     paths = [r.path for r in app.routes if hasattr(r, "path")]
     assert "/api/assistant/documents/{doc_id}" in paths
