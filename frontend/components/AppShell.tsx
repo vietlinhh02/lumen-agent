@@ -16,14 +16,12 @@ import {
   SignOut,
   List,
   X,
-  Sparkle,
 } from "@phosphor-icons/react";
 
 /* ── Navigation items ── */
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: SquaresFour },
-  { label: "AI Assistant", href: "/assistant", icon: Sparkle },
   { label: "Projects", href: "/projects", icon: Folder },
   { label: "Search Papers", href: "/search", icon: MagnifyingGlass },
   { label: "Saved Papers", href: "/papers", icon: FileText },
@@ -289,3 +287,4 @@ function NavItemsMobile({ onClose }: { onClose: () => void }) {
     </>
   );
 }
+

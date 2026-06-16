@@ -11,8 +11,6 @@ from app.db.models import Base
 from app.db.session import engine
 from app.routers.admin import router as admin_router
 from app.routers.agent import router as agent_router
-from app.routers.assistant import router as assistant_router
-from app.routers.assistant_sse import router as assistant_sse_router
 from app.routers.auth import router as auth_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.gaps import router as gaps_router
@@ -187,8 +185,6 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api/admin")
     app.include_router(knowledge_graph_router, prefix="/api/projects")
     app.include_router(stats_router, prefix="/api")
-    app.include_router(assistant_router, prefix="/api")
-    app.include_router(assistant_sse_router, prefix="/api")
 
     # Serve PDF files statically
     os.makedirs(settings.paper_pdf_dir, exist_ok=True)
