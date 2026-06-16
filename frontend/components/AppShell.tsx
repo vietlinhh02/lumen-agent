@@ -16,19 +16,12 @@ import {
   SignOut,
   List,
   X,
-  Sparkle,
-  Terminal,
-  FileText as DocIcon,
 } from "@phosphor-icons/react";
-import { useAssistantStore } from "@/lib/stores/assistantStore";
-import { SandboxStatusPill } from "@/components/assistant/SandboxStatusPill";
-import { StatusBadge } from "@/components/assistant/StatusBadge";
 
 /* ── Navigation items ── */
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: SquaresFour },
-  { label: "AI Assistant", href: "/assistant", icon: Sparkle },
   { label: "Projects", href: "/projects", icon: Folder },
   { label: "Search Papers", href: "/search", icon: MagnifyingGlass },
   { label: "Saved Papers", href: "/papers", icon: FileText },
@@ -113,8 +106,6 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
       >
         Lumen
       </span>
-
-      <AssistantTopControls />
 
       <div className="flex-1" />
 
@@ -297,53 +288,3 @@ function NavItemsMobile({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ── Assistant-page top controls (Sandbox, Show preview, Ready) ───────
- * Renders nothing on non-assistant pages so the global header stays
- * clean. State is shared via the assistant store so the controls
- * work even when the user navigates between assistant sessions.
- */
-
-function AssistantTopControls() {
-  const pathname = usePathname();
-  const onAssistant = pathname?.startsWith("/assistant");
-  const sandboxOpen = useAssistantStore((s) => s.state.sandboxPanelOpen);
-  const previewOpen = useAssistantStore((s) => !s.state.previewDismissed);
-  const hasDoc = useAssistantStore((s) => Boolean(s.state.currentMarkdown));
-  const toggleSandbox = useAssistantStore((s) => s.toggleSandboxPanel);
-  const togglePreview = useAssistantStore((s) => s.togglePreview);
-  const status = useAssistantStore((s) => s.state.agentStatus);
-  const connected = useAssistantStore((s) => s.state.sseConnected);
-
-  if (!onAssistant) return null;
-
-  return (
-    <div className="ml-3 hidden items-center gap-2 sm:flex">
-      <SandboxStatusPill compact />
-      <button
-        type="button"
-        onClick={toggleSandbox}
-        aria-pressed={sandboxOpen}
-        title="Open the sandbox panel"
-        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-colors ${
-          sandboxOpen
-            ? "border-primary bg-primary text-on-primary"
-            : "border-hairline bg-surface-card text-ink hover:border-hairline-strong"
-        }`}
-      >
-        <Terminal size={12} weight="bold" />
-        Sandbox
-      </button>
-      <button
-        type="button"
-        onClick={togglePreview}
-        disabled={!hasDoc}
-        title={hasDoc ? "Toggle Markdown preview" : "Preview appears once a document is generated"}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-hairline bg-surface-card px-2.5 text-[11px] font-semibold text-ink hover:border-hairline-strong disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <DocIcon size={12} weight="bold" />
-        {previewOpen ? "Hide preview" : "Show preview"}
-      </button>
-      <StatusBadge status={status} connected={connected} />
-    </div>
-  );
-}
