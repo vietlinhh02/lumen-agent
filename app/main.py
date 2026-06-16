@@ -11,8 +11,6 @@ from app.db.models import Base
 from app.db.session import engine
 from app.routers.admin import router as admin_router
 from app.routers.agent import router as agent_router
-from app.routers.assistant import router as assistant_router
-from app.routers.assistant_sse import router as assistant_sse_router
 from app.routers.auth import router as auth_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.gaps import router as gaps_router
@@ -22,11 +20,8 @@ from app.routers.matrix import router as matrix_router
 from app.routers.paper import router as paper_router
 from app.routers.project import router as project_router
 from app.routers.reports import router as reports_router
-from app.routers.sandbox import router as sandbox_router
 from app.routers.search_session import router as search_session_router
 from app.routers.stats import router as stats_router
-from app.services.sandbox.config import get_sandbox_config
-from app.services.sandbox.manager import get_sandbox_manager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,14 +42,6 @@ async def lifespan(app: FastAPI):
     # Phase 0: Init async HTTP clients
     await init_async_client()
     await init_rerank_client()
-
-    # Phase 0.5: Start sandbox reaper (only meaningful in docker mode)
-    if get_sandbox_config().enabled:
-        try:
-            get_sandbox_manager().start_reaper(interval_seconds=60)
-            logger.info("Sandbox reaper started (mode=%s)", get_sandbox_config().mode)
-        except Exception as exc:
-            logger.warning("Sandbox reaper failed to start: %s", exc)
 
     # Phase 1: pgvector extension
     async with engine.begin() as conn:
@@ -164,14 +151,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup: close async HTTP clients + shut down sandbox manager
+    # Cleanup: close async HTTP clients
     await close_async_client()
     await close_rerank_client()
-    try:
-        mgr = get_sandbox_manager()
-        await mgr.shutdown()
-    except Exception:
-        pass
 
 
 def create_app() -> FastAPI:
@@ -203,9 +185,6 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api/admin")
     app.include_router(knowledge_graph_router, prefix="/api/projects")
     app.include_router(stats_router, prefix="/api")
-    app.include_router(assistant_router, prefix="/api")
-    app.include_router(assistant_sse_router, prefix="/api")
-    app.include_router(sandbox_router, prefix="/api")
 
     # Serve PDF files statically
     os.makedirs(settings.paper_pdf_dir, exist_ok=True)
