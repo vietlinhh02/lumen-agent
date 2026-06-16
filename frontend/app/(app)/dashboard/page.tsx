@@ -1,10 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
+import { useEffect } from "react";
+import { useAuth } from "@/lib/stores/auth-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import {
   Folder,
   FileText,
@@ -15,32 +14,15 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 
-interface Stats {
-  project_count: number;
-  paper_count: number;
-  matrix_count: number;
-  gap_count: number;
-  report_count: number;
-  recent_projects: Array<{
-    id: string;
-    title: string;
-    status: string;
-    updated_at: string;
-  }>;
-}
-
 export default function DashboardPage() {
-  const { token } = useAuth();
+  const token = useAuth((s) => s.token);
   const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
+  const stats = useProjectsStore((s) => s.stats);
+  const fetchStats = useProjectsStore((s) => s.fetchStats);
 
   useEffect(() => {
-    if (!token) return;
-    apiFetch<Stats>("/stats", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(setStats)
-      .catch(() => toast.error("Failed to load stats"));
+    if (token) void fetchStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const statCards = stats

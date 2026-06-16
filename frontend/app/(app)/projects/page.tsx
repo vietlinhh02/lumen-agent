@@ -1,12 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
-import { toast } from "sonner";
+import { useEffect, useMemo } from "react";
 import { Plus, Folder, Sparkle, Clock, Article } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
-import type { ProjectListResponse, ProjectResponse } from "@/lib/types";
+import { useAuth } from "@/lib/stores/auth-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
+import type { ProjectResponse } from "@/lib/types";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -113,31 +112,22 @@ function SkeletonCard({ index }: { index: number }) {
 }
 
 export default function ProjectsPage() {
-  const { token } = useAuth();
+  const token = useAuth((s) => s.token);
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "active" | "archived">("all");
-
-  const fetchProjects = useCallback(async () => {
-    try {
-      const data = await apiFetch<ProjectListResponse>("/projects", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProjects(data.projects);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load projects");
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+  const projects = useProjectsStore((s) => s.projects);
+  const loading = useProjectsStore((s) => s.loading);
+  const filter = useProjectsStore((s) => s.filter);
+  const setFilter = useProjectsStore((s) => s.setFilter);
+  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
 
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    if (token) void fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
-  const filtered = projects.filter((p) =>
-    filter === "all" ? true : p.status === filter
+  const filtered = useMemo(
+    () => (filter === "all" ? projects : projects.filter((p) => p.status === filter)),
+    [projects, filter],
   );
 
   const activeCount = projects.filter((p) => p.status === "active").length;

@@ -1,76 +1,40 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/stores/auth-store";
+import { usePapersStore, useFilteredPapers } from "@/lib/stores/papers-store";
 import { PapersFilters, PapersTable } from "@/components/papers";
-import type { PaperItem, SortKey } from "@/components/papers";
+import type { SortKey } from "@/components/papers";
 
 export default function PapersPage() {
-  const { token } = useAuth();
+  const token = useAuth((s) => s.token);
   const router = useRouter();
-  const [papers, setPapers] = useState<PaperItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("saved_at");
-  const [sortAsc, setSortAsc] = useState(false);
+  const loading = usePapersStore((s) => s.loading);
+  const search = usePapersStore((s) => s.search);
+  const setSearch = usePapersStore((s) => s.setSearch);
+  const projectFilter = usePapersStore((s) => s.projectFilter);
+  const setProjectFilter = usePapersStore((s) => s.setProjectFilter);
+  const sortKey = usePapersStore((s) => s.sortKey);
+  const sortAsc = usePapersStore((s) => s.sortAsc);
+  const toggleSort = usePapersStore((s) => s.toggleSort);
+  const fetchPapers = usePapersStore((s) => s.fetchPapers);
+  const { filtered, projectList: projects } = useFilteredPapers();
 
   useEffect(() => {
-    if (!token) return;
-    apiFetch<{ items: PaperItem[]; total: number }>("/papers/all", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((data) => setPapers(data.items || []))
-      .catch(() => toast.error("Failed to load papers"))
-      .finally(() => setLoading(false));
-  }, [token]);
-
-  const projects = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of papers) map.set(p.project_id, p.project_title);
-    return Array.from(map, ([id, title]) => ({ id, title }));
-  }, [papers]);
-
-  const filtered = useMemo(() => {
-    let result = papers;
-    if (projectFilter) result = result.filter((p) => p.project_id === projectFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.authors.some((a) => a.toLowerCase().includes(q)) ||
-          (p.venue && p.venue.toLowerCase().includes(q)) ||
-          (p.abstract && p.abstract.toLowerCase().includes(q)),
-      );
+    if (token) {
+      void fetchPapers().catch(() => toast.error("Failed to load papers"));
     }
-    result = [...result].sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "title": cmp = a.title.localeCompare(b.title); break;
-        case "year": cmp = (a.year ?? 0) - (b.year ?? 0); break;
-        case "citations": cmp = (a.citation_count ?? 0) - (b.citation_count ?? 0); break;
-        case "saved_at": cmp = new Date(a.saved_at).getTime() - new Date(b.saved_at).getTime(); break;
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-    return result;
-  }, [papers, search, projectFilter, sortKey, sortAsc]);
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else { setSortKey(key); setSortAsc(false); }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   return (
     <div className="px-4 sm:px-6 py-6">
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="font-display text-[28px] font-bold leading-[1.0] text-ink" style={{ letterSpacing: "-0.5px" }}>Saved Papers</h1>
-          <p className="mt-1.5 text-sm text-charcoal">{papers.length} papers across {projects.length} projects</p>
+          <p className="mt-1.5 text-sm text-charcoal">{filtered.length} papers across {projects.length} projects</p>
         </div>
         <PapersFilters
           search={search}

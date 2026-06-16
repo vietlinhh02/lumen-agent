@@ -4,13 +4,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
-import type { ProjectCreate, ProjectResponse } from "@/lib/types";
+import { useProjectsStore } from "@/lib/stores/projects-store";
+import type { ProjectCreate } from "@/lib/types";
 
 export default function NewProjectPage() {
-  const { token } = useAuth();
   const router = useRouter();
+  const createProject = useProjectsStore((s) => s.createProject);
   const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
   const [researchQuestion, setResearchQuestion] = useState("");
@@ -19,23 +18,18 @@ export default function NewProjectPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
-    try {
-      const body: ProjectCreate = {
-        title: title.trim(),
-        topic: topic.trim(),
-        research_question: researchQuestion.trim() || null,
-      };
-      await apiFetch<ProjectResponse>("/projects", {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    const body: ProjectCreate = {
+      title: title.trim(),
+      topic: topic.trim(),
+      research_question: researchQuestion.trim() || null,
+    };
+    const created = await createProject(body);
+    setIsSubmitting(false);
+    if (created) {
       toast.success("Project created");
       router.push("/projects");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create project");
-    } finally {
-      setIsSubmitting(false);
+    } else {
+      toast.error("Failed to create project");
     }
   }
 

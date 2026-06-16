@@ -2,12 +2,13 @@
 
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import { CaretLeft, FileText, DotsThree, PencilSimple, Trash } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/stores/auth-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import { apiFetch } from "@/lib/api";
-import type { ProjectResponse, ProjectPaperResponse, FullTextResponse, NormalizeResponse } from "@/lib/types";
+import type { ProjectPaperResponse, FullTextResponse, NormalizeResponse } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { PaperCard } from "@/components/PaperCard";
 import { EditProjectModal } from "@/components/EditProjectModal";
@@ -17,11 +18,16 @@ import { FullTextPanel } from "@/components/FullTextPanel";
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { token } = useAuth();
+  const token = useAuth((s) => s.token);
   const router = useRouter();
-  const [project, setProject] = useState<ProjectResponse | null>(null);
-  const [papers, setPapers] = useState<ProjectPaperResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+  const project = useProjectsStore((s) => s.currentProject);
+  const loading = useProjectsStore((s) => s.loadingProject);
+  const papers = useProjectsStore((s) => s.currentPapers);
+  const fetchProject = useProjectsStore((s) => s.fetchProject);
+  const fetchProjectPapers = useProjectsStore((s) => s.fetchProjectPapers);
+  const updateProject = useProjectsStore((s) => s.updateProject);
+  const deleteProject = useProjectsStore((s) => s.deleteProject);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -43,29 +49,13 @@ export default function ProjectDetailPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const result = await apiFetch<ProjectResponse>(`/projects/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProject(result);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load project");
+  useEffect(() => {
+    if (id) {
+      void fetchProject(id);
+      void fetchProjectPapers(id);
     }
-  }, [id, token]);
-
-  const fetchPapers = useCallback(async () => {
-    try {
-      const data = await apiFetch<ProjectPaperResponse[]>(`/projects/${id}/papers`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setPapers(Array.isArray(data) ? data : []);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to load papers");
-    } finally {
-      setLoading(false);
-    }
-  }, [id, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   async function handleDownloadPDF(projectPaperId: string) {
     setDownloadingPaperId(projectPaperId);
@@ -75,12 +65,11 @@ export default function ProjectDetailPage() {
         {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       toast.success("PDF downloaded successfully");
-      setPapers((prev) =>
-        prev.map((p) => (p.id === projectPaperId ? updatedPaper : p))
-      );
+      if (id) void fetchProjectPapers(id);
+      void updatedPaper;
     } catch {
       setManualDownloadPaperId(projectPaperId);
     } finally {
@@ -95,10 +84,8 @@ export default function ProjectDetailPage() {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setPapers((prev) => prev.filter((paper) => paper.id !== projectPaperId));
-      setProject((prev) =>
-        prev ? { ...prev, paper_count: Math.max(0, prev.paper_count - 1) } : prev
-      );
+      if (id) void fetchProjectPapers(id);
+      if (id) void fetchProject(id);
       toast.success("Paper removed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove paper");
@@ -118,12 +105,11 @@ export default function ProjectDetailPage() {
         {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       toast.success("PDF downloaded successfully using custom link");
-      setPapers((prev) =>
-        prev.map((p) => (p.id === paperId ? updatedPaper : p))
-      );
+      void updatedPaper;
+      if (id) void fetchProjectPapers(id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to download custom PDF link");
     } finally {
@@ -137,7 +123,7 @@ export default function ProjectDetailPage() {
     try {
       const data = await apiFetch<FullTextResponse>(
         `/projects/${id}/papers/${projectPaperId}/full-text`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       setFullTextData(data);
     } catch (err) {
@@ -152,24 +138,27 @@ export default function ProjectDetailPage() {
     try {
       const result = await apiFetch<NormalizeResponse>(
         `/projects/${id}/papers:normalize`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+        { method: "POST", headers: { Authorization: `Bearer ${token}` } },
       );
       const totalPapers = result.skipped;
       setNormalizeProgress(`Processing 0/${totalPapers}...`);
       toast.info(`Normalization started — ${totalPapers} paper(s) queued.`);
 
-      // Poll for completion (refresh papers + track progress)
+      // Poll for completion
       const pollInterval = setInterval(async () => {
         try {
+          if (!id) return;
           const data = await apiFetch<ProjectPaperResponse[]>(`/projects/${id}/papers`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          const papers = Array.isArray(data) ? data : [];
-          setPapers(papers);
+          const fresh = Array.isArray(data) ? data : [];
+          useProjectsStore.setState({ currentPapers: fresh });
 
-          const raw = papers.filter((p) => p.full_text_status === "raw_extracted" || p.full_text_status === "normalizing").length;
-          const done = papers.filter((p) => p.full_text_status === "completed").length;
-          const failed = papers.filter((p) => p.full_text_status === "failed").length;
+          const raw = fresh.filter(
+            (p) => p.full_text_status === "raw_extracted" || p.full_text_status === "normalizing",
+          ).length;
+          const done = fresh.filter((p) => p.full_text_status === "completed").length;
+          const failed = fresh.filter((p) => p.full_text_status === "failed").length;
           const processed = done + failed;
 
           if (raw === 0) {
@@ -182,33 +171,29 @@ export default function ProjectDetailPage() {
               toast.success(`All ${done} papers processed successfully`);
             }
           } else {
-            setNormalizeProgress(`Processing ${processed}/${totalPapers} (${raw} remaining${failed > 0 ? `, ${failed} failed` : ""})`);
+            setNormalizeProgress(
+              `Processing ${processed}/${totalPapers} (${raw} remaining${failed > 0 ? `, ${failed} failed` : ""})`,
+            );
           }
         } catch {
-          // ignore poll errors
+          // ignore
         }
       }, 4000);
 
-      // Safety timeout: 10 minutes max
-      const safetyTimer = setTimeout(() => {
+      setTimeout(() => {
         clearInterval(pollInterval);
         setNormalizing(false);
         setNormalizeProgress(null);
-        fetchPapers();
+        if (id) void fetchProjectPapers(id);
       }, 600000);
-      // Initial fetch
-      fetchPapers();
+
+      if (id) void fetchProjectPapers(id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to process papers");
       setNormalizing(false);
       setNormalizeProgress(null);
     }
   }
-
-  useEffect(() => {
-    fetchData();
-    fetchPapers();
-  }, [fetchData, fetchPapers]);
 
   if (loading) {
     return (
@@ -387,7 +372,9 @@ export default function ProjectDetailPage() {
           project={project}
           token={token}
           onClose={() => setEditOpen(false)}
-          onSaved={(updated) => setProject(updated)}
+          onSaved={() => {
+            if (id) void fetchProject(id);
+          }}
         />
       )}
 
@@ -396,7 +383,10 @@ export default function ProjectDetailPage() {
           projectId={project.id}
           token={token}
           onClose={() => setDeleteOpen(false)}
-          onDeleted={() => router.push("/projects")}
+          onDeleted={async () => {
+            const ok = await deleteProject(project.id);
+            if (ok) router.push("/projects");
+          }}
         />
       )}
 
