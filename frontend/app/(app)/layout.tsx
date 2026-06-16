@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import { isTokenExpired } from "@/lib/jwt";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const token = useAuthStore((s) => s.token);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
@@ -19,6 +21,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     setAuthorized(true);
+    // Pre-fetch the projects list once after auth – every page that needs
+    // it (projects, matrix, gaps, reports, search, …) will then render
+    // immediately from the in-memory cache instead of triggering its own
+    // request.
+    void fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, router, clearAuth]);
 
   if (!authorized || !token) {
