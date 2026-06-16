@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useCallback } from "react";
+import { memo, useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/stores/auth-store";
+import { useUIStore } from "@/lib/stores/ui-store";
 import {
   SquaresFour,
   Folder,
@@ -32,39 +33,34 @@ const NAV_ITEMS = [
   { label: "Settings", href: "/settings", icon: GearSix },
 ];
 
-/* ── Sidebar Context ── */
-
-import { createContext, useContext } from "react";
-
-type SidebarCtx = { open: boolean; setOpen: (v: boolean) => void };
-const SidebarContext = createContext<SidebarCtx>({ open: false, setOpen: () => {} });
-const useSidebar = () => useContext(SidebarContext);
-
 /* ── AppShell ── */
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const sidebarOpen = useUIStore((s) => s.sidebarMobileOpen);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarMobileOpen);
 
   return (
-    <SidebarContext.Provider value={{ open: mobileOpen, setOpen: setMobileOpen }}>
-      <Header onMenuClick={() => setMobileOpen(true)} />
+    <>
+      <Header onMenuClick={() => setSidebarOpen(true)} />
       {/* Desktop sidebar */}
       <SidebarDesktop />
       {/* Mobile drawer */}
-      <SidebarMobile open={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <SidebarMobile open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <main className="min-h-[calc(100vh-60px)] px-4 sm:px-8 pt-8 pb-12 ml-0 xl:ml-[56px]">
         {children}
       </main>
-    </SidebarContext.Provider>
+    </>
   );
 }
 
 /* ── Header ── */
 
 const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }) {
-  const { token, logout } = useAuth();
+  const token = useAuth((s) => s.token);
+  const logout = useAuth((s) => s.logout);
+  const userMenuOpen = useUIStore((s) => s.userMenuOpen);
+  const setUserMenuOpen = useUIStore((s) => s.setUserMenuOpen);
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -74,13 +70,13 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
   const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
 
   useEffect(() => {
-    if (!open) return;
+    if (!userMenuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) setUserMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  }, [userMenuOpen, setUserMenuOpen]);
 
   const handleSignOut = () => {
     logout();
@@ -111,13 +107,13 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
 
       <div ref={ref} className="relative">
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setUserMenuOpen(!userMenuOpen)}
           className="flex h-[36px] w-[36px] items-center justify-center rounded-full overflow-hidden transition-all duration-200 hover:ring-2 hover:ring-primary/30"
         >
           <img src={avatarUrl} alt="avatar" className="h-full w-full" />
         </button>
 
-        {open && (
+        {userMenuOpen && (
           <div
             className="absolute right-0 top-[44px] z-50 w-[180px] rounded-[12px] bg-surface-dark p-1 shadow-lg"
             style={{ border: "1px solid var(--hairline)" }}
@@ -214,11 +210,13 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const closeSidebar = useUIStore((s) => s.closeSidebar);
+
   return (
     <>
       {/* Backdrop */}
       <div
-        onClick={onClose}
+        onClick={() => { onClose(); closeSidebar(); }}
         className={`xl:hidden fixed inset-0 z-30 bg-black/40 transition-opacity duration-300 ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
@@ -237,7 +235,7 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
             Lumen
           </span>
           <button
-            onClick={onClose}
+            onClick={() => { onClose(); closeSidebar(); }}
             className="flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-charcoal hover:text-ink hover:bg-surface-bone transition-colors"
           >
             <X size={20} weight="bold" />
