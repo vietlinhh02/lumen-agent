@@ -1,26 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { User, Shield } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/stores/auth-store";
+import { useSettingsStore } from "@/lib/stores/settings-store";
 import { ProfileSection, AdminSection } from "@/components/settings";
-import type { UserProfile } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { token } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "admin">("profile");
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const token = useAuth((s) => s.token);
+  const activeTab = useSettingsStore((s) => s.activeTab);
+  const setActiveTab = useSettingsStore((s) => s.setActiveTab);
+  const profile = useSettingsStore((s) => s.profile);
+  const isAdmin = useSettingsStore((s) => s.isAdmin);
+  const fetchProfile = useSettingsStore((s) => s.fetchProfile);
 
   useEffect(() => {
     if (!token) return;
-    apiFetch<UserProfile>("/auth/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((u) => { setProfile(u); setIsAdmin(u.role === "admin"); })
-      .catch(() => toast.error("Failed to load profile"));
+    void fetchProfile().catch(() => toast.error("Failed to load profile"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   return (

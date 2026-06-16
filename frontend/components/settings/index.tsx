@@ -3,47 +3,31 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { User, Lock, Sun, Moon, CheckCircle, XCircle } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
+import { useUIStore } from "@/lib/stores/ui-store";
+import { useSettingsStore } from "@/lib/stores/settings-store";
 import type { UserProfile, AdminUser } from "@/lib/types";
 
 export function ProfileSection({ profile }: { profile: UserProfile }) {
-  const { token } = useAuth();
+  const theme = useUIStore((s) => s.theme);
+  const toggleTheme = useUIStore((s) => s.toggleTheme);
+  const changePassword = useSettingsStore((s) => s.changePassword);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [saving, setSaving] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    const stored = localStorage.getItem("theme") as "light" | "dark" | null;
-    if (stored) setTheme(stored);
-  }, []);
-
-  function toggleTheme() {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPw !== confirmPw) { toast.error("Passwords do not match"); return; }
     if (newPw.length < 6) { toast.error("Password must be at least 6 characters"); return; }
     setSaving(true);
-    try {
-      await apiFetch("/auth/password", {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ current_password: currentPw, new_password: newPw }),
-      });
+    const ok = await changePassword(currentPw, newPw);
+    setSaving(false);
+    if (ok) {
       toast.success("Password updated");
       setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update password");
-    } finally {
-      setSaving(false);
+    } else {
+      toast.error("Failed to update password");
     }
   }
 
@@ -111,30 +95,22 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
 }
 
 export function AdminSection() {
-  const { token } = useAuth();
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const users = useSettingsStore((s) => s.users);
+  const loading = useSettingsStore((s) => s.loadingUsers);
+  const fetchUsers = useSettingsStore((s) => s.fetchUsers);
+  const toggleUserActive = useSettingsStore((s) => s.toggleUserActive);
 
   useEffect(() => {
-    apiFetch<{ items: AdminUser[]; total: number }>("/admin/users", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((data) => setUsers(data.items || []))
-      .catch(() => toast.error("Failed to load users"))
-      .finally(() => setLoading(false));
-  }, [token]);
+    if (users.length === 0) void fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function toggleActive(userId: string, currentActive: boolean) {
-    try {
-      const updated = await apiFetch<AdminUser>(`/admin/users/${userId}`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: !currentActive }),
-      });
-      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)));
+    const updated = await toggleUserActive(userId, currentActive);
+    if (updated) {
       toast.success(`User ${updated.is_active ? "activated" : "deactivated"}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Update failed");
+    } else {
+      toast.error("Update failed");
     }
   }
 

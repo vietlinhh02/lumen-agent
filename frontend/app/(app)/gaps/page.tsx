@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { Lightbulb, Warning, ArrowCounterClockwise } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
+import { useGapsStore } from "@/lib/stores/gaps-store";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import { GapCard, ConflictCard } from "@/components/gaps";
-import type { GapResponse, GapListResponse, ConflictResponse, ConflictListResponse } from "@/lib/types";
+import type { GapResponse, ConflictResponse } from "@/lib/types";
 
 const confidenceColor = (c: string) => {
   if (c === "high") return "bg-green-50 text-green-700";
@@ -18,117 +17,79 @@ const confidenceColor = (c: string) => {
 };
 
 export default function GapsPage() {
-  const { token } = useAuth();
   const { projects } = useProjects();
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [gaps, setGaps] = useState<GapResponse[]>([]);
-  const [conflicts, setConflicts] = useState<ConflictResponse[]>([]);
-  const [loadingGaps, setLoadingGaps] = useState(false);
-  const [loadingConflicts, setLoadingConflicts] = useState(false);
-  const [generatingGaps, setGeneratingGaps] = useState(false);
-  const [generatingConflicts, setGeneratingConflicts] = useState(false);
-  const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
-  const [expandedConflictId, setExpandedConflictId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"gaps" | "conflicts">("gaps");
+  const selectedProjectId = useGapsStore((s) => s.selectedProjectId);
+  const setSelectedProjectId = useGapsStore((s) => s.setSelectedProjectId);
+  const gaps = useGapsStore((s) => s.gaps);
+  const conflicts = useGapsStore((s) => s.conflicts);
+  const loadingGaps = useGapsStore((s) => s.loadingGaps);
+  const loadingConflicts = useGapsStore((s) => s.loadingConflicts);
+  const generatingGaps = useGapsStore((s) => s.generatingGaps);
+  const generatingConflicts = useGapsStore((s) => s.generatingConflicts);
+  const expandedGapId = useGapsStore((s) => s.expandedGapId);
+  const expandedConflictId = useGapsStore((s) => s.expandedConflictId);
+  const activeTab = useGapsStore((s) => s.activeTab);
+  const setActiveTab = useGapsStore((s) => s.setActiveTab);
+  const toggleGapExpand = useGapsStore((s) => s.toggleGapExpand);
+  const toggleConflictExpand = useGapsStore((s) => s.toggleConflictExpand);
+  const fetchGaps = useGapsStore((s) => s.fetchGaps);
+  const fetchConflicts = useGapsStore((s) => s.fetchConflicts);
+  const generateGaps = useGapsStore((s) => s.generateGaps);
+  const generateConflicts = useGapsStore((s) => s.generateConflicts);
+  const deleteGap = useGapsStore((s) => s.deleteGap);
 
   const { poll: pollGaps } = useJobPolling({
-    onSuccess: (result) => `Generated ${result.gap_count ?? 0} research gaps`,
+    onSuccess: (result) => `Generated ${(result.gap_count as number) ?? 0} research gaps`,
   });
   const { poll: pollConflicts } = useJobPolling({
-    onSuccess: (result) => `Found ${result.conflict_count ?? 0} potential conflicts`,
+    onSuccess: (result) =>
+      `Found ${(result.conflict_count as number) ?? 0} potential conflicts`,
   });
 
   useEffect(() => {
-    if (projects.length === 1) setSelectedProjectId(projects[0].id);
+    if (projects.length === 1 && !selectedProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects]);
 
-  const fetchGaps = useCallback(async () => {
-    if (!token || !selectedProjectId) return;
-    setLoadingGaps(true);
-    try {
-      const data = await apiFetch<GapListResponse>(`/projects/${selectedProjectId}/gaps`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setGaps(data.items || []);
-    } catch {
-      setGaps([]);
-    } finally {
-      setLoadingGaps(false);
-    }
-  }, [token, selectedProjectId]);
-
-  const fetchConflicts = useCallback(async () => {
-    if (!token || !selectedProjectId) return;
-    setLoadingConflicts(true);
-    try {
-      const data = await apiFetch<ConflictListResponse>(`/projects/${selectedProjectId}/conflicts`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setConflicts(data.items || []);
-    } catch {
-      setConflicts([]);
-    } finally {
-      setLoadingConflicts(false);
-    }
-  }, [token, selectedProjectId]);
-
   useEffect(() => {
-    fetchGaps();
-    fetchConflicts();
-  }, [fetchGaps, fetchConflicts]);
+    if (selectedProjectId) {
+      void fetchGaps(selectedProjectId);
+      void fetchConflicts(selectedProjectId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
 
   async function handleGenerateGaps() {
-    if (!token || !selectedProjectId) return;
-    setGeneratingGaps(true);
+    if (!selectedProjectId) return;
     try {
-      const result = await apiFetch<{ job_id?: string; status?: string; total?: number }>(
-        `/projects/${selectedProjectId}/gaps:generate`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } },
-      );
-      if (result.job_id && result.status === "running") {
-        toast.info(`Analyzing ${result.total} matrix rows for gaps...`);
-        await pollGaps(result.job_id);
-      }
-      await fetchGaps();
+      await generateGaps(selectedProjectId, async (jobId) => {
+        await pollGaps(jobId);
+        return null;
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setGeneratingGaps(false);
     }
   }
 
   async function handleGenerateConflicts() {
-    if (!token || !selectedProjectId) return;
-    setGeneratingConflicts(true);
+    if (!selectedProjectId) return;
     try {
-      const result = await apiFetch<{ job_id?: string; status?: string; total?: number }>(
-        `/projects/${selectedProjectId}/conflicts:generate`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } },
-      );
-      if (result.job_id && result.status === "running") {
-        toast.info(`Detecting conflicts across ${result.total} matrix rows...`);
-        await pollConflicts(result.job_id);
-      }
-      await fetchConflicts();
+      await generateConflicts(selectedProjectId, async (jobId) => {
+        await pollConflicts(jobId);
+        return null;
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setGeneratingConflicts(false);
     }
   }
 
   async function handleDeleteGap(gapId: string) {
-    if (!token || !selectedProjectId) return;
-    try {
-      await apiFetch(`/projects/${selectedProjectId}/gaps/${gapId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setGaps((prev) => prev.filter((g) => g.id !== gapId));
-      toast.success("Gap removed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Delete failed");
-    }
+    if (!selectedProjectId) return;
+    const ok = await deleteGap(selectedProjectId, gapId);
+    if (ok) toast.success("Gap removed");
+    else toast.error("Delete failed");
   }
 
   return (
@@ -173,7 +134,7 @@ export default function GapsPage() {
               loading={loadingGaps}
               generating={generatingGaps}
               expandedId={expandedGapId}
-              onToggleExpand={(id) => setExpandedGapId(expandedGapId === id ? null : id)}
+              onToggleExpand={toggleGapExpand}
               onGenerate={handleGenerateGaps}
               onDelete={handleDeleteGap}
             />
@@ -185,7 +146,7 @@ export default function GapsPage() {
               loading={loadingConflicts}
               generating={generatingConflicts}
               expandedId={expandedConflictId}
-              onToggleExpand={(id) => setExpandedConflictId(expandedConflictId === id ? null : id)}
+              onToggleExpand={toggleConflictExpand}
               onGenerate={handleGenerateConflicts}
             />
           )}

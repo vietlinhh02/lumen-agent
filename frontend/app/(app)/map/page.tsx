@@ -1,121 +1,56 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { Graph as GraphIcon } from "@phosphor-icons/react";
-import useSWR from "swr";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
-import { fetchKnowledgeGraph } from "@/lib/api/knowledge-graph";
-import type {
-  KnowledgeGraphResponse,
-  ProjectListResponse,
-  ProjectResponse,
-} from "@/lib/types";
+import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import KnowledgeGraphCanvas from "@/components/knowledge-map/KnowledgeGraph";
 import GraphToolbar from "@/components/knowledge-map/GraphToolbar";
 import NodeDetailPanel from "@/components/knowledge-map/NodeDetailPanel";
 import { Dropdown } from "@/components/ui/Dropdown";
 
-type KnowledgeGraphKey = [string, string, string, number];
-type ProjectsKey = [string, string];
-
 export default function KnowledgeMapPage() {
-  const { token } = useAuth();
+  const selectedProjectId = useKnowledgeMapStore((s) => s.selectedProjectId);
+  const setSelectedProjectId = useKnowledgeMapStore((s) => s.setSelectedProjectId);
+  const layout = useKnowledgeMapStore((s) => s.layout);
+  const setLayout = useKnowledgeMapStore((s) => s.setLayout);
+  const minConnections = useKnowledgeMapStore((s) => s.minConnections);
+  const setMinConnections = useKnowledgeMapStore((s) => s.setMinConnections);
+  const visibleTypes = useKnowledgeMapStore((s) => s.visibleTypes);
+  const toggleType = useKnowledgeMapStore((s) => s.toggleType);
+  const searchQuery = useKnowledgeMapStore((s) => s.searchQuery);
+  const setSearchQuery = useKnowledgeMapStore((s) => s.setSearchQuery);
+  const selectedNodeId = useKnowledgeMapStore((s) => s.selectedNodeId);
+  const setSelectedNodeId = useKnowledgeMapStore((s) => s.setSelectedNodeId);
+  const data = useKnowledgeMapStore((s) => s.data);
+  const loadingGraph = useKnowledgeMapStore((s) => s.loadingGraph);
+  const fetchGraph = useKnowledgeMapStore((s) => s.fetchGraph);
+  const resolvedProjectId = useKnowledgeMapStore((s) => s.resolvedProjectId());
+  const filteredData = useKnowledgeMapStore((s) => s.filteredData());
+  const selectedNode = useKnowledgeMapStore((s) => s.selectedNode());
 
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [layout, setLayout] = useState("cose");
-  const [minConnections, setMinConnections] = useState(1);
-  const [visibleTypes, setVisibleTypes] = useState(
-    new Set(["paper", "method", "dataset", "limitation"]),
-  );
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Read the projects list from the central projects store – it is
+  // pre-fetched by the AppLayout and shared across pages, so we don't
+  // need to call the API again here.
+  const projects = useProjectsStore((s) => s.projects);
+  const loadingProjects = useProjectsStore((s) => s.loading);
 
-  const { data: projectsData } = useSWR<ProjectListResponse, Error, ProjectsKey | null>(
-    token ? ["projects", token] : null,
-    ([, authToken]: ProjectsKey) =>
-      apiFetch<ProjectListResponse>("/projects", {
-        headers: { Authorization: `Bearer ${authToken}` },
-      }),
-    {
-      onError: () => {
-        toast.error("Failed to load projects");
-      },
-    },
-  );
-
-  const projects = useMemo<ProjectResponse[]>(
-    () => projectsData?.projects ?? [],
-    [projectsData],
-  );
-  const resolvedProjectId = useMemo(() => {
-    if (selectedProjectId) {
-      return selectedProjectId;
-    }
-    return projects.length === 1 ? projects[0].id : "";
-  }, [projects, selectedProjectId]);
-
-  const { data, isLoading: loading } = useSWR<KnowledgeGraphResponse, Error, KnowledgeGraphKey | null>(
-    token && resolvedProjectId
-      ? ["knowledge-graph", resolvedProjectId, token, minConnections]
-      : null,
-    ([, projectId, authToken, support]: KnowledgeGraphKey) =>
-      fetchKnowledgeGraph(projectId, authToken, {
-        minConnections: support,
-      }),
-    {
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to load knowledge graph");
-      },
-    },
-  );
-
-  const handleToggleType = (type: string) => {
-    setVisibleTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return next;
+  // Re-fetch graph when project or minConnections changes
+  useEffect(() => {
+    if (!resolvedProjectId) return;
+    void fetchGraph().catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to load knowledge graph");
     });
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedProjectId, minConnections]);
 
-  const handleNavigate = (nodeId: string) => {
-    setSelectedNodeId(nodeId);
-  };
-
-  const filteredData = useMemo(() => {
-    if (!data) {
-      return null;
-    }
-
-    if (!searchQuery) {
-      return data;
-    }
-
-    const normalizedQuery = searchQuery.toLowerCase();
-    const nodes = data.nodes.filter((node) =>
-      (node.full_label ?? node.label).toLowerCase().includes(normalizedQuery),
-    );
-    const visibleNodeIds = new Set(nodes.map((node) => node.id));
-    const links = data.links.filter(
-      (link) => visibleNodeIds.has(link.source) && visibleNodeIds.has(link.target),
-    );
-
-    return {
-      ...data,
-      nodes,
-      links,
-    };
-  }, [data, searchQuery]);
-
-  const isEmpty = !resolvedProjectId || loading || !data || data.nodes.length === 0;
-  const projectTitle =
-    projects.find((project) => project.id === resolvedProjectId)?.title ?? "Knowledge Map";
-  const selectedNode = useMemo(
-    () => data?.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [data, selectedNodeId],
+  const isEmpty = !resolvedProjectId || loadingGraph || !data || data.nodes.length === 0;
+  const projectTitle = useMemo(
+    () => projects.find((p) => p.id === resolvedProjectId)?.title ?? "Knowledge Map",
+    [projects, resolvedProjectId],
   );
+  const loading = loadingProjects || loadingGraph;
 
   return (
     <div className="fixed inset-0 top-[60px] bg-canvas flex flex-col overflow-hidden z-10 ml-0 xl:ml-[56px]">
@@ -149,10 +84,7 @@ export default function KnowledgeMapPage() {
                   description: `${p.paper_count} papers`,
                 }))}
                 value={resolvedProjectId}
-                onChange={(value) => {
-                  setSelectedProjectId(value);
-                  setSelectedNodeId(null);
-                }}
+                onChange={(value) => setSelectedProjectId(value)}
                 placeholder="Select project…"
               />
             </div>
@@ -200,12 +132,9 @@ export default function KnowledgeMapPage() {
             layout={layout}
             onLayoutChange={setLayout}
             visibleTypes={visibleTypes}
-            onToggleType={handleToggleType}
+            onToggleType={toggleType}
             minConnections={minConnections}
-            onMinConnectionsChange={(value) => {
-              setMinConnections(value);
-              setSelectedNodeId(null);
-            }}
+            onMinConnectionsChange={setMinConnections}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             stats={data.stats}
@@ -277,7 +206,7 @@ export default function KnowledgeMapPage() {
                 graphData={data}
                 searchQuery={searchQuery}
                 onClose={() => setSelectedNodeId(null)}
-                onNavigate={handleNavigate}
+                onNavigate={(nodeId) => setSelectedNodeId(nodeId)}
               />
             </div>
           </div>

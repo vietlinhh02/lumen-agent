@@ -1,131 +1,92 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { PencilLine } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
-import { apiFetch } from "@/lib/api";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
+import { useReportsStore } from "@/lib/stores/reports-store";
 import { parseSections, buildToc } from "@/lib/markdown";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import { ReportList, ReportToolbar, ReportContent } from "@/components/reports";
-import type { ReportResponse, ReportListResponse, ReportDetailResponse } from "@/lib/types";
 
 export default function ReportsPage() {
-  const { token } = useAuth();
   const { projects } = useProjects();
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [reports, setReports] = useState<ReportResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<ReportDetailResponse | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const selectedProjectId = useReportsStore((s) => s.selectedProjectId);
+  const setSelectedProjectId = useReportsStore((s) => s.setSelectedProjectId);
+  const reports = useReportsStore((s) => s.reports);
+  const loading = useReportsStore((s) => s.loading);
+  const generating = useReportsStore((s) => s.generating);
+  const selectedId = useReportsStore((s) => s.selectedId);
+  const setSelectedId = useReportsStore((s) => s.setSelectedId);
+  const detail = useReportsStore((s) => s.detail);
+  const loadingDetail = useReportsStore((s) => s.loadingDetail);
+  const searchQuery = useReportsStore((s) => s.searchQuery);
+  const setSearchQuery = useReportsStore((s) => s.setSearchQuery);
+  const activeSection = useReportsStore((s) => s.activeSection);
+  const setActiveSection = useReportsStore((s) => s.setActiveSection);
+  const fetchReports = useReportsStore((s) => s.fetchReports);
+  const fetchDetail = useReportsStore((s) => s.fetchDetail);
+  const generate = useReportsStore((s) => s.generate);
+  const exportReport = useReportsStore((s) => s.exportReport);
+  const reset = useReportsStore((s) => s.reset);
 
   const { poll } = useJobPolling({
     onSuccess: (result) => {
       const vs = result.validation_status as string;
       const tc = (result.total_citations as number) ?? 0;
-      if (vs === "valid") setSelectedId(result.report_id as string);
-      return vs === "valid" ? `${tc} citations, all valid` : `${tc} citations, some invalid`;
+      if (vs === "valid" && result.report_id) {
+        setSelectedId(String(result.report_id));
+      }
+      return vs === "valid"
+        ? `${tc} citations, all valid`
+        : `${tc} citations, some invalid`;
     },
   });
 
   useEffect(() => {
-    if (projects.length === 1) setSelectedProjectId(projects[0].id);
+    if (projects.length === 1 && !selectedProjectId) {
+      setSelectedProjectId(projects[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects]);
 
-  const fetchReports = useCallback(async () => {
-    if (!token || !selectedProjectId) return;
-    setLoading(true);
-    try {
-      const data = await apiFetch<ReportListResponse>(
-        `/projects/${selectedProjectId}/reports`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      setReports(data.items || []);
-    } catch {
-      setReports([]);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (selectedProjectId) {
+      void fetchReports(selectedProjectId);
     }
-  }, [token, selectedProjectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
 
   useEffect(() => {
-    fetchReports();
-    setSelectedId(null);
-    setDetail(null);
-  }, [fetchReports]);
+    if (selectedId && selectedProjectId) {
+      void fetchDetail(selectedProjectId, selectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
-  const fetchDetail = useCallback(
-    async (reportId: string) => {
-      if (!token || !selectedProjectId) return;
-      setLoadingDetail(true);
-      try {
-        const d = await apiFetch<ReportDetailResponse>(
-          `/projects/${selectedProjectId}/reports/${reportId}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        setDetail(d);
-        setActiveSection(null);
-        setSearchQuery("");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to load report");
-      } finally {
-        setLoadingDetail(false);
-      }
-    },
-    [token, selectedProjectId],
-  );
-
+  // Reset store on unmount so the next visit starts fresh
   useEffect(() => {
-    if (selectedId) fetchDetail(selectedId);
-    else setDetail(null);
-  }, [selectedId, fetchDetail]);
+    return () => {
+      reset();
+    };
+  }, [reset]);
 
   async function handleGenerate() {
-    if (!token || !selectedProjectId) return;
-    setGenerating(true);
+    if (!selectedProjectId) return;
     try {
-      const result = await apiFetch<{ job_id?: string; status?: string }>(
-        `/projects/${selectedProjectId}/reports`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ include_gap_section: true }),
-        },
-      );
-      if (result.job_id && result.status === "running") {
-        toast.info("Generating literature review...");
-        await poll(result.job_id);
-      }
-      await fetchReports();
+      await generate(selectedProjectId, async (jobId) => {
+        await poll(jobId);
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      setGenerating(false);
     }
   }
 
   async function handleExport() {
-    if (!token || !selectedProjectId || !selectedId) return;
+    if (!selectedProjectId || !selectedId) return;
     try {
-      const r = await apiFetch<{ title: string; content: string }>(
-        `/projects/${selectedProjectId}/reports/${selectedId}/export`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      const blob = new Blob([r.content], { type: "text/markdown" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${r.title.replace(/[^a-zA-Z0-9]/g, "_")}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await exportReport(selectedProjectId, selectedId);
       toast.success("Exported");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Export failed");
@@ -203,10 +164,7 @@ export default function ReportsPage() {
                 toc={toc}
                 activeSection={activeSection}
                 onScrollToSection={(id) => setActiveSection(id)}
-                onBack={() => {
-                  setSelectedId(null);
-                  setDetail(null);
-                }}
+                onBack={() => setSelectedId(null)}
                 onExport={handleExport}
               />
               <ReportContent

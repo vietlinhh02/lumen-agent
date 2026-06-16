@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { MagnifyingGlass, Spinner, Sparkle, ClockCounterClockwise, Lightning } from "@phosphor-icons/react";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/stores/auth-store";
 import { apiFetch } from "@/lib/api";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
