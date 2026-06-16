@@ -2,19 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
+import { isTokenExpired } from "@/lib/jwt";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import gsap from "gsap";
 import { MagneticButton } from "./MagneticButton";
 
 export function CtaBand() {
   const router = useRouter();
+  const token = useAuthStore((s) => s.token);
   const [loggedIn, setLoggedIn] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     setLoggedIn(!!token && !isTokenExpired(token));
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (!sectionRef.current) return;

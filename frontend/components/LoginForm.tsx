@@ -4,25 +4,26 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/stores/auth-store";
 
 export default function LoginForm() {
-  const { login } = useAuth();
+  const login = useAuth((s) => s.login);
+  const isSubmitting = useAuth((s) => s.isSubmitting);
+  const setSubmitting = useAuth((s) => s.setSubmitting);
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setIsSubmitting(true);
+    setSubmitting(true);
     try {
       await login(email, password);
       router.push("/dashboard");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Login failed");
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   }
 

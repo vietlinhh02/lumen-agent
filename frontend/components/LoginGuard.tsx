@@ -2,20 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
+import { isTokenExpired } from "@/lib/jwt";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export function LoginGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const token = useAuthStore((s) => s.token);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     if (token && !isTokenExpired(token)) {
       router.replace("/projects");
     } else {
       setChecking(false);
     }
-  }, [router]);
+  }, [token, router]);
 
   if (checking) {
     return (

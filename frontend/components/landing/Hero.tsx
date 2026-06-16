@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
+import { isTokenExpired } from "@/lib/jwt";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -10,6 +11,7 @@ import { MagneticButton } from "./MagneticButton";
 
 export function Hero() {
   const router = useRouter();
+  const token = useAuthStore((s) => s.token);
   const [loggedIn, setLoggedIn] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -18,9 +20,8 @@ export function Hero() {
   const screenshotRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     setLoggedIn(!!token && !isTokenExpired(token));
-  }, []);
+  }, [token]);
 
   useGSAP(() => {
     if (!sectionRef.current) return;

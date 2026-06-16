@@ -3,24 +3,25 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { isTokenExpired } from "@/lib/jwt";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const token = useAuthStore((s) => s.token);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     if (!token || isTokenExpired(token)) {
-      localStorage.removeItem(TOKEN_KEY);
-      document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
+      clearAuth();
       router.replace("/login");
-    } else {
-      setAuthorized(true);
+      return;
     }
-  }, [router]);
+    setAuthorized(true);
+  }, [token, router, clearAuth]);
 
-  if (!authorized) {
+  if (!authorized || !token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

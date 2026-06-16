@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { List, X } from "@phosphor-icons/react";
-import { isTokenExpired, TOKEN_KEY } from "@/lib/jwt";
+import { isTokenExpired } from "@/lib/jwt";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -17,14 +18,14 @@ const navLinks = [
 
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const token = useAuthStore((s) => s.token);
   const [loggedIn, setLoggedIn] = useState(false);
   const router = useRouter();
   const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
     setLoggedIn(!!token && !isTokenExpired(token));
-  }, []);
+  }, [token]);
 
   useGSAP(() => {
     if (!navRef.current) return;
