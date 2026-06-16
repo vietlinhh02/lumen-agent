@@ -24,7 +24,7 @@ export function extractText(children: React.ReactNode): string {
   if (!children) return "";
   if (Array.isArray(children)) return children.map(extractText).join("");
   if (typeof children === "object" && "props" in children) {
-    return extractText((children as React.ReactElement).props.children);
+    return extractText((children as React.ReactElement<{ children?: React.ReactNode }>).props.children);
   }
   return "";
 }

@@ -154,7 +154,7 @@ export default function KnowledgeGraphCanvas({ data, layout, visibleTypes, onNod
         const cytoscape = mod.default;
 
         // Register the HTML label extension
-        cytoscapeNodeHtmlLabel(cytoscape);
+        (cytoscapeNodeHtmlLabel as (cy: unknown) => void)(cytoscape);
 
         const cy = cytoscape({
           container: containerRef.current,

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/stores/auth-store";
 import { apiFetch } from "@/lib/api";
 
 interface JobResult {
@@ -45,7 +45,7 @@ export function useJobPolling(options: UseJobPollingOptions = {}) {
           if (job.progress && job.total && job.progress > 0) {
             const msg = onProgress?.(job.progress, job.total);
             toast.info(msg ?? `Processing ${job.progress}/${job.total}...`, {
-              autoClose: 1000,
+              duration: 1000,
             });
           }
         } catch {
