@@ -74,3 +74,4 @@ frontend/.vscode/
 *.swp
 *.swo
 *~
+.vercel
