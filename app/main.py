@@ -22,6 +22,7 @@ from app.routers.project import router as project_router
 from app.routers.reports import router as reports_router
 from app.routers.search_session import router as search_session_router
 from app.routers.stats import router as stats_router
+from app.routers.assistant import router as assistant_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -149,6 +150,29 @@ async def lifespan(app: FastAPI):
             )
         )
 
+    # Phase 5: Assistant tables (Plan-Act chat surface).
+    # `Base.metadata.create_all` above already created the tables and the
+    # indexes declared in `__table_args__`; the explicit
+    # `CREATE INDEX IF NOT EXISTS` below mirrors the HNSW index pattern and
+    # guarantees the composite (session_id, created_at) index exists even on
+    # hand-migrated databases that pre-date the model declaration.
+    async with engine.begin() as conn:
+        try:
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_assistant_events_session_created "
+                    "ON assistant_events (session_id, created_at)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_assistant_sessions_user_updated "
+                    "ON assistant_sessions (user_id, updated_at)"
+                )
+            )
+        except Exception as exc:
+            logger.warning("Assistant index ensure skipped: %s", exc)
+
     yield
 
     # Cleanup: close async HTTP clients
@@ -185,6 +209,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api/admin")
     app.include_router(knowledge_graph_router, prefix="/api/projects")
     app.include_router(stats_router, prefix="/api")
+    app.include_router(assistant_router, prefix="/api/assistant")
 
     # Serve PDF files statically
     os.makedirs(settings.paper_pdf_dir, exist_ok=True)

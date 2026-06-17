@@ -29,6 +29,10 @@ dependencies = [
     "google-genai>=1.15.0",
     # Embeddings + reranking via NVIDIA API (no local model)
     "pgvector>=0.4.2",
+    # SSE streaming for assistant
+    "sse-starlette>=3.0.0",
+    "pymupdf==1.27.2.3",
+    "pdf-oxide==0.3.45",
 ]
 
 [dependency-groups]
@@ -36,6 +40,7 @@ dev = [
     "httpx2==2.2.0",
     "pytest==9.0.3",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff==0.15.15",
     "ty==0.0.40",
 ]
@@ -56,6 +61,7 @@ all = "error"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_mode = "auto"
 filterwarnings = [
     "error",
     "ignore::pytest.PytestUnraisableExceptionWarning",

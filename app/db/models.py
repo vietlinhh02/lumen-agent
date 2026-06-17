@@ -46,6 +46,9 @@ class User(Base):
     reports: Mapped[list["ReviewReport"]] = relationship(
         back_populates="created_by_user", lazy="selectin"
     )
+    assistant_sessions: Mapped[list["AssistantSession"]] = relationship(
+        back_populates="user", lazy="selectin", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (CheckConstraint("role IN ('researcher', 'admin')", name="ck_users_role"),)
 
@@ -98,6 +101,9 @@ class Project(Base):
     conflicting_findings: Mapped[list["ConflictingFinding"]] = relationship(
         back_populates="project", lazy="selectin", cascade="all, delete-orphan"
     )
+    assistant_sessions: Mapped[list["AssistantSession"]] = relationship(
+        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="ck_projects_status"),
@@ -126,7 +132,7 @@ class Paper(Base):
     openalex_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     citation_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    authors: Mapped[dict] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    authors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     source_names: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list, server_default="{}"
     )
@@ -884,4 +890,146 @@ class PaperChunk(Base):
         Index("ix_paper_chunks_project_paper", "project_paper_id"),
         Index("ix_paper_chunks_project_content", "project_paper_id", "content_type"),
         Index("ix_paper_chunks_project_section", "project_paper_id", "section_label"),
+    )
+
+
+# ── Assistant (Plan-Act Chat) ────────────────────────────────────────────────
+#
+# Three tables that back the `/assistant` chat surface. Every artifact the
+# assistant produces (papers, matrix rows, gaps, reports, …) is still stored on
+# the existing `Project`-scoped tables; these tables only persist the chat
+# conversation, the live execution plan, and the SSE event stream so a session
+# can be resumed after a refresh.
+
+
+class AssistantSession(Base):
+    """A single chat conversation owned by a user, optionally pinned to a project."""
+
+    __tablename__ = "assistant_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="assistant_sessions")
+    project: Mapped["Project | None"] = relationship(back_populates="assistant_sessions")
+    events: Mapped[list["AssistantEvent"]] = relationship(
+        back_populates="session",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="AssistantEvent.created_at",
+    )
+    plan: Mapped["AssistantPlan | None"] = relationship(
+        back_populates="session",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_assistant_sessions_status",
+        ),
+        Index("ix_assistant_sessions_user_updated", "user_id", "updated_at"),
+    )
+
+
+class AssistantEvent(Base):
+    """A single Server-Sent Event emitted by the Plan-Act flow.
+
+    `event_type` mirrors the Pydantic event discriminator (Task 2); `payload`
+    stores the full serialized event so the UI can replay it verbatim.
+    """
+
+    __tablename__ = "assistant_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assistant_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    session: Mapped["AssistantSession"] = relationship(back_populates="events")
+
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('message', 'title', 'plan', 'step', 'tool', 'done', 'error', 'wait')",
+            name="ck_assistant_events_type",
+        ),
+        # Composite index for fast history replay ordered by time.
+        Index("ix_assistant_events_session_created", "session_id", "created_at"),
+    )
+
+
+class AssistantPlan(Base):
+    """The current (single) Plan attached to a session.
+
+    Exactly one plan per session — older plan revisions are not retained; the
+    full evolution can be reconstructed from `assistant_events` of type 'plan'.
+    """
+
+    __tablename__ = "assistant_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assistant_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    steps: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    current_step_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="in_progress", server_default="in_progress"
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    session: Mapped["AssistantSession"] = relationship(back_populates="plan")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('in_progress', 'completed', 'failed', 'cancelled')",
+            name="ck_assistant_plans_status",
+        ),
     )
