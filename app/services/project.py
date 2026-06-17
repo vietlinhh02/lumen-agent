@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -21,6 +22,9 @@ from app.schemas.project import (
     UpdatePaperRequest,
 )
 from app.services.pdf_downloader import PDFDownloader
+
+if TYPE_CHECKING:
+    from app.sources.base import RawPaper
 
 logger = logging.getLogger(__name__)
 
@@ -208,9 +212,7 @@ async def save_paper_to_project(
 
         import asyncio
 
-        asyncio.ensure_future(
-            _download_and_ingest_bg(pp.id, raw, pdf_path=prefetched)
-        )
+        asyncio.ensure_future(_download_and_ingest_bg(pp.id, raw, pdf_path=prefetched))
 
     return SavePaperResponse(
         project_paper_id=pp.id,
@@ -369,7 +371,7 @@ async def remove_project_paper(
 
 
 async def _download_and_ingest_bg(
-    project_paper_id: UUID, raw: object, *, pdf_path: object | None = None
+    project_paper_id: UUID, raw: RawPaper, *, pdf_path: str | Path | None = None
 ) -> None:
     """Background task: download PDF for *raw* paper and extract text.
 
@@ -379,11 +381,11 @@ async def _download_and_ingest_bg(
     """
 
     from app.db.session import async_session_factory
-    from app.services.pdf_ingestion import ingest_pdf
+    from app.services.pdf_fulltext import process_pdf
     from app.sources.firecrawl import crawl_pdf_links
 
     try:
-        pdf_result = Path(pdf_path) if pdf_path else None
+        pdf_result: Path | None = Path(pdf_path) if pdf_path else None
 
         if pdf_result is None:
             # Enrich with PDF links via Firecrawl if none available yet
@@ -402,18 +404,17 @@ async def _download_and_ingest_bg(
                 await _update_paper_status(bg_db, project_paper_id, "failed")
             return
 
-        # Ingest PDF text via Gemma API
+        # Single-pass: extract -> chunk -> embed -> store. No batch trigger.
         async with async_session_factory() as bg_db:
-            status = await ingest_pdf(bg_db, project_paper_id, pdf_result)
+            result = await process_pdf(bg_db, project_paper_id, pdf_result)
             logger.info(
-                "Background download+ingest done for %s: %s (%s)",
+                "Background fulltext done for %s: %s (status=%s, chunks=%d, chars=%d)",
                 project_paper_id,
                 pdf_result.name,
-                status,
+                result.status,
+                result.chunk_count,
+                result.char_count,
             )
-
-        if status == "raw_extracted":
-            await _maybe_trigger_normalization(project_paper_id)
     except Exception as exc:
         logger.exception("Background download+ingest failed for %s: %s", project_paper_id, exc)
 
@@ -429,49 +430,6 @@ async def _update_paper_status(db, project_paper_id: UUID, status: str) -> None:
     if pp is not None:
         pp.full_text_status = status
         await db.commit()
-
-
-async def _maybe_trigger_normalization(project_paper_id: UUID) -> None:
-    """After a paper is ingested, check if the project has enough raw papers
-    to trigger batch normalization automatically."""
-    import asyncio
-
-    from app.db.session import async_session_factory
-
-    async with async_session_factory() as bg_db:
-        from sqlalchemy import select
-
-        from app.db.models import ProjectPaper
-
-        result = await bg_db.execute(
-            select(ProjectPaper).where(ProjectPaper.id == project_paper_id)
-        )
-        pp = result.scalar_one_or_none()
-        if pp is None:
-            return
-        project_id = pp.project_id
-
-        from app.services.pdf_normalizer import count_raw_papers
-
-        raw_count = await count_raw_papers(bg_db, project_id)
-        if raw_count < 3:
-            return
-
-    async def _bg_normalize():
-        try:
-            async with async_session_factory() as norm_db:
-                from app.services.pdf_normalizer import normalize_project_papers
-
-                await normalize_project_papers(norm_db, project_id)
-        except Exception as exc:
-            logger.exception("Auto-normalize crashed for project %s: %s", project_id, exc)
-
-    asyncio.ensure_future(_bg_normalize())
-    logger.info(
-        "Auto-triggered batch normalization for project %s (%d raw papers)",
-        project_id,
-        raw_count,
-    )
 
 
 async def _upsert_paper(db: AsyncSession, data: SavePaperRequest) -> Paper:

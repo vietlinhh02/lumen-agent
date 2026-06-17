@@ -1,7 +1,9 @@
 import subprocess
+from typing import cast
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import pdf_ingestion
 
@@ -116,7 +118,7 @@ async def test_store_chunks_persists_embedding_as_vector_list(monkeypatch) -> No
         embedding=embedding,
     )
 
-    await pdf_ingestion._store_chunks(FakeDb(), uuid4(), [chunk])
+    await pdf_ingestion._store_chunks(cast(AsyncSession, FakeDb()), uuid4(), [chunk])
 
     assert added
     assert added[0].embedding is embedding

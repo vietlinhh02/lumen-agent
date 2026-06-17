@@ -120,9 +120,7 @@ class PDFDownloader:
                 try:
                     results[paper.title] = await self.download(paper)
                 except Exception as exc:
-                    logger.warning(
-                        "Parallel download failed for '%s': %s", paper.title[:60], exc
-                    )
+                    logger.warning("Parallel download failed for '%s': %s", paper.title[:60], exc)
                     results[paper.title] = None
 
         await asyncio.gather(*[_one(p) for p in papers])
