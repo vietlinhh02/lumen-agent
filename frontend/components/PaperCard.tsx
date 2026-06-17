@@ -1,6 +1,7 @@
-import { Calendar, Buildings, Quotes, User, Trash } from "@phosphor-icons/react";
+import { Calendar, Buildings, Quotes, User, Trash, CircleNotch } from "@phosphor-icons/react";
 import type { ProjectPaperResponse } from "@/lib/types";
 import { formatAuthors } from "@/lib/utils";
+import { MathText } from "./search/MathText";
 
 const relevanceColors: Record<string, string> = {
   core: "bg-primary/10 text-primary",
@@ -14,6 +15,7 @@ const fullTextColors: Record<string, string> = {
   failed: "bg-red-50 text-red-600",
   ocr_required: "bg-ash/10 text-ash",
   pending: "bg-sky-50 text-sky-700",
+  normalizing: "bg-violet-50 text-violet-700",
 };
 
 const fullTextLabels: Record<string, string> = {
@@ -21,8 +23,14 @@ const fullTextLabels: Record<string, string> = {
   raw_extracted: "Raw",
   failed: "Extract Failed",
   ocr_required: "OCR Required",
-  pending: "Extracting…",
+  pending: "Indexing…",
+  normalizing: "Indexing…",
 };
+
+// Statuses where the user can already open the extracted text.
+const viewableStatuses = new Set(["completed", "raw_extracted"]);
+// Statuses that mean "still working, will auto-update".
+const inProgressStatuses = new Set(["pending", "normalizing"]);
 
 export function PaperCard({
   paper,
@@ -47,9 +55,9 @@ export function PaperCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
           <h3 className="font-ui text-[14px] font-semibold leading-[1.4] text-ink">
-            {paper.title}
+            <MathText text={paper.title} />
           </h3>
-          {(paper.full_text_status === "completed" || paper.full_text_status === "raw_extracted") && (
+          {paper.full_text_status && viewableStatuses.has(paper.full_text_status) && (
             <button
               onClick={onViewFullText}
               className={`font-ui shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors hover:opacity-80 ${
@@ -60,13 +68,16 @@ export function PaperCard({
               {fullTextLabels[paper.full_text_status] || paper.full_text_status}
             </button>
           )}
-          {paper.full_text_status && paper.full_text_status !== "completed" && paper.full_text_status !== "raw_extracted" && (
+          {paper.full_text_status && !viewableStatuses.has(paper.full_text_status) && (
             <span
-              className={`font-ui shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+              className={`font-ui shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                 fullTextColors[paper.full_text_status] || "bg-ash/10 text-ash"
               }`}
               title={`PDF status: ${paper.full_text_status}`}
             >
+              {inProgressStatuses.has(paper.full_text_status) && (
+                <CircleNotch size={10} weight="bold" className="animate-spin" />
+              )}
               {fullTextLabels[paper.full_text_status] || paper.full_text_status}
             </span>
           )}
@@ -84,7 +95,7 @@ export function PaperCard({
 
       {paper.abstract && (
         <p className="mt-2 text-sm leading-[1.5] text-charcoal line-clamp-3">
-          {paper.abstract}
+          <MathText text={paper.abstract} />
         </p>
       )}
 

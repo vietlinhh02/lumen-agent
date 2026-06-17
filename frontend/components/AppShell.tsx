@@ -1,9 +1,12 @@
 "use client";
 
-import { memo, useState, useRef, useEffect } from "react";
+import { memo, useState, useRef, useEffect, useEffectEvent } from "react";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useUIStore } from "@/lib/stores/ui-store";
+import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { SessionList } from "@/components/assistant/SessionList";
 import {
   SquaresFour,
   Folder,
@@ -17,6 +20,9 @@ import {
   SignOut,
   List,
   X,
+  ChatCircle,
+  Sliders,
+  CaretDown,
 } from "@phosphor-icons/react";
 
 /* ── Navigation items ── */
@@ -30,6 +36,7 @@ const NAV_ITEMS = [
   { label: "Knowledge Map", href: "/map", icon: Graph },
   { label: "Gaps", href: "/gaps", icon: Lightbulb },
   { label: "Reports", href: "/reports", icon: PencilLine },
+  { label: "Assistant", href: "/assistant", icon: ChatCircle },
   { label: "Settings", href: "/settings", icon: GearSix },
 ];
 
@@ -38,6 +45,8 @@ const NAV_ITEMS = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const sidebarOpen = useUIStore((s) => s.sidebarMobileOpen);
   const setSidebarOpen = useUIStore((s) => s.setSidebarMobileOpen);
+  const pathname = usePathname();
+  const isAssistant = pathname?.startsWith("/assistant") ?? false;
 
   return (
     <>
@@ -46,7 +55,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <SidebarDesktop />
       {/* Mobile drawer */}
       <SidebarMobile open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className="min-h-[calc(100vh-60px)] px-4 sm:px-8 pt-8 pb-12 ml-0 xl:ml-[56px]">
+      <main
+        className={
+          isAssistant
+            ? "h-[calc(100vh-60px)] overflow-hidden ml-0 xl:ml-[56px]"
+            : "min-h-[calc(100vh-60px)] px-4 sm:px-8 pt-8 pb-12 ml-0 xl:ml-[56px]"
+        }
+      >
         {children}
       </main>
     </>
@@ -61,12 +76,11 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
   const userMenuOpen = useUIStore((s) => s.userMenuOpen);
   const setUserMenuOpen = useUIStore((s) => s.setUserMenuOpen);
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
+  const isAssistant = pathname?.startsWith("/assistant") ?? false;
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setMounted(true), []);
-
-  const seed = mounted && token ? token : "lumen";
+  const seed = token ?? "lumen";
   const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
 
   useEffect(() => {
@@ -90,6 +104,7 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
     >
       {/* Hamburger — mobile only */}
       <button
+        type="button"
         onClick={onMenuClick}
         className="xl:hidden flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-charcoal hover:text-ink hover:bg-surface-bone transition-colors mr-3"
       >
@@ -105,12 +120,23 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
 
       <div className="flex-1" />
 
+      {/* Assistant page header controls (rendered only on /assistant/*) */}
+      {isAssistant && <AssistantHeaderControls />}
+
       <div ref={ref} className="relative">
         <button
+          type="button"
           onClick={() => setUserMenuOpen(!userMenuOpen)}
           className="flex h-[36px] w-[36px] items-center justify-center rounded-full overflow-hidden transition-all duration-200 hover:ring-2 hover:ring-primary/30"
         >
-          <img src={avatarUrl} alt="avatar" className="h-full w-full" />
+          <Image
+            src={avatarUrl}
+            alt="avatar"
+            width={36}
+            height={36}
+            unoptimized
+            className="h-full w-full"
+          />
         </button>
 
         {userMenuOpen && (
@@ -119,6 +145,7 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
             style={{ border: "1px solid var(--hairline)" }}
           >
             <button
+              type="button"
               onClick={handleSignOut}
               className="flex w-full items-center gap-2 rounded-[8px] px-3 py-2 font-ui text-sm text-on-dark transition-colors duration-150 hover:bg-[#333]"
             >
@@ -131,6 +158,147 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
     </header>
   );
 });
+
+/* ── Assistant page header controls ────────────────────────────────────── */
+
+function AssistantHeaderControls() {
+  const router = useRouter();
+  const loadSessions = useAssistantStore((s) => s.loadSessions);
+  const createSession = useAssistantStore((s) => s.createSession);
+  const activeSessionId = useAssistantStore((s) => s.activeSessionId);
+  const currentSession = useAssistantStore((s) => s.currentSession);
+  const eventsMap = useAssistantStore((s) => s.events);
+
+  const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
+  const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
+  const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
+  const toggleToolPanel = useUIStore((s) => s.toggleAssistantToolPanel);
+  const toggleSessions = useUIStore((s) => s.toggleAssistantSessions);
+
+  // A "new" session is one that has no events yet. Disabling the New
+  // action in that state prevents the user from spamming the API by
+  // creating one empty session after another.
+  const currentSessionEventCount = activeSessionId
+    ? (eventsMap.get(activeSessionId)?.length ?? 0)
+    : 0;
+  const isCurrentSessionNew = activeSessionId !== null && currentSessionEventCount === 0;
+
+  // Re-entrancy guard: prevent rapid clicks while a session is being
+  // created (the createSession promise hasn't resolved yet).
+  const [isCreating, setIsCreating] = useState(false);
+
+  // Load sessions lazily when the dropdown is opened
+  useEffect(() => {
+    if (sessionsOpen) void loadSessions();
+  }, [sessionsOpen, loadSessions]);
+
+  // Close dropdown on route change
+  useEffect(() => {
+    setSessionsOpen(false);
+  }, [activeSessionId, setSessionsOpen]);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click / Escape
+  useEffect(() => {
+    if (!sessionsOpen) return;
+    const onMouse = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setSessionsOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSessionsOpen(false);
+    };
+    document.addEventListener("mousedown", onMouse);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouse);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sessionsOpen, setSessionsOpen]);
+
+  const handleNewChat = async () => {
+    // Don't allow creating a new session while one is already in flight
+    // or when the current session is still empty.
+    if (isCreating) return;
+    if (isCurrentSessionNew) return;
+
+    setIsCreating(true);
+    try {
+      const session = await createSession();
+      if (session) router.push(`/assistant/sessions/${session.id}`);
+    } finally {
+      setIsCreating(false);
+    }
+    setSessionsOpen(false);
+  };
+
+  return (
+    <div ref={dropdownRef} className="flex items-center gap-1 mr-2 relative">
+      {/* Sessions dropdown trigger */}
+      <button
+        type="button"
+        onClick={toggleSessions}
+        className={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 font-ui text-sm transition-all duration-150 active:scale-95 ${
+          sessionsOpen
+            ? "bg-primary/10 text-primary"
+            : "text-charcoal hover:text-ink hover:bg-surface-bone"
+        }`}
+        title="Recent chats"
+      >
+        <List size={18} weight="bold" />
+        <span className="hidden sm:inline max-w-[160px] truncate">
+          {currentSession?.title ? currentSession.title : "New chat"}
+        </span>
+        <CaretDown
+          size={12}
+          weight="bold"
+          className={`transition-transform duration-200 ${sessionsOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {/* View tool (toggle right tool panel) */}
+      <button
+        type="button"
+        onClick={toggleToolPanel}
+        className={`flex h-9 w-9 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-lg transition-all duration-150 active:scale-95 ${
+          toolPanelOpen
+            ? "bg-primary/10 text-primary"
+            : "text-charcoal hover:text-ink hover:bg-surface-bone"
+        }`}
+        title="Toggle tool panel"
+        aria-label="Toggle tool panel"
+      >
+        <Sliders size={18} weight="bold" />
+        <span className="hidden sm:inline font-ui text-sm font-medium">View tool</span>
+      </button>
+
+      {/* Dropdown — always rendered so we get a smooth enter animation.
+          `pointer-events-none` keeps it inert when hidden. `overflow-hidden`
+          keeps the inner SessionList clipped to the rounded corners. The
+          DeleteSessionModal is rendered via portal (see SessionList), so
+          it is NOT clipped by this overflow. */}
+      <div
+        className={`absolute right-0 top-[44px] z-50 w-[min(320px,calc(100vw-16px))] rounded-xl bg-canvas shadow-2xl overflow-hidden transition-all duration-200 ease-out origin-top-right ${
+          sessionsOpen
+            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
+            : "opacity-0 -translate-y-1 scale-95 pointer-events-none"
+        }`}
+        style={{ border: "1px solid var(--hairline)" }}
+      >
+        <SessionList
+          compact
+          isCurrentSessionNew={isCurrentSessionNew}
+          isCreating={isCreating}
+          onClose={() => setSessionsOpen(false)}
+          onNewChat={handleNewChat}
+          onSelectSession={() => setSessionsOpen(false)}
+        />
+      </div>
+    </div>
+  );
+}
 
 /* ── Nav Items renderer (shared) ── */
 
@@ -147,6 +315,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 
         return (
           <button
+            type="button"
             key={href}
             onClick={() => {
               router.push(href);
@@ -192,6 +361,8 @@ function SidebarDesktop() {
 /* ── Mobile Sidebar (drawer) ── */
 
 function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const onCloseEvent = useEffectEvent(onClose);
+
   // Lock body scroll
   useEffect(() => {
     if (open) {
@@ -205,17 +376,19 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
   // Close on escape
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseEvent(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
 
   const closeSidebar = useUIStore((s) => s.closeSidebar);
 
   return (
     <>
       {/* Backdrop */}
-      <div
+      <button
+        type="button"
+        aria-label="Close sidebar"
         onClick={() => { onClose(); closeSidebar(); }}
         className={`xl:hidden fixed inset-0 z-30 bg-black/40 transition-opacity duration-300 ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -224,7 +397,7 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
 
       {/* Drawer */}
       <aside
-        className={`xl:hidden fixed top-0 left-0 bottom-0 z-40 w-[280px] bg-canvas shadow-2xl transition-transform duration-300 ease-out ${
+        className={`xl:hidden fixed top-0 left-0 bottom-0 z-40 w-[280px] bg-canvas shadow-2xl transition-transform duration-300 ease-out flex flex-col ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ borderRight: "1px solid var(--hairline)" }}
@@ -235,6 +408,7 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
             Lumen
           </span>
           <button
+            type="button"
             onClick={() => { onClose(); closeSidebar(); }}
             className="flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-charcoal hover:text-ink hover:bg-surface-bone transition-colors"
           >
@@ -242,10 +416,11 @@ function SidebarMobile({ open, onClose }: { open: boolean; onClose: () => void }
           </button>
         </div>
 
-        {/* Nav items — full width with labels */}
-        <nav className="p-3 flex flex-col gap-0.5">
-          <NavItemsMobile onClose={onClose} />
-        </nav>
+        <div className="flex-1 overflow-y-auto">
+          <nav className="p-3 flex flex-col gap-0.5">
+            <NavItemsMobile onClose={onClose} />
+          </nav>
+        </div>
       </aside>
     </>
   );
@@ -266,6 +441,7 @@ function NavItemsMobile({ onClose }: { onClose: () => void }) {
 
         return (
           <button
+            type="button"
             key={href}
             onClick={() => {
               router.push(href);
@@ -285,4 +461,3 @@ function NavItemsMobile({ onClose }: { onClose: () => void }) {
     </>
   );
 }
-

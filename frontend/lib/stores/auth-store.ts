@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { apiFetch } from "@/lib/api";
@@ -40,13 +41,56 @@ interface AuthState {
   clearAuth: () => void;
 }
 
+type PersistedAuthState = Partial<Pick<AuthState, "token" | "user">>;
+
+function getTokenCookieMaxAge(token: string): number {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return 60 * 60 * 24 * 7;
+    const payload = JSON.parse(atob(parts[1]));
+    const exp = typeof payload.exp === "number" ? payload.exp : null;
+    if (!exp) return 60 * 60 * 24 * 7;
+    return Math.max(0, exp - Math.floor(Date.now() / 1000));
+  } catch {
+    return 60 * 60 * 24 * 7;
+  }
+}
+
 function setTokenCookie(token: string | null) {
   if (typeof document === "undefined") return;
   if (token) {
-    document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=${60 * 60 * 24}`;
+    const maxAge = getTokenCookieMaxAge(token);
+    document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=${maxAge}`;
   } else {
     document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`;
   }
+}
+
+function getFallbackToken(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+/**
+ * `useAuthHydrated` — returns `true` once the persist middleware has
+ * finished rehydrating from localStorage. Components should wait for
+ * this before reading `token`/`user` so they don't see the empty
+ * initial state and bounce a logged-in user to /login on refresh.
+ */
+export function useAuthHydrated(): boolean {
+  return useSyncExternalStore(
+    (callback) => {
+      const unsubscribeStart = useAuthStore.persist.onHydrate(callback);
+      const unsubscribeFinish =
+        useAuthStore.persist.onFinishHydration(callback);
+      return () => {
+        unsubscribeStart();
+        unsubscribeFinish();
+      };
+    },
+    () => useAuthStore.persist.hasHydrated(),
+    () => false,
+  );
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -120,6 +164,17 @@ export const useAuthStore = create<AuthState>()(
       name: "lumen-auth",
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ token: s.token, user: s.user }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as PersistedAuthState | undefined;
+        return {
+          ...currentState,
+          ...persisted,
+          token: persisted?.token ?? getFallbackToken(),
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        setTokenCookie(state?.token ?? null);
+      },
     },
   ),
 );

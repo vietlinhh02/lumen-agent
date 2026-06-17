@@ -9,3 +9,4 @@ export * from "./gaps-store";
 export * from "./reports-store";
 export * from "./knowledge-map-store";
 export * from "./settings-store";
+export * from "./assistant-store";

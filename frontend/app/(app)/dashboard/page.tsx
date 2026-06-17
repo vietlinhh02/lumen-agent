@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
+import { relativeTime } from "@/lib/utils";
 import {
   Folder,
   FileText,
@@ -41,14 +42,6 @@ export default function DashboardPage() {
     { label: "View Matrix", description: "Compare papers side by side", icon: Table, href: "/matrix", color: "text-emerald-600", bg: "bg-emerald-50" },
     { label: "Generate Review", description: "Create a citation-safe literature review", icon: PencilLine, href: "/reports", color: "text-violet-600", bg: "bg-violet-50" },
   ];
-
-  function timeAgo(dateStr: string): string {
-    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-    if (diff < 60) return "just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  }
 
   return (
     <div className="animate-fade-in">
@@ -126,7 +119,7 @@ export default function DashboardPage() {
                       <Folder size={18} className="text-primary shrink-0" />
                       <div className="min-w-0">
                         <p className="font-ui text-[14px] font-medium text-ink truncate">{p.title}</p>
-                        <p className="font-ui text-[11px] text-ash">{timeAgo(p.updated_at)}</p>
+                        <p className="font-ui text-[11px] text-ash">{relativeTime(p.updated_at)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

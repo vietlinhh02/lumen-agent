@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { FileText, MagnifyingGlass, ArrowSquareOut, SortAscending, SortDescending } from "@phosphor-icons/react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { MathText } from "@/components/search/MathText";
 
 export interface PaperItem {
   id: string;
@@ -106,7 +107,7 @@ export function PapersTable({ papers, sortKey, sortAsc, onToggleSort, onNavigate
             <tbody>
               {papers.map((p) => (
                 <tr key={p.id} className="hover:bg-surface-bone/30 transition-colors" style={{ borderTop: "1px solid var(--hairline)" }}>
-                  <td className="px-5 py-3"><p className="font-ui text-[13px] font-medium text-ink line-clamp-2">{p.title}</p></td>
+                  <td className="px-5 py-3"><p className="font-ui text-[13px] font-medium text-ink line-clamp-2"><MathText text={p.title} /></p></td>
                   <td className="px-4 py-3"><p className="font-ui text-[12px] text-charcoal line-clamp-2">{p.authors.slice(0, 3).join(", ")}{p.authors.length > 3 && " et al."}</p></td>
                   <td className="px-4 py-3 font-ui text-[13px] text-ink">{p.year ?? "—"}</td>
                   <td className="px-4 py-3 font-ui text-[12px] text-charcoal line-clamp-1 max-w-[160px]">{p.venue ?? "—"}</td>

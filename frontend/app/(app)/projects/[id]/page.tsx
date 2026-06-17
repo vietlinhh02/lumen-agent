@@ -57,6 +57,22 @@ export default function ProjectDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Auto-refresh while any paper is still in a background pipeline stage
+  // (new pdf-oxide fulltext path goes pending -> completed quickly; legacy
+  // path may sit in raw_extracted / normalizing longer). Stop polling when
+  // everything is terminal to avoid hammering the API.
+  const hasInProgressPaper = papers.some(
+    (p) => p.full_text_status === "pending" || p.full_text_status === "normalizing",
+  );
+  useEffect(() => {
+    if (!id || !hasInProgressPaper || normalizing) return;
+    const interval = setInterval(() => {
+      if (id) void fetchProjectPapers(id);
+    }, 2500);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, hasInProgressPaper, normalizing]);
+
   async function handleDownloadPDF(projectPaperId: string) {
     setDownloadingPaperId(projectPaperId);
     try {

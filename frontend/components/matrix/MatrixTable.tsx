@@ -5,6 +5,7 @@ import { CaretDown, CaretUp, Trash } from "@phosphor-icons/react";
 import type { MatrixRowResponse, MatrixRowUpdate } from "@/lib/types";
 import { EditableCell } from "./EditableCell";
 import { ConfidenceBadge } from "./ConfidenceBadge";
+import { MathText } from "../search/MathText";
 
 const SUMMARY_FIELDS: { key: keyof MatrixRowUpdate; label: string }[] = [
   { key: "method", label: "Method" },
@@ -47,7 +48,7 @@ function MatrixCard({
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0 flex-1">
           <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink line-clamp-2">
-            {row.paper_title || "—"}
+            {row.paper_title ? <MathText text={row.paper_title} /> : "—"}
           </h3>
           {!expanded && (
             <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1">

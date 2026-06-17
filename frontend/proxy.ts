@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_EXTENSIONS = /\.(png|jpg|jpeg|svg|webp|gif|ico|woff2?|ttf|otf|css|js|map|json|txt|xml)$/i;
+const PUBLIC_EXTENSIONS =
+  /\.(png|jpg|jpeg|svg|webp|gif|ico|woff2?|ttf|otf|css|js|map|json|txt|xml)$/i;
 
 function isJwtExpired(token: string): boolean {
   try {
@@ -30,7 +31,7 @@ export default function proxy(request: NextRequest) {
 
   const cookie = request.cookies.get("lumen_token");
 
-  if (!cookie?.value || isJwtExpired(cookie.value)) {
+  if (cookie?.value && isJwtExpired(cookie.value)) {
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.set("lumen_token", "", { path: "/", maxAge: 0 });
     return response;

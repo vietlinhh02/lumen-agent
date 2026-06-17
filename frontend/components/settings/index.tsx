@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { User, Lock, Sun, Moon, CheckCircle, XCircle } from "@phosphor-icons/react";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
+import { formatDate } from "@/lib/utils";
 import type { UserProfile, AdminUser } from "@/lib/types";
 
 export function ProfileSection({ profile }: { profile: UserProfile }) {
@@ -147,7 +148,7 @@ export function AdminSection() {
                       {u.is_active ? "Active" : "Inactive"}
                     </span>
                   </td>
-                  <td className="px-6 py-3 font-ui text-sm text-charcoal">{new Date(u.created_at).toLocaleDateString()}</td>
+                  <td className="px-6 py-3 font-ui text-sm text-charcoal">{formatDate(u.created_at)}</td>
                   <td className="px-6 py-3 text-right">
                     <button onClick={() => toggleActive(u.id, u.is_active)} className={`font-ui text-[12px] font-semibold px-3 py-1.5 rounded-full transition-colors ${u.is_active ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-green-50 text-green-700 hover:bg-green-100"}`}>
                       {u.is_active ? "Deactivate" : "Activate"}

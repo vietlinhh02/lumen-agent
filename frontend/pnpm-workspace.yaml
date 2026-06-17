@@ -1,3 +1,5 @@
-ignoredBuiltDependencies:
-  - sharp
-  - unrs-resolver
+allowBuilds:
+  msgpackr-extract: true
+  msw: true
+  sharp: true
+  unrs-resolver: true

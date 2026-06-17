@@ -10,6 +10,17 @@ interface UIState {
   theme: Theme;
   sidebarMobileOpen: boolean;
   userMenuOpen: boolean;
+  /**
+   * Whether the assistant "tool panel" (right side) is open.
+   * Controlled by a button in the AppShell header, so it lives in the
+   * global UI store rather than the per-page component state.
+   */
+  assistantToolPanelOpen: boolean;
+  /**
+   * Whether the assistant "sessions" dropdown (in the AppShell header)
+   * is open.
+   */
+  assistantSessionsOpen: boolean;
 
   // Actions
   setTheme: (t: Theme) => void;
@@ -19,6 +30,10 @@ interface UIState {
   toggleUserMenu: () => void;
   toggleSidebar: () => void;
   closeSidebar: () => void;
+  setAssistantToolPanelOpen: (v: boolean) => void;
+  toggleAssistantToolPanel: () => void;
+  setAssistantSessionsOpen: (v: boolean) => void;
+  toggleAssistantSessions: () => void;
 }
 
 function applyTheme(t: Theme) {
@@ -32,6 +47,8 @@ export const useUIStore = create<UIState>()(
       theme: "light",
       sidebarMobileOpen: false,
       userMenuOpen: false,
+      assistantToolPanelOpen: false,
+      assistantSessionsOpen: false,
 
       setTheme(t) {
         applyTheme(t);
@@ -58,6 +75,19 @@ export const useUIStore = create<UIState>()(
       },
       toggleUserMenu() {
         set({ userMenuOpen: !get().userMenuOpen });
+      },
+
+      setAssistantToolPanelOpen(v) {
+        set({ assistantToolPanelOpen: v });
+      },
+      toggleAssistantToolPanel() {
+        set({ assistantToolPanelOpen: !get().assistantToolPanelOpen });
+      },
+      setAssistantSessionsOpen(v) {
+        set({ assistantSessionsOpen: v });
+      },
+      toggleAssistantSessions() {
+        set({ assistantSessionsOpen: !get().assistantSessionsOpen });
       },
     }),
     {

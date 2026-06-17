@@ -2,6 +2,7 @@
 
 import { User, Calendar, Buildings, Quotes, BookmarkSimple, CheckCircle, DownloadSimple } from "@phosphor-icons/react";
 import type { PaperResult } from "@/lib/types";
+import { MathText } from "./MathText";
 
 function formatAuthors(authors: Array<{ name: string; author_id?: string | null }>) {
   if (!authors || authors.length === 0) return null;
@@ -66,7 +67,9 @@ export function PaperCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink">{paper.title}</h3>
+            <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink">
+              <MathText text={paper.title} />
+            </h3>
           </div>
           {isDownloaded && (
             <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
@@ -89,7 +92,7 @@ export function PaperCard({
         {paper.venue && <span className="inline-flex items-center gap-1"><Buildings size={11} />{paper.venue}</span>}
         {paper.year && <span className="inline-flex items-center gap-1"><Calendar size={11} />{paper.year}</span>}
       </div>
-      {paper.abstract && <p className="mt-2.5 text-[13px] leading-[1.6] text-body line-clamp-3">{paper.abstract}</p>}
+      {paper.abstract && <p className="mt-2.5 text-[13px] leading-[1.6] text-body line-clamp-3"><MathText text={paper.abstract} /></p>}
       <div className="mt-3 flex items-center justify-between">
         <SourceBadges paper={paper} />
         {saved ? (

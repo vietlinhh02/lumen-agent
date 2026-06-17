@@ -5,8 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const NAIVE_API_DATETIME_RE =
+  /^\d{4}-\d{2}-\d{2}(?:T|\s)\d{2}:\d{2}:\d{2}(?:\.\d+)?$/;
+
+export function parseApiDate(value: string): Date {
+  const normalized = NAIVE_API_DATETIME_RE.test(value)
+    ? `${value.replace(" ", "T")}Z`
+    : value;
+  return new Date(normalized);
+}
+
 export function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
+  return parseApiDate(iso).toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -21,7 +31,7 @@ export function formatAuthors(authors: Array<{ name: string; author_id?: string 
 }
 
 export function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = Date.now() - parseApiDate(iso).getTime();
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);

@@ -134,6 +134,13 @@ export function FullTextPanel({
     [data.chunks, isRaw, hasDisplayMarkdown]
   );
 
+  // The new pdf-oxide path produces chunks without an LLM normalize pass.
+  // Legacy paths may produce a crawled_markdown (LLM-normalized) or just
+  // raw chunks waiting in `raw_extracted`. The badge + subtitle reflect
+  // which one the user is looking at.
+  const showAsLlmNormalized = data.full_text_status === "completed" && hasLlmMarkdown;
+  const showAsIndexed = data.full_text_status === "completed" && !hasLlmMarkdown && data.chunks.length > 0;
+
   return (
     <div
       ref={overlayRef}
@@ -154,22 +161,27 @@ export function FullTextPanel({
             <p className="mt-0.5 text-[12px] text-ash">
               {isRaw
                 ? "Raw text — LLM normalization pending"
-                : hasDisplayMarkdown
-                  ? `${markdownSections.length} sections${hasLlmMarkdown ? "" : " · indexed fallback"}`
-                  : `${groupedChunks.length} sections · ${data.total_chunks} chunks`}
+                : showAsLlmNormalized
+                  ? `${markdownSections.length} sections · LLM-normalized`
+                  : showAsIndexed
+                    ? `${groupedChunks.length} sections · ${data.total_chunks} chunks · pdf-oxide`
+                    : hasDisplayMarkdown
+                      ? `${markdownSections.length} sections`
+                      : `${groupedChunks.length} sections · ${data.total_chunks} chunks`}
               {" · "}{data.total_chars.toLocaleString()} chars
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className={`font-ui rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
               isRaw ? "bg-amber-50 text-amber-700" :
-              data.full_text_status === "completed" && hasLlmMarkdown ? "bg-emerald-50 text-emerald-700" :
-              data.full_text_status === "completed" ? "bg-sky-50 text-sky-700" :
+              showAsLlmNormalized ? "bg-emerald-50 text-emerald-700" :
+              showAsIndexed ? "bg-sky-50 text-sky-700" :
               "bg-ash/10 text-ash"
             }`}>
               {isRaw ? "Raw" :
-               data.full_text_status === "completed" && hasLlmMarkdown ? "Normalized" :
-               data.full_text_status === "completed" ? "Indexed" : data.full_text_status}
+               showAsLlmNormalized ? "Normalized" :
+               showAsIndexed ? "Indexed" :
+               data.full_text_status || "Unknown"}
             </span>
             <button
               onClick={onClose}
