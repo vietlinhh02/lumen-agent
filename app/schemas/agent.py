@@ -46,6 +46,7 @@ class WorkflowStatusResponse(BaseModel):
 
 class WorkflowStepResponse(BaseModel):
     """Result of a single workflow node."""
+
     node_name: str
     status: str  # "completed" | "failed" | "skipped"
     output_summary: str

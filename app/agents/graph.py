@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.nodes import (
     citation_validator_node,
@@ -42,7 +43,7 @@ def _needs_db(node_fn: Any) -> bool:
     return p.name == "db" or "AsyncSession" in str(p.annotation)
 
 
-def build_research_graph() -> StateGraph:
+def build_research_graph() -> CompiledStateGraph:
     """Return a compiled LangGraph for the research workflow.
 
     Graph topology::

@@ -71,9 +71,15 @@ class FacetOutput(BaseModel):
     method_family: str | None = Field(default=None, description="High-level method category.")
     domain: str | None = Field(default=None, description="Application domain.")
     dataset_names: list[str] = Field(default_factory=list, description="Named datasets used.")
-    metric_names: list[str] = Field(default_factory=list, description="Evaluation metrics reported.")
-    limitation_types: list[str] = Field(default_factory=list, description="Categories of limitation.")
-    contribution_type: str | None = Field(default=None, description="Type of contribution (empirical, survey, etc.).")
+    metric_names: list[str] = Field(
+        default_factory=list, description="Evaluation metrics reported."
+    )
+    limitation_types: list[str] = Field(
+        default_factory=list, description="Categories of limitation."
+    )
+    contribution_type: str | None = Field(
+        default=None, description="Type of contribution (empirical, survey, etc.)."
+    )
     extraction_confidence: Literal["high", "medium", "low"] = Field(default="medium")
 
 
@@ -167,3 +173,42 @@ class ReviewOutput(BaseModel):
     """Full structured review returned by ReviewWriterAgent."""
 
     sections: list[ReviewSectionOutput] = Field(min_length=1)
+
+
+# ── Assistant Planner ──────────────────────────────────────────────────────────
+
+
+class StepOutput(BaseModel):
+    """One step in a plan produced by the PlannerAgent."""
+
+    id: str = Field(description="Unique step identifier (e.g., 'step_1', 'step_2').")
+    description: str = Field(
+        description="One-sentence human-readable description of what this step does."
+    )
+    expected_tool: str = Field(
+        description="The exact tool name this step will call. Must be from the provided tool list."
+    )
+
+    @field_validator("expected_tool")
+    @classmethod
+    def tool_must_be_valid(cls, v: str) -> str:
+        # Tool names are validated at runtime against the available tools
+        if not v or not v.strip():
+            raise ValueError("expected_tool cannot be empty")
+        return v.strip()
+
+
+class PlanOutput(BaseModel):
+    """Output of the PlannerAgent - a structured plan with steps."""
+
+    title: str = Field(
+        description="Short, descriptive title for the plan (max 10 words)."
+    )
+    language: str = Field(
+        default="en",
+        description="ISO 639-1 language code matching the user's message."
+    )
+    steps: list[StepOutput] = Field(
+        min_length=1,
+        description="Ordered list of steps to complete the user's request."
+    )

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import anthropic
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from app.core.config import get_settings
 
@@ -224,7 +225,7 @@ class OpenAICompatibleAdapter(AIProvider):
 
         response = await self._client.chat.completions.create(
             model=self._model,
-            messages=msgs,
+            messages=cast(list[ChatCompletionMessageParam], msgs),
             max_tokens=max_tokens,
             temperature=0.0,
             response_format={"type": "json_object"},
@@ -356,7 +357,8 @@ def get_provider() -> AIProvider:
         )
 
     raise ValueError(
-        f"Unsupported model '{model}'. Supported prefixes: claude-*, deepseek-*, mimo-*, gpt-*, o1, o3."
+        f"Unsupported model '{model}'. "
+        "Supported prefixes: claude-*, deepseek-*, mimo-*, gpt-*, o1, o3."
     )
 
 
