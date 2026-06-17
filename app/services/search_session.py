@@ -6,6 +6,7 @@ high-relevance papers for a project.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from uuid import UUID
 
@@ -163,7 +164,9 @@ async def get_saved_paper_ids(
             if paper_id not in saved_paper_ids:
                 continue
             if (sid and p_ss == sid) or (doi and p_doi == doi) or (arxiv and p_arxiv == arxiv):
-                saved.append(sid or doi or arxiv)
+                matched_id = sid or doi or arxiv
+                if matched_id:
+                    saved.append(matched_id)
                 break
 
     return saved
@@ -318,17 +321,15 @@ async def _run_auto_save_job(
                         exc,
                     )
                     # Roll back so the session is usable for the next paper
-                    try:
+                    with contextlib.suppress(Exception):
                         await bg_db.rollback()
-                    except Exception:
-                        pass
                     skipped += 1
 
             job.status = "completed"
             job.result = {"saved": saved, "skipped": skipped}
-            from datetime import datetime
+            from datetime import UTC, datetime
 
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()
 
         except Exception as exc:
@@ -337,9 +338,9 @@ async def _run_auto_save_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
-                    from datetime import datetime
+                    from datetime import UTC, datetime
 
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await bg_db.commit()
             except Exception:
                 pass
@@ -419,9 +420,7 @@ async def start_search_job(
     # Launch background worker
     import asyncio
 
-    asyncio.ensure_future(
-        _run_search_job(job.id, run.id, project_id, user.id, query, limit)
-    )
+    asyncio.ensure_future(_run_search_job(job.id, run.id, project_id, user.id, query, limit))
 
     return {
         "job_id": str(job.id),
@@ -439,7 +438,7 @@ async def _run_search_job(
     limit: int,
 ) -> None:
     """Background worker: run search_and_download, persist results to SearchRun."""
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     from app.db.session import async_session_factory
     from app.schemas.paper import PaperSearchRequest
@@ -499,7 +498,7 @@ async def _run_search_job(
                 "total_found": len(results_dicts),
                 "session_id": str(session_id),
             }
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()
 
         except Exception as exc:
@@ -508,7 +507,7 @@ async def _run_search_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await bg_db.commit()
             except Exception:
                 pass

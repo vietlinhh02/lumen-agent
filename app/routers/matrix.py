@@ -240,9 +240,9 @@ async def _run_matrix_job(
                 "created_count": created,
                 "skipped_count": job.total - created,
             }
-            from datetime import datetime
+            from datetime import UTC, datetime
 
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()
 
         except Exception as exc:
@@ -251,9 +251,9 @@ async def _run_matrix_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
-                    from datetime import datetime
+                    from datetime import UTC, datetime
 
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await bg_db.commit()
             except Exception:
                 pass

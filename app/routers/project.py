@@ -133,7 +133,6 @@ async def normalize_papers_endpoint(
     Runs in a background task to avoid socket timeout on long LLM calls.
     Returns immediately with the number of papers queued.
     """
-    import asyncio
 
     from sqlalchemy import select
 
@@ -158,9 +157,7 @@ async def normalize_papers_endpoint(
                 from app.services.pdf_normalizer import normalize_project_papers
 
                 result = await normalize_project_papers(bg_db, project_id)
-                logger.info(
-                    "Normalization done for project %s: %s", project_id, result
-                )
+                logger.info("Normalization done for project %s: %s", project_id, result)
         except Exception as exc:
             logger.exception("Background normalization crashed for project %s: %s", project_id, exc)
 
@@ -279,7 +276,6 @@ async def download_paper_pdf_endpoint(
     user: User = Depends(get_current_user),
 ) -> ProjectPaperResponse:
     """Trigger a PDF download for a saved paper that only has metadata."""
-    from pathlib import Path
 
     # Verify ownership
     from sqlalchemy import select
@@ -287,7 +283,6 @@ async def download_paper_pdf_endpoint(
 
     from app.core.config import get_settings
     from app.db.models import Paper, Project, ProjectPaper
-    from app.services.pdf_downloader import PDFDownloader
     from app.sources.base import RawPaper
 
     settings = get_settings()
@@ -385,7 +380,6 @@ async def download_paper_pdf_endpoint(
     )
 
     # Kick off download + ingest in background — API returns immediately
-    import asyncio
 
     from app.services.project import _download_and_ingest_bg
 
@@ -412,7 +406,7 @@ async def download_paper_pdf_endpoint(
         )
     ).first() is not None
 
-    return _to_project_paper_response(
+    return await _to_project_paper_response(
         pp, paper, project_id, has_matrix=has_matrix, has_enrichment=has_enrichment
     )
 

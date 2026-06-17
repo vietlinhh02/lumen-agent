@@ -128,9 +128,9 @@ async def _run_conflict_job(
                 job.status = "completed"
                 job.result = {"conflict_count": len(result.get("conflicts", []))}
 
-            from datetime import datetime
+            from datetime import UTC, datetime
 
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()
 
         except Exception as exc:
@@ -139,9 +139,9 @@ async def _run_conflict_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
-                    from datetime import datetime
+                    from datetime import UTC, datetime
 
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await bg_db.commit()
             except Exception:
                 pass

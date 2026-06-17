@@ -119,7 +119,7 @@ async def _run_report_job(
     selected_gap_ids: list[uuid.UUID] | None,
 ) -> None:
     """Background worker: run report generation."""
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     from app.db.session import async_session_factory
 
@@ -161,7 +161,7 @@ async def _run_report_job(
                     "validation_status": result.get("validation_status"),
                     "total_citations": result.get("citation_audit", {}).get("total_citations", 0),
                 }
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()
 
         except Exception as exc:
@@ -170,7 +170,7 @@ async def _run_report_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await bg_db.commit()
             except Exception:
                 pass

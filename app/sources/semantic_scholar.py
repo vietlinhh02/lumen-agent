@@ -102,7 +102,10 @@ class SemanticScholarSource(PaperSource):
 
         url = f"{_BASE}/paper/search/bulk"
 
-        async with httpx.AsyncClient(timeout=self._timeout, headers=_build_headers(self._api_key)) as client:
+        async with httpx.AsyncClient(
+            timeout=self._timeout,
+            headers=_build_headers(self._api_key),
+        ) as client:
             for attempt in range(3):
                 try:
                     resp = await client.get(url, params=params)
@@ -113,7 +116,7 @@ class SemanticScholarSource(PaperSource):
                     return hits, next_token
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 429:
-                        wait = 2 ** attempt
+                        wait = 2**attempt
                         logger.warning("Semantic Scholar 429 – retrying in %ss", wait)
                         await asyncio.sleep(wait)
                         continue

@@ -170,11 +170,16 @@ async def test_review_writer_generates_with_valid_citations():
         ]
     )
 
-    with patch(
-        "app.agents.nodes.retrieve_project_evidence", new_callable=AsyncMock, return_value=[chunk]
-    ), patch(
-        "app.services.report_generation._persist_report", new_callable=AsyncMock
-    ) as mock_persist:
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence",
+            new_callable=AsyncMock,
+            return_value=[chunk],
+        ),
+        patch(
+            "app.services.report_generation._persist_report", new_callable=AsyncMock
+        ) as mock_persist,
+    ):
         mock_persist.return_value = SimpleNamespace(id=uuid4())
         mock_provider = AsyncMock()
         mock_provider.complete_structured.return_value = {
@@ -214,11 +219,14 @@ async def test_review_writer_invalid_citations_trimmed():
         ]
     )
 
-    with patch(
-        "app.agents.nodes.retrieve_project_evidence", new_callable=AsyncMock, return_value=[]
-    ), patch(
-        "app.services.report_generation._persist_report", new_callable=AsyncMock
-    ) as mock_persist:
+    with (
+        patch(
+            "app.agents.nodes.retrieve_project_evidence", new_callable=AsyncMock, return_value=[]
+        ),
+        patch(
+            "app.services.report_generation._persist_report", new_callable=AsyncMock
+        ) as mock_persist,
+    ):
         mock_persist.return_value = SimpleNamespace(id=uuid4())
         mock_provider = AsyncMock()
         mock_provider.complete_structured.return_value = {

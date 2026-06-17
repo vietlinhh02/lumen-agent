@@ -98,7 +98,11 @@ async def create_session(
     from app.services.search_session import start_search_job
 
     result = await start_search_job(
-        db, user, request.project_id, request.query, request.limit,
+        db,
+        user,
+        request.project_id,
+        request.query,
+        request.limit,
     )
     return result
 
@@ -199,7 +203,7 @@ async def screen_session(
         scores = _parse_screening_scores(raw_text, len(results))
     except Exception as exc:
         logger.exception("Session screening failed for %s", session_id)
-        raise HTTPException(status_code=502, detail=f"Screening failed: {exc}")
+        raise HTTPException(status_code=502, detail=f"Screening failed: {exc}") from exc
 
     await save_screening_scores(db, session_id, scores)
     return ScreenPapersResponse(scores=scores)

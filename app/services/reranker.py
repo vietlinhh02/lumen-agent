@@ -102,7 +102,7 @@ async def _call_rerank_api(
         "Authorization": f"Bearer {settings.openrouter_api_key}",
         "Content-Type": "application/json",
     }
-    payload = {
+    payload: dict[str, object] = {
         "model": "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
         "query": query,
         "documents": documents,

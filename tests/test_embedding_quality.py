@@ -130,10 +130,12 @@ async def test_encode_text_api_http_error():
     it to RuntimeError. We test this by mocking _call_embedding_api to raise
     RuntimeError directly (simulating what the httpx error path produces).
     """
-    with patch(
-        "app.core.embeddings._call_embedding_api",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("Embedding API returned HTTP 429"),
+    with (
+        patch(
+            "app.core.embeddings._call_embedding_api",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Embedding API returned HTTP 429"),
+        ),
+        pytest.raises(RuntimeError, match="Embedding API"),
     ):
-        with pytest.raises(RuntimeError, match="Embedding API"):
-            await encode_text("test text")
+        await encode_text("test text")

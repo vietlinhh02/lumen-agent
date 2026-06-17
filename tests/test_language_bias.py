@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 from app.services.language_bias import (
-    LanguageBiasAudit,
     QueryVariant,
     compute_bias_audit,
     detect_and_generate_variants,

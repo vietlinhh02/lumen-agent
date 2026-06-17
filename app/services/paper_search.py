@@ -156,9 +156,8 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
         source_query_map: dict[str, str] = {}
         for v in variants:
             canonical = _normalize_source_name(v.source, _CANONICAL_SOURCES)
-            if canonical:
-                if canonical not in source_query_map:
-                    source_query_map[canonical] = v.query
+            if canonical and canonical not in source_query_map:
+                source_query_map[canonical] = v.query
 
         if not source_query_map:
             source_query_map["semantic_scholar"] = request.query
@@ -403,8 +402,8 @@ async def _search_sources_parallel(
 
         try:
             if src_name == "semantic_scholar":
-                from app.sources.semantic_scholar import SemanticScholarSource
                 from app.core.config import get_settings as _gs
+                from app.sources.semantic_scholar import SemanticScholarSource
 
                 s2_settings = _gs()
                 source = SemanticScholarSource(
@@ -475,7 +474,7 @@ async def _search_sources_parallel(
             asyncio.gather(*task_objs, return_exceptions=True),
             timeout=30.0,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("Search sources timed out after 30s")
         for t in task_objs:
             if not t.done():

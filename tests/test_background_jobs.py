@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
+from app.db.models import User
 from app.services.search_session import get_saved_paper_ids
 
 # ── get_saved_paper_ids batch query tests ────────────────────────────────────
@@ -83,7 +85,7 @@ async def test_auto_save_creates_background_job():
 
     project_id = uuid4()
     session_id = uuid4()
-    user = SimpleNamespace(id=uuid4())
+    user = cast(User, SimpleNamespace(id=uuid4()))
 
     # Mock session with high-scoring papers
     run = SimpleNamespace(
@@ -126,7 +128,9 @@ async def test_auto_save_no_high_papers():
     db = AsyncMock()
     db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=run)))
 
-    result = await auto_save_high_papers(db, SimpleNamespace(id=uuid4()), uuid4(), uuid4())
+    result = await auto_save_high_papers(
+        db, cast(User, SimpleNamespace(id=uuid4())), uuid4(), uuid4()
+    )
     assert result["saved"] == 0
     assert result["skipped"] == 2
 
@@ -139,6 +143,8 @@ async def test_auto_save_session_not_found():
     db = AsyncMock()
     db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
 
-    result = await auto_save_high_papers(db, SimpleNamespace(id=uuid4()), uuid4(), uuid4())
+    result = await auto_save_high_papers(
+        db, cast(User, SimpleNamespace(id=uuid4())), uuid4(), uuid4()
+    )
     assert "error" in result
     assert "Session not found" in result["error"]

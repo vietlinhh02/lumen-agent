@@ -11,6 +11,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass, replace
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -20,6 +21,24 @@ from app.core.embeddings import encode_text
 from app.db.models import Paper, PaperChunk, ProjectPaper
 
 logger = logging.getLogger(__name__)
+
+
+# ── Duck-typed protocols (lets callers and tests pass plain objects) ────────
+
+
+class _PaperLike(Protocol):
+    """Minimal shape `_keyword_score` needs from a paper-like object."""
+
+    title: str
+    abstract: str | None
+
+
+class _ChunkLike(Protocol):
+    """Minimal shape `_keyword_score` needs from a chunk-like object."""
+
+    section_label: str | None
+    content_type: str | None
+    chunk_text: str
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 _SECTION_BOOSTS = {
@@ -298,7 +317,7 @@ async def _keyword_only_fallback(
     return ranked[:limit]
 
 
-def _keyword_score(query_tokens: set[str], paper: Paper, chunk: PaperChunk) -> float:
+def _keyword_score(query_tokens: set[str], paper: _PaperLike, chunk: _ChunkLike) -> float:
     """Score exact keyword overlap across metadata and evidence text."""
     if not query_tokens:
         return 0.0

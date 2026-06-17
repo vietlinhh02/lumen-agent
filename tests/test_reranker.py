@@ -92,11 +92,14 @@ async def test_rerank_api_success_with_top_k():
 @pytest.mark.asyncio
 async def test_rerank_api_error_returns_fallback():
     """Test API error returns fallback scores."""
-    with patch(
-        "app.services.reranker._call_rerank_api",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch("app.services.reranker.get_settings") as mock_settings:
+    with (
+        patch(
+            "app.services.reranker._call_rerank_api",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("app.services.reranker.get_settings") as mock_settings,
+    ):
         mock_settings.return_value.openrouter_api_key = "test-key"
         result = await rerank("query", ["doc a", "doc b", "doc c"])
 
