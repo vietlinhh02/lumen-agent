@@ -26,6 +26,9 @@ import type {
   WaitEvent,
   ThoughtEvent,
   IterationEvent,
+  MessageAckEvent,
+  AssistantDeltaEvent,
+  ProgressEvent,
 } from "@/lib/types/assistant";
 
 // ── Type Helpers ───────────────────────────────────────────────────────────────
@@ -106,6 +109,23 @@ export async function updateSessionTitle(
 }
 
 /**
+ * Update the project linked to a session.
+ */
+export async function updateSessionProject(
+  sessionId: string,
+  projectId: string | null
+): Promise<SessionResponse> {
+  return apiFetch<SessionResponse>(
+    `/assistant/sessions/${sessionId}/project`,
+    {
+      method: "PATCH",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId }),
+    }
+  );
+}
+
+/**
  * Stop a running chat session.
  * Returns immediately; the SSE stream will end with cancellation events.
  */
@@ -130,6 +150,9 @@ export interface ChatEventHandlers {
   onWait?: (event: WaitEvent) => void;
   onThought?: (event: ThoughtEvent) => void;
   onIteration?: (event: IterationEvent) => void;
+  onMessageAck?: (event: MessageAckEvent) => void;
+  onAssistantDelta?: (event: AssistantDeltaEvent) => void;
+  onProgress?: (event: ProgressEvent) => void;
   onAny?: (event: AssistantEventData, eventName: string) => void;
 }
 
@@ -151,12 +174,14 @@ export interface ChatResult {
  * @param sessionId - The session ID to chat in
  * @param message - The user's message
  * @param handlers - Event handlers for each event type
+ * @param clientMessageId - Optional client-generated ID for deduplication
  * @returns ChatResult with cancel function
  */
 export function chat(
   sessionId: string,
   message: string,
-  handlers: ChatEventHandlers = {}
+  handlers: ChatEventHandlers = {},
+  clientMessageId?: string
 ): ChatResult {
   const controller = new AbortController();
   
@@ -170,13 +195,19 @@ export function chat(
           throw new Error("Authentication required");
         }
 
+        // Build request body with optional client_message_id
+        const requestBody: ChatRequest = { message };
+        if (clientMessageId) {
+          requestBody.client_message_id = clientMessageId;
+        }
+
         await fetchEventSource(`/api/assistant/sessions/${sessionId}/chat`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ message } satisfies ChatRequest),
+          body: JSON.stringify(requestBody),
           signal,
           openWhenHidden: true,
           async onopen(response) {
@@ -277,6 +308,15 @@ function dispatchEvent(
     case "iteration":
       handlers.onIteration?.(data as IterationEvent);
       break;
+    case "message_ack":
+      handlers.onMessageAck?.(data as MessageAckEvent);
+      break;
+    case "assistant_delta":
+      handlers.onAssistantDelta?.(data as AssistantDeltaEvent);
+      break;
+    case "progress":
+      handlers.onProgress?.(data as ProgressEvent);
+      break;
   }
   
   // Call generic handler for any event
@@ -301,4 +341,7 @@ export type {
   WaitEvent,
   ThoughtEvent,
   IterationEvent,
+  MessageAckEvent,
+  AssistantDeltaEvent,
+  ProgressEvent,
 };

@@ -48,7 +48,7 @@ export const useUIStore = create<UIState>()(
       sidebarMobileOpen: false,
       userMenuOpen: false,
       assistantToolPanelOpen: false,
-      assistantSessionsOpen: false,
+      assistantSessionsOpen: true,
 
       setTheme(t) {
         applyTheme(t);

@@ -65,6 +65,13 @@ export interface PaperResult {
   pdf_downloaded: boolean;
   pdf_path: string | null;
   pdf_source: string | null;
+  /**
+   * Static metadata flag — true if the paper has any known route to a PDF
+   * (arxiv_id or S2 open-access URL). No guarantee the download will
+   * actually succeed, but useful for sorting and for the "Download" button
+   * affordance.
+   */
+  can_download?: boolean;
 }
 
 export interface PaperSearchResponse {

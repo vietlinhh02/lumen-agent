@@ -38,10 +38,13 @@ function MatrixCard({
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isLowConfidence = row.extraction_confidence === "low";
 
   return (
     <div
-      className="rounded-[14px] bg-surface-card p-5 animate-scale-in transition-colors hover:shadow-sm"
+      className={`rounded-[14px] p-5 animate-scale-in transition-colors hover:shadow-sm ${
+        isLowConfidence ? "bg-surface-bone/50 opacity-80" : "bg-surface-card"
+      }`}
       style={{ border: "1px solid var(--hairline)" }}
     >
       {/* Header */}
@@ -66,8 +69,18 @@ function MatrixCard({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {isLowConfidence && (
+            <button
+              onClick={onDelete}
+              className="focus-ring font-ui inline-flex items-center gap-1.5 h-7 rounded-full bg-red-50 px-3 text-[12px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+              title="Remove this low-relevance paper from the project"
+            >
+              <Trash size={12} weight="bold" />
+              Remove from Project
+            </button>
+          )}
           <ConfidenceBadge level={row.extraction_confidence} />
-          {row.created_by === "ai" && (
+          {row.created_by === "ai" && !isLowConfidence && (
             <button
               onClick={onDelete}
               className="flex h-7 w-7 items-center justify-center rounded-full text-stone transition-all hover:bg-red-50 hover:text-error"

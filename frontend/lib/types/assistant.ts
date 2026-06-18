@@ -56,8 +56,20 @@ export interface SessionDetail {
 }
 
 // ── Status Types ────────────────────────────────────────────────────────────────
-
-export type SessionStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
+/**
+ * Session status values, aligned with backend SessionStatus.
+ * 
+ * Status flow:
+ *   - 'active': Session exists and can receive messages (default on creation)
+ *   - 'completed': A chat turn completed successfully
+ *   - 'failed': A chat turn failed with an error
+ *   - 'cancelled': A chat turn was cancelled (stop button)
+ *   - 'archived': User manually archived the session (NOT auto-set by system)
+ * 
+ * Note: 'idle' and 'running' are deprecated frontend concepts.
+ * Use 'active' for ready sessions and check isStreaming for ongoing chat.
+ */
+export type SessionStatus = "active" | "completed" | "failed" | "cancelled" | "archived";
 export type ToolStatus = "calling" | "called" | "failed";
 export type MessageRole = "user" | "assistant";
 
@@ -65,6 +77,7 @@ export type MessageRole = "user" | "assistant";
 
 export interface ChatRequest {
   message: string;
+  client_message_id?: string | null;
 }
 
 // ── SSE Event Types ────────────────────────────────────────────────────────────
@@ -76,6 +89,8 @@ export interface BaseEvent {
   id: string;
   timestamp: string;
   type: EventType;
+  /** Turn identifier grouping all events for a single user request. */
+  turn_id?: string | null;
 }
 
 /**
@@ -86,6 +101,35 @@ export interface MessageEvent extends BaseEvent {
   role: MessageRole;
   content: string;
   attachments?: Array<Record<string, unknown>> | null;
+  /** Turn identifier grouping all events for a single user request. */
+  turn_id?: string | null;
+}
+
+/**
+ * Message ack event - acknowledges a client-generated message ID.
+ * The frontend should replace optimistic messages with this canonical ID.
+ */
+export interface MessageAckEvent extends BaseEvent {
+  type: "message_ack";
+  /** The client's message ID */
+  client_message_id: string;
+  /** The canonical event ID assigned by backend */
+  canonical_id: string;
+  /** The turn ID for this user request */
+  turn_id: string;
+}
+
+/**
+ * Assistant delta event - streaming chunk of the visible assistant message.
+ * Unlike ThoughtEvent (internal reasoning), this streams the actual answer
+ * that the user sees in the chat bubble.
+ */
+export interface AssistantDeltaEvent extends BaseEvent {
+  type: "assistant_delta";
+  /** Incremental token chunk for the visible assistant message */
+  delta: string;
+  /** True for the last token, signaling the message is complete */
+  is_final?: boolean;
 }
 
 /**
@@ -169,6 +213,23 @@ export interface IterationEvent extends BaseEvent {
 }
 
 /**
+ * Progress event - marks progress in a multi-stage pipeline.
+ * Emitted by pipeline orchestrators (e.g., ResearchPipeline) so the UI
+ * can render a real-time progress bar without having to parse tool events.
+ */
+export interface ProgressEvent extends BaseEvent {
+  type: "progress";
+  /** Pipeline stage name (e.g., 'search', 'matrix'). */
+  stage: string;
+  /** Progress fraction within the pipeline (0.0 - 1.0). */
+  progress: number;
+  /** Human-readable status message. */
+  message: string;
+  /** Optional structured data (counts, IDs, links). */
+  data?: Record<string, unknown> | null;
+}
+
+/**
  * Union type of all possible SSE event data.
  */
 export type AssistantEventData =
@@ -179,7 +240,10 @@ export type AssistantEventData =
   | ErrorEvent
   | WaitEvent
   | ThoughtEvent
-  | IterationEvent;
+  | IterationEvent
+  | MessageAckEvent
+  | AssistantDeltaEvent
+  | ProgressEvent;
 
 /**
  * Discriminated union event type with event name for SSE.
@@ -200,7 +264,10 @@ export type EventType =
   | "error"
   | "wait"
   | "thought"
-  | "iteration";
+  | "iteration"
+  | "message_ack"
+  | "assistant_delta"
+  | "progress";
 
 // ── Chat Result Type ───────────────────────────────────────────────────────────
 
@@ -359,6 +426,7 @@ export interface AssistantState {
   loadSessions: (force?: boolean) => Promise<void>;
   createSession: (data?: SessionCreate) => Promise<SessionResponse | null>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
+  updateSessionProject: (sessionId: string, projectId: string | null) => Promise<void>;
   selectSession: (id: string) => Promise<void>;
   deleteSession: (id: string) => Promise<boolean>;
   sendMessage: (message: string) => Promise<void>;

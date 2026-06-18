@@ -18,7 +18,10 @@ interface MatrixState {
   // Actions
   setSelectedProjectId: (id: string) => void;
   fetchRows: (projectId: string) => Promise<void>;
-  generate: (projectId: string, onPoll?: (jobId: string) => Promise<unknown>) => Promise<void>;
+  generate: (
+    projectId: string,
+    onPoll?: (jobId: string, total?: number) => Promise<unknown>,
+  ) => Promise<void>;
   editRow: (
     projectId: string,
     rowId: string,
@@ -70,7 +73,7 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
         },
       );
       if (result.job_id && result.status === "running" && onPoll) {
-        await onPoll(result.job_id);
+        await onPoll(result.job_id, result.total);
       }
       // Refresh rows
       await get().fetchRows(projectId);

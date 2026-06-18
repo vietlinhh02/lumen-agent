@@ -198,7 +198,7 @@ export function SessionList({
       )}
 
       {/* Session List */}
-      <div className="flex-1 overflow-y-auto py-2 px-2">
+      <div className="flex-1 overflow-y-auto scrollbar-hide py-2 px-2">
         {sessions.length === 0 ? (
           <div className="text-center py-8 px-4">
             <ChatCircle

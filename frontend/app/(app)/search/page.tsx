@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/stores/auth-store";
 import { apiFetch } from "@/lib/api";
 import { useProjects } from "@/lib/hooks/useProjects";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
-import { PaperCard, SkeletonCard, Pagination, LanguageAudit } from "@/components/search";
+import { PaperCard, SkeletonCard, Pagination, LanguageAudit, PDFPreviewModal } from "@/components/search";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import type {
   PaperResult,
@@ -36,6 +36,8 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [previewPaper, setPreviewPaper] = useState<PaperResult | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<SessionDetailResponse | null>(null);
@@ -69,6 +71,7 @@ export default function SearchPage() {
     pdf_downloaded: (d.pdf_downloaded || false) as boolean,
     pdf_path: d.pdf_path as string,
     pdf_source: d.pdf_source as string,
+    can_download: (d.can_download ?? Boolean(d.arxiv_id || d.source_specific?.pdf_url)) as boolean,
   })) as PaperResult[];
 
   const totalPages = sessionData?.total_pages || 1;
@@ -327,6 +330,70 @@ export default function SearchPage() {
     finally { setSavingId(null); }
   }
 
+  /**
+   * Lazy PDF download — fires when the user clicks the "PDF" button on a
+   * single paper card. Hits POST /api/papers/search/sessions/{sid}/download-pdf
+   * and patches the matching paper inside `sessionData` on success so the
+   * UI updates without a full page reload.
+   */
+  async function handleDownloadPDF(paper: PaperResult) {
+    if (!sessionId) { toast.error("Open a search session first"); return; }
+    const key = paperKey(paper);
+    setDownloadingKey(key);
+    try {
+      const data = await apiFetch<{ ok: boolean; paper?: any; error?: string; already_downloaded?: boolean }>(
+        `/papers/search/sessions/${sessionId}/download-pdf`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            semantic_scholar_id: paper.semantic_scholar_id,
+            doi: paper.doi,
+            arxiv_id: paper.arxiv_id,
+            title: paper.title,
+          }),
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (data?.ok && data.paper) {
+        // Patch the matching paper in-place so the card flips to "View" right away.
+        setSessionData((prev) => {
+          if (!prev) return prev;
+          const updated = (prev.papers || []).map((p: any) => {
+            const same =
+              (data.paper.semantic_scholar_id && p.semantic_scholar_id === data.paper.semantic_scholar_id) ||
+              (data.paper.doi && p.doi === data.paper.doi) ||
+              (data.paper.arxiv_id && p.arxiv_id === data.paper.arxiv_id) ||
+              (data.paper.title && p.title === data.paper.title);
+            return same ? { ...p, ...data.paper } : p;
+          });
+          return { ...prev, papers: updated };
+        });
+        toast.success("PDF downloaded");
+      } else if (data?.error) {
+        toast.error(data.error);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "PDF download failed");
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
+  /**
+   * Open the inline PDF preview modal for an already-downloaded paper.
+   */
+  function handlePreview(paper: PaperResult) {
+    if (!paper.pdf_downloaded || !paper.pdf_path) {
+      toast.error("PDF not downloaded yet");
+      return;
+    }
+    setPreviewPaper(paper);
+  }
+
+  function handleClosePreview() {
+    setPreviewPaper(null);
+  }
+
   function isSaved(paper: PaperResult) {
     const key = paperKey(paper);
     return savedIdsRef.current.has(key) || (sessionData?.saved_paper_ids?.includes(key) ?? false);
@@ -450,7 +517,10 @@ export default function SearchPage() {
                   projectId={selectedProjectId}
                   onSave={handleSave}
                   onUnsave={handleUnsave}
+                  onDownload={handleDownloadPDF}
+                  onPreview={handlePreview}
                   saving={savingId === paperKey(paper)}
+                  savingPdf={downloadingKey === paperKey(paper)}
                   saved={isSaved(paper)}
                   score={scores[(page - 1) * PAGE_SIZE + i]}
                 />
@@ -460,6 +530,18 @@ export default function SearchPage() {
           </>
         ) : null}
       </div>
+
+      {/* Inline PDF preview modal — opens when the user clicks "View" on a
+          downloaded paper card.  Renders the PDF via <iframe> with the
+          browser's built-in viewer. */}
+      {previewPaper && previewPaper.pdf_path && (
+        <PDFPreviewModal
+          paper={previewPaper}
+          pdfUrl={previewPaper.pdf_path}
+          isOpen={!!previewPaper}
+          onClose={handleClosePreview}
+        />
+      )}
     </div>
   );
 }

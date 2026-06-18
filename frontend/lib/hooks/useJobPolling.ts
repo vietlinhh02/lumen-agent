@@ -7,6 +7,11 @@ interface JobResult {
   status: string;
   progress?: number;
   total?: number;
+  progress_json?: {
+    processed: number;
+    total: number;
+    current: string;
+  } | null;
   result?: Record<string, unknown>;
   error_message?: string;
 }
@@ -15,7 +20,11 @@ interface UseJobPollingOptions {
   maxAttempts?: number;
   intervalMs?: number;
   onSuccess?: (result: Record<string, unknown>) => string;
-  onProgress?: (progress: number, total: number) => string;
+  onProgress?: (
+    progress: number,
+    total: number,
+    details: JobResult["progress_json"],
+  ) => string | void;
 }
 
 export function useJobPolling(options: UseJobPollingOptions = {}) {
@@ -42,8 +51,19 @@ export function useJobPolling(options: UseJobPollingOptions = {}) {
             toast.error(job.error_message || "Job failed");
             return null;
           }
+          if (job.progress_json?.total && job.progress_json.processed >= 0) {
+            const msg = onProgress?.(
+              job.progress_json.processed,
+              job.progress_json.total,
+              job.progress_json,
+            );
+            if (msg) {
+              toast.info(msg, { duration: 1000 });
+            }
+            continue;
+          }
           if (job.progress && job.total && job.progress > 0) {
-            const msg = onProgress?.(job.progress, job.total);
+            const msg = onProgress?.(job.progress, job.total, null);
             toast.info(msg ?? `Processing ${job.progress}/${job.total}...`, {
               duration: 1000,
             });

@@ -11,6 +11,20 @@ import type {
 
 export type ProjectFilter = "all" | "active" | "archived";
 
+export interface StatsData {
+  project_count: number;
+  paper_count: number;
+  matrix_count: number;
+  gap_count: number;
+  report_count: number;
+  recent_projects: Array<{
+    id: string;
+    title: string;
+    status: string;
+    updated_at: string;
+  }>;
+}
+
 /** How long the cached projects list is considered "fresh" (ms). */
 const CACHE_TTL_MS = 30_000;
 
@@ -20,19 +34,7 @@ interface ProjectsState {
   loading: boolean;
   filter: ProjectFilter;
   selectedProjectId: string;
-  stats: {
-    project_count: number;
-    paper_count: number;
-    matrix_count: number;
-    gap_count: number;
-    report_count: number;
-    recent_projects: Array<{
-      id: string;
-      title: string;
-      status: string;
-      updated_at: string;
-    }>;
-  } | null;
+  stats: StatsData | null;
   loadingStats: boolean;
   // Per-project detail cache
   currentProject: ProjectResponse | null;
@@ -140,7 +142,7 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
     if (!token) return;
     set({ loadingStats: true });
     try {
-      const data = await apiFetch<NonNullable<ProjectsState["stats"]>>(
+      const data = await apiFetch<StatsData>(
         "/stats",
         { headers: { Authorization: `Bearer ${token}` },
       });

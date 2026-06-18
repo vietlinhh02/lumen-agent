@@ -194,7 +194,13 @@ export function GroupedThoughts({ thoughts, isStreaming }: GroupedThoughtsProps)
                 className="rounded-lg bg-canvas/80 px-3 py-2 font-mono text-xs leading-relaxed text-charcoal italic"
                 style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
               >
-                {t.content}
+                {t.content ? (
+                  t.content
+                ) : (
+                  <span className="text-charcoal/40">
+                    {t.isStreaming ? "Thinking..." : "Executing actions..."}
+                  </span>
+                )}
                 {t.isStreaming && (
                   <span className="inline-block h-3 w-0.5 animate-pulse bg-charcoal/40 ml-1 align-middle" />
                 )}

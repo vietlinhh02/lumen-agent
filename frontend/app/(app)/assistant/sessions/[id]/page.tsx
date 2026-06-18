@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { useAssistantStore, useMessages } from "@/lib/stores/assistant-store";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { ChatMessage, GroupedThoughts } from "@/components/assistant";
@@ -22,6 +22,8 @@ import { ChatBox } from "@/components/assistant/ChatBox";
 import { ToolPanel } from "@/components/assistant/ToolPanel";
 import { IterationPanel } from "@/components/assistant/IterationPanel";
 import { SessionList } from "@/components/assistant/SessionList";
+import { ProjectSelector } from "@/components/ProjectSelector";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import type {
   AssistantEventData,
   ErrorEvent,
@@ -50,6 +52,7 @@ export default function AssistantSessionPage() {
   const createSession = useAssistantStore((s) => s.createSession);
   const events = useAssistantStore((s) => s.events);
   const currentPhase = useAssistantStore((s) => s._currentPhase);
+  const currentSession = useAssistantStore((s) => s.currentSession);
 
   // Tool panel state lives in the global UI store
   const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
@@ -59,21 +62,27 @@ export default function AssistantSessionPage() {
   const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
   const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
 
+  const projects = useProjectsStore((s) => s.projects);
+  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
+  const updateSessionProject = useAssistantStore((s) => s.updateSessionProject);
+
   const [jumpToLatest, setJumpToLatest] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load sessions and select this one
+  // Load sessions and projects
   useEffect(() => {
     if (!token) return;
     void loadSessions();
-  }, [token, loadSessions]);
+    void fetchProjects();
+  }, [token, loadSessions, fetchProjects]);
 
   useEffect(() => {
-    if (!sessionId || sessionId === activeSessionId) return;
+    if (!sessionId) return;
+    if (sessionId === activeSessionId && currentSession && currentSession.id === sessionId) return;
     void selectSession(sessionId);
-  }, [sessionId, activeSessionId, selectSession]);
+  }, [sessionId, activeSessionId, currentSession, selectSession]);
 
   // Scroll to bottom when new events arrive
   useEffect(() => {
@@ -104,8 +113,10 @@ export default function AssistantSessionPage() {
     setJumpToLatest(!isNearBottom);
   };
 
-  // Get events for current session
+  // Get events for current session (for audit/activity panel)
   const sessionEvents = sessionId ? (events.get(sessionId) ?? []) : [];
+  // Get messages for stable chat rendering (separate from audit events)
+  const messages = useMessages();
   const userName = getUserDisplayName(user?.email);
 
   // Pre-compute thought accumulation map once (O(n) instead of O(n²) per render)
@@ -114,6 +125,9 @@ export default function AssistantSessionPage() {
   // Deduplicate thought events by iteration index to render exactly one thought card per cycle per user message turn
   const seenThoughtIterations = new Set<number>();
   const visibleEvents = sessionEvents.filter((event) => {
+    if (!event || !event.id || !event.type) {
+      return false;
+    }
     if (event.type === "message" && (event as any).role === "user") {
       // User message starts a new turn, reset the seen iterations tracker
       seenThoughtIterations.clear();
@@ -133,12 +147,13 @@ export default function AssistantSessionPage() {
     );
   });
 
-  // Group contiguous thoughts into a single element
+  // Build chat items from messages (stable, no array index keys)
   const chatItems: (
     | {
-        type: "event";
+        type: "message";
         id: string;
-        event: AssistantEventData;
+        message: MessageEvent;
+        isStreaming: boolean;
       }
     | {
         type: "grouped-thoughts";
@@ -153,57 +168,74 @@ export default function AssistantSessionPage() {
       }
   )[] = [];
 
-  let currentThoughtsGroup: {
-    type: "grouped-thoughts";
-    id: string;
-    thoughts: {
-      id: string;
-      iteration: number;
-      content: string;
-      isStreaming: boolean;
-    }[];
-    isStreaming: boolean;
-  } | null = null;
+  // First, add messages from messagesBySession (stable chat transcript)
+  // Dedupe by ID to prevent React duplicate key errors
+  const seenMessageIds = new Set<string>();
+  for (const msg of messages) {
+    // Defensive: skip nullish entries — can happen briefly when a streaming
+    // message is replaced and React captures an in-between state.
+    if (!msg || !msg.id) {
+      continue;
+    }
+    // Skip if we've already added this message
+    if (seenMessageIds.has(msg.id)) {
+      continue;
+    }
+    seenMessageIds.add(msg.id);
 
-  for (const event of visibleEvents) {
+    // Check if this is a streaming assistant message (last event is this message and streaming)
+    const lastMsg = messages[messages.length - 1];
+    const isStreamingMessage =
+      isStreaming &&
+      messages.length > 0 &&
+      lastMsg &&
+      lastMsg.id === msg.id &&
+      msg.role === "assistant";
+
+    chatItems.push({
+      type: "message",
+      id: msg.id, // Use stable message ID as key
+      message: msg,
+      isStreaming: isStreamingMessage,
+    });
+  }
+
+  // Then, add grouped thoughts from events (for activity display)
+  // Group by iteration - each iteration gets ONE thought with accumulated content
+  const thoughtsByIteration = new Map<number, { id: string; iteration: number; content: string; isStreaming: boolean }>();
+  let lastThoughtEvent: ThoughtEvent | null = null;
+  for (const event of sessionEvents) {
+    if (!event || !event.id) {
+      continue;
+    }
     if (event.type === "thought") {
-      const isLastEvent = sessionEvents.length > 0 && sessionEvents[sessionEvents.length - 1].id === event.id;
+      const lastEv = sessionEvents[sessionEvents.length - 1];
+      const isLastEvent = sessionEvents.length > 0 && lastEv && lastEv.id === event.id;
       const content = getAccumulatedThought(event as ThoughtEvent, sessionEvents, thoughtMap);
 
-      if (!currentThoughtsGroup) {
-        currentThoughtsGroup = {
-          type: "grouped-thoughts",
-          id: `group-${event.id}`,
-          thoughts: [],
-          isStreaming: false,
-        };
-      }
-
-      currentThoughtsGroup.thoughts.push({
+      // Always update with the latest accumulated content for this iteration
+      thoughtsByIteration.set(event.iteration, {
         id: event.id,
         iteration: event.iteration,
         content,
         isStreaming: isLastEvent && isStreaming,
       });
-
-      if (isLastEvent && isStreaming) {
-        currentThoughtsGroup.isStreaming = true;
-      }
-    } else {
-      if (currentThoughtsGroup) {
-        chatItems.push(currentThoughtsGroup);
-        currentThoughtsGroup = null;
-      }
-      chatItems.push({
-        type: "event",
-        id: event.id,
-        event,
-      });
+      lastThoughtEvent = event;
     }
   }
 
-  if (currentThoughtsGroup) {
-    chatItems.push(currentThoughtsGroup);
+  // Convert to sorted array
+  const sortedThoughts = Array.from(thoughtsByIteration.values()).sort(
+    (a, b) => a.iteration - b.iteration
+  );
+
+  if (sortedThoughts.length > 0 && lastThoughtEvent) {
+    chatItems.push({
+      type: "grouped-thoughts",
+      id: `group-${lastThoughtEvent.id}`,
+      thoughts: sortedThoughts,
+      isStreaming: sortedThoughts.some((t) => t.isStreaming),
+    });
   }
 
   const activityEvents = sessionEvents.filter((event) =>
@@ -248,40 +280,20 @@ export default function AssistantSessionPage() {
     <div className="relative flex h-full min-h-0">
       {/* Left Collapsible Sessions Panel (desktop only) */}
       <aside
-        className={`hidden xl:block transition-all duration-300 overflow-hidden flex-shrink-0 bg-canvas border-r ${
-          sessionsOpen ? "w-64" : "w-0"
-        }`}
+        className="hidden xl:block w-64 flex-shrink-0 bg-canvas border-r"
         style={{ borderColor: "var(--hairline)" }}
       >
-        <div className="h-full w-64 overflow-y-auto">
+        <div className="h-full w-64 overflow-y-auto scrollbar-hide">
           <SessionList
             compact
             isCurrentSessionNew={isCurrentSessionNew}
             isCreating={isCreating}
-            onClose={() => setSessionsOpen(false)}
+            onClose={() => {}}
             onNewChat={handleNewChat}
             onSelectSession={() => {}}
           />
         </div>
       </aside>
-
-      {/* Sidebar Toggle Button (desktop only) */}
-      <button
-        type="button"
-        onClick={() => setSessionsOpen(!sessionsOpen)}
-        className="hidden xl:flex absolute top-4 z-20 h-9 w-9 items-center justify-center rounded-lg border bg-canvas text-charcoal shadow-sm hover:text-ink hover:bg-surface-bone transition-all duration-300 active:scale-95"
-        style={{
-          left: sessionsOpen ? "272px" : "16px",
-          borderColor: "var(--hairline)",
-        }}
-        title={sessionsOpen ? "Collapse sidebar" : "Expand sidebar"}
-      >
-        {sessionsOpen ? (
-          <CaretLeft size={16} weight="bold" />
-        ) : (
-          <CaretRight size={16} weight="bold" />
-        )}
-      </button>
 
       {/* Mobile backdrop for tool panel */}
       {toolPanelOpen && (
@@ -305,6 +317,22 @@ export default function AssistantSessionPage() {
             {/* Chat column - centered in the viewport, full width up to
                 3xl breakpoint. */}
             <div className="mx-auto w-full max-w-4xl space-y-4">
+                {/* Project Selector Header */}
+                {currentSession && (
+                  <div className="flex justify-center mb-6 pt-4">
+                    <div className="w-full max-w-sm">
+                      <ProjectSelector
+                        projects={projects}
+                        selectedId={currentSession.project_id || ""}
+                        onChange={(id) => updateSessionProject(currentSession.id, id)}
+                        label=""
+                        placeholder="Link to a project to provide context..."
+                        showStatus={false}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Welcome message if no events */}
                 {chatItems.length === 0 && (
                   <div className="text-center py-12">
@@ -342,17 +370,13 @@ export default function AssistantSessionPage() {
                       thoughts={item.thoughts}
                       isStreaming={item.isStreaming}
                     />
-                  ) : item.event.type === "error" ? (
-                    <ErrorMessage
-                      key={item.id}
-                      event={item.event as ErrorEvent}
-                    />
                   ) : (
                     <ChatMessage
                       key={item.id}
-                      event={item.event}
+                      event={item.message}
                       userName={userName}
                       allEvents={sessionEvents}
+                      isStreaming={item.isStreaming}
                     />
                   )
                 )}

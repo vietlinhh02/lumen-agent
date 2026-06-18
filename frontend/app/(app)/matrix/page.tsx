@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
@@ -15,6 +15,11 @@ import {
 } from "@/components/matrix";
 
 export default function MatrixPage() {
+  const [jobProgress, setJobProgress] = useState<{
+    processed: number;
+    total: number;
+    current: string;
+  } | null>(null);
   const token = useAuth((s) => s.token);
   const projects = useProjectsStore((s) => s.projects);
   const fetchProjects = useProjectsStore((s) => s.fetchProjects);
@@ -29,9 +34,20 @@ export default function MatrixPage() {
   const deleteRow = useMatrixStore((s) => s.deleteRow);
 
   const { poll: pollMatrixJob } = useJobPolling({
-    onSuccess: (result) =>
-      `Generated ${(result.created_count as number) ?? 0} rows (${(result.skipped_count as number) ?? 0} skipped)`,
-    onProgress: (progress, total) => `Processed ${progress}/${total} papers...`,
+    onSuccess: (result) => {
+      setJobProgress(null);
+      return `Generated ${(result.created_count as number) ?? 0} rows (${(result.skipped_count as number) ?? 0} skipped)`;
+    },
+    onProgress: (progress, total, details) => {
+      setJobProgress({
+        processed: progress,
+        total,
+        current: details?.current ?? "",
+      });
+      return details?.current
+        ? `Processed ${progress}/${total}: ${details.current}`
+        : `Processed ${progress}/${total} papers...`;
+    },
   });
 
   // Load projects
@@ -63,12 +79,19 @@ export default function MatrixPage() {
   async function handleGenerate() {
     if (!selectedProjectId) return;
     try {
-      await generate(selectedProjectId, async (jobId) => {
+      await generate(selectedProjectId, async (jobId, total) => {
+        setJobProgress({
+          processed: 0,
+          total: total ?? 0,
+          current: "",
+        });
         await pollMatrixJob(jobId);
         return null;
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setJobProgress(null);
     }
   }
 
@@ -94,6 +117,7 @@ export default function MatrixPage() {
           <MatrixHeader
             projectSelected={!!selectedProjectId}
             generating={generating}
+            progress={jobProgress}
             onGenerate={handleGenerate}
           />
 

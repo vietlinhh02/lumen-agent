@@ -11,7 +11,7 @@
 "use client";
 
 import { useState } from "react";
-import { useCurrentIteration, useLastToolUsed, useThoughtBuffers } from "@/lib/stores/assistant-store";
+import { useCurrentIteration, useLastToolUsed, useThoughtBuffers, useProgressStages } from "@/lib/stores/assistant-store";
 import {
   ArrowCounterClockwise,
   Brain,
@@ -32,6 +32,25 @@ export function IterationPanel({ title = "Agent Progress" }: IterationPanelProps
   const { iteration, max, phase } = useCurrentIteration();
   const lastToolUsed = useLastToolUsed();
   const thoughtBuffers = useThoughtBuffers();
+  const progressStages = useProgressStages();
+
+  // Pipeline stage display names
+  const stageLabels: Record<string, string> = {
+    search: "Search",
+    screen: "Screen",
+    save: "Save",
+    matrix: "Matrix",
+    gap: "Gap Analysis",
+    report: "Report",
+  };
+
+  // Convert progress stages to sorted array
+  const stageEntries = progressStages
+    ? Array.from(progressStages.entries()).sort(([a], [b]) => {
+        const order = ["search", "screen", "save", "matrix", "gap", "report"];
+        return order.indexOf(a) - order.indexOf(b);
+      })
+    : [];
 
   // Calculate progress
   const progressPercent = max > 0 ? ((iteration + 1) / max) * 100 : 0;
@@ -108,9 +127,8 @@ export function IterationPanel({ title = "Agent Progress" }: IterationPanelProps
                 {Math.max(1, iteration + 1)} / {max}
               </span>
             </div>
-            
             {/* Iteration dots */}
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               {Array.from({ length: Math.min(max, 15) }, (_, i) => (
                 <div
                   key={i}
@@ -182,14 +200,49 @@ export function IterationPanel({ title = "Agent Progress" }: IterationPanelProps
             </div>
           )}
 
+          {/* Pipeline progress stages */}
+          {stageEntries.length > 0 && (
+            <div className="mb-3">
+              <span className="mb-2 block font-ui text-[10px] font-semibold uppercase tracking-wider text-charcoal/50">
+                Pipeline Progress
+              </span>
+              <div className="space-y-2">
+                {stageEntries.map(([stage, { progress, message }]) => (
+                  <div key={stage}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-ui text-[10px] font-medium text-charcoal">
+                        {stageLabels[stage] || stage}
+                      </span>
+                      <span className="font-ui text-[10px] text-charcoal/50">
+                        {Math.round(progress * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-charcoal/10 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary/70 transition-all duration-500"
+                        style={{ width: `${progress * 100}%` }}
+                      />
+                    </div>
+                    <p className="mt-0.5 font-ui text-[9px] text-charcoal/40 line-clamp-1">
+                      {message}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Previous thoughts summary */}
-          {thoughtBuffers.size > 0 && (
+          {Array.from(thoughtBuffers.entries()).filter(([_, t]) => t.trim().length > 0).length > 0 && (
             <div>
               <span className="mb-2 block font-ui text-[10px] font-semibold uppercase tracking-wider text-charcoal/50">
                 Thoughts
               </span>
               <div className="space-y-1.5">
-                {Array.from(thoughtBuffers.entries()).slice(-3).map(([iter, thought]) => (
+                {Array.from(thoughtBuffers.entries())
+                  .filter(([_, t]) => t.trim().length > 0)
+                  .slice(-3)
+                  .map(([iter, thought]) => (
                   <div
                     key={iter}
                     className="flex items-start gap-2 rounded-lg bg-canvas/50 px-2 py-1.5"

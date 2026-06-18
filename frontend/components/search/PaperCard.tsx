@@ -1,6 +1,7 @@
 "use client";
 
-import { User, Calendar, Buildings, Quotes, BookmarkSimple, CheckCircle, DownloadSimple } from "@phosphor-icons/react";
+import { useState } from "react";
+import { User, Calendar, Buildings, Quotes, BookmarkSimple, CheckCircle, DownloadSimple, Spinner, Eye } from "@phosphor-icons/react";
 import type { PaperResult } from "@/lib/types";
 import { MathText } from "./MathText";
 
@@ -43,7 +44,10 @@ export function PaperCard({
   projectId,
   onSave,
   onUnsave,
+  onDownload,
+  onPreview,
   saving,
+  savingPdf,
   saved,
   score,
 }: {
@@ -51,12 +55,41 @@ export function PaperCard({
   projectId: string | null;
   onSave: (paper: PaperResult) => void;
   onUnsave: (paper: PaperResult) => void;
+  /** Trigger a lazy PDF download for this paper. */
+  onDownload?: (paper: PaperResult) => void;
+  /** Open the inline PDF preview modal for an already-downloaded paper. */
+  onPreview?: (paper: PaperResult) => void;
   saving: boolean;
+  savingPdf?: boolean;
   saved: boolean;
   score?: string;
 }) {
   const authorsStr = formatAuthors(paper.authors);
   const isDownloaded = paper.pdf_downloaded;
+  // `can_download` is a static metadata hint from the backend; fall back to
+  // checking the same conditions on the client for older sessions.
+  const canDownload = paper.can_download ?? Boolean(paper.arxiv_id || (paper.source_specific as any)?.pdf_url);
+  const pdfHref = paper.pdf_path || null;
+
+  const [showLowRelevanceModal, setShowLowRelevanceModal] = useState(false);
+
+  const handleSaveClick = () => {
+    if (score === "low") {
+      setShowLowRelevanceModal(true);
+    } else {
+      onSave(paper);
+    }
+  };
+
+  const handleConfirmSave = () => {
+    setShowLowRelevanceModal(false);
+    onSave(paper);
+  };
+
+  const handleCancelSave = () => {
+    setShowLowRelevanceModal(false);
+  };
+
   return (
     <div
       className={`rounded-[12px] bg-surface-card p-5 transition-all duration-200 ${
@@ -93,21 +126,89 @@ export function PaperCard({
         {paper.year && <span className="inline-flex items-center gap-1"><Calendar size={11} />{paper.year}</span>}
       </div>
       {paper.abstract && <p className="mt-2.5 text-[13px] leading-[1.6] text-body line-clamp-3"><MathText text={paper.abstract} /></p>}
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
         <SourceBadges paper={paper} />
-        {saved ? (
-          <button onClick={() => onUnsave(paper)} disabled={saving}
-            className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-            <BookmarkSimple size={14} weight="fill" />Saved
-          </button>
-        ) : (
-          <button onClick={() => onSave(paper)} disabled={!projectId || saving}
-            className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-            {isDownloaded ? <DownloadSimple size={14} weight="bold" /> : <BookmarkSimple size={14} weight="bold" />}
-            {isDownloaded ? "Save & analyze" : "Save"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Lazy PDF download — only shown when the paper is known to be
+              downloadable (arxiv_id or open-access PDF URL) AND not yet
+              downloaded this session. */}
+          {!isDownloaded && canDownload && onDownload && (
+            <button
+              onClick={() => onDownload(paper)}
+              disabled={savingPdf}
+              title="Download PDF (lazy)"
+              className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-surface-bone px-4 text-[13px] font-medium text-charcoal transition-all duration-200 hover:bg-ash/15 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savingPdf ? (
+                <Spinner size={14} className="animate-spin" weight="bold" />
+              ) : (
+                <DownloadSimple size={14} weight="bold" />
+              )}
+              {savingPdf ? "Downloading…" : "PDF"}
+            </button>
+          )}
+          {isDownloaded && pdfHref && (
+            onPreview ? (
+              <button
+                onClick={() => onPreview(paper)}
+                title="Preview PDF"
+                className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-violet-50 px-4 text-[13px] font-semibold text-violet-700 transition-all duration-200 hover:bg-violet-100 active:scale-95"
+              >
+                <Eye size={14} weight="bold" />
+                View
+              </button>
+            ) : (
+              <a
+                href={pdfHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open PDF"
+                className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-violet-50 px-4 text-[13px] font-semibold text-violet-700 transition-all duration-200 hover:bg-violet-100 active:scale-95"
+              >
+                <Eye size={14} weight="bold" />
+                View
+              </a>
+            )
+          )}
+          {saved ? (
+            <button onClick={() => onUnsave(paper)} disabled={saving}
+              className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+              <BookmarkSimple size={14} weight="fill" />Saved
+            </button>
+          ) : (
+            <button onClick={handleSaveClick} disabled={!projectId || saving}
+              className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+              <BookmarkSimple size={14} weight="bold" />
+              Save
+            </button>
+          )}
+        </div>
       </div>
+
+      {showLowRelevanceModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="w-[400px] max-w-[90vw] rounded-[16px] bg-surface-card p-6 shadow-xl animate-scale-in" style={{ border: "1px solid var(--hairline)" }}>
+            <h3 className="font-display text-[20px] font-bold text-ink mb-2">Low Relevance Warning</h3>
+            <p className="text-sm text-charcoal mb-6 leading-relaxed">
+              AI has evaluated this paper as having <strong className="text-ink">low relevance</strong> to your project topic. Saving irrelevant papers may degrade the quality of your Literature Review. Are you sure you want to save it?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleCancelSave}
+                className="focus-ring h-[36px] rounded-full px-5 font-ui text-[13px] font-medium text-charcoal hover:bg-surface-bone transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                className="focus-ring h-[36px] rounded-full bg-red-50 text-red-600 px-5 font-ui text-[13px] font-semibold hover:bg-red-100 transition-colors"
+              >
+                Save anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

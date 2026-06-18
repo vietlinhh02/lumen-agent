@@ -25,12 +25,14 @@ interface ChatMessageProps {
   event: AssistantEventData;
   userName: string;
   allEvents?: AssistantEventData[];
+  /** Whether this message is currently streaming (for assistant messages) */
+  isStreaming?: boolean;
 }
 
-export function ChatMessage({ event, userName, allEvents }: ChatMessageProps) {
+export function ChatMessage({ event, userName, allEvents, isStreaming }: ChatMessageProps) {
   // Handle message events
   if (event.type === "message") {
-    return <MessageBubble event={event as MessageEvent} userName={userName} />;
+    return <MessageBubble event={event as MessageEvent} userName={userName} isStreaming={isStreaming} />;
   }
   
   // Handle thought events - render ThoughtBubble with turn-specific text
@@ -207,9 +209,11 @@ function CollapsibleThoughtAction({
 function MessageBubble({
   event,
   userName,
+  isStreaming = false,
 }: {
   event: MessageEvent;
   userName: string;
+  isStreaming?: boolean;
 }) {
   const isUser = event.role === "user";
   const displayName = isUser ? userName : "Lumen AI";
@@ -218,6 +222,9 @@ function MessageBubble({
   const avatarUrl = `https://api.dicebear.com/7.x/${avatarStyle}/svg?seed=${encodeURIComponent(avatarSeed)}`;
 
   const parsed = !isUser ? parseAssistantMessage(event.content) : null;
+  
+  // For streaming assistant messages, show typing indicator effect
+  const showTypingIndicator = isStreaming && !isUser && !event.content.trim();
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -258,9 +265,17 @@ function MessageBubble({
                 isUser ? "markdown-body-inverted" : ""
               }`}
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {isUser ? event.content : parsed!.cleanContent}
-              </ReactMarkdown>
+              {showTypingIndicator ? (
+                <span className="flex gap-1">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-charcoal/40" style={{ animationDelay: "0ms" }} />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-charcoal/40" style={{ animationDelay: "150ms" }} />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-charcoal/40" style={{ animationDelay: "300ms" }} />
+                </span>
+              ) : (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {isUser ? event.content : parsed!.cleanContent}
+                </ReactMarkdown>
+              )}
             </div>
           </div>
         )}
