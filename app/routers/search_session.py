@@ -245,6 +245,52 @@ class UnsavePaperBody(BaseModel):
     arxiv_id: str | None = None
 
 
+class DownloadSessionPaperBody(BaseModel):
+    """Body for the on-demand PDF download endpoint.
+
+    Provide at least one identifier — the strongest one available
+    (semantic_scholar_id → doi → arxiv_id → title).
+    """
+
+    semantic_scholar_id: str | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+    title: str | None = None
+
+
+@router.post("/search/sessions/{session_id}/download-pdf")
+async def download_session_paper(
+    session_id: UUID,
+    body: DownloadSessionPaperBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Download the PDF for a single paper in a search session.
+
+    This is the lazy counterpart to the search-time bulk download: instead
+    of pre-downloading PDFs for every result, the user clicks "Download PDF"
+    on the paper card and only that one PDF is fetched. The session's
+    ``results_json`` is updated in place so the next page load reflects
+    the new state.
+    """
+    from app.services.search_session import download_single_session_paper
+
+    result = await download_single_session_paper(
+        db,
+        user,
+        session_id,
+        semantic_scholar_id=body.semantic_scholar_id,
+        doi=body.doi,
+        arxiv_id=body.arxiv_id,
+        title=body.title,
+    )
+    if "error" in result and result.get("error") == "Session not found":
+        raise HTTPException(status_code=404, detail=result["error"])
+    if "error" in result and result.get("error") == "Paper not found in session":
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.delete("/search/sessions/{session_id}/unsave")
 async def unsave_paper(
     session_id: UUID,

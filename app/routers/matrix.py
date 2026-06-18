@@ -7,12 +7,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.models import LiteratureMatrixRow, Project, ProjectPaper, User
-from app.db.session import get_db
+from app.db.session import async_session_factory, get_db
 from app.schemas.matrix import (
     MatrixGenerateRequest,
     MatrixListResponse,
@@ -24,6 +24,7 @@ from app.services.literature_matrix import delete_row, get_by_project
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["matrix"])
+_PROGRESS_TITLE_LIMIT = 50
 
 
 async def _verify_project_owner(
@@ -206,8 +207,6 @@ async def _run_matrix_job(
     topic: str,
 ) -> None:
     """Background worker: run matrix extraction."""
-    from app.db.session import async_session_factory
-
     async with async_session_factory() as bg_db:
         job = None
         try:
@@ -221,6 +220,8 @@ async def _run_matrix_job(
                 return
 
             job.status = "running"
+            job.progress = 0
+            job.progress_json = {"processed": 0, "total": job.total, "current": ""}
             await bg_db.commit()
 
             from app.agents.nodes import matrix_extraction_node
@@ -232,10 +233,30 @@ async def _run_matrix_job(
                 user_topic=topic,
             )
 
-            result = await matrix_extraction_node(state, bg_db)
+            async def _update_progress(processed: int, total: int, current_paper: str) -> None:
+                progress_payload = {
+                    "processed": processed,
+                    "total": total,
+                    "current": current_paper[:_PROGRESS_TITLE_LIMIT],
+                }
+                async with async_session_factory() as progress_db:
+                    await progress_db.execute(
+                        update(BackgroundJob)
+                        .where(BackgroundJob.id == job_id)
+                        .values(progress=processed, progress_json=progress_payload)
+                    )
+                    await progress_db.commit()
+
+            result = await matrix_extraction_node(state, bg_db, progress_callback=_update_progress)
 
             created = len(result.get("matrix_rows", []))
             job.status = result.get("matrix_status", "failed")
+            job.progress = job.total
+            job.progress_json = {
+                "processed": job.total,
+                "total": job.total,
+                "current": "Completed",
+            }
             job.result = {
                 "created_count": created,
                 "skipped_count": job.total - created,
@@ -251,6 +272,11 @@ async def _run_matrix_job(
                 if job is not None:
                     job.status = "failed"
                     job.error_message = str(exc)[:500]
+                    job.progress_json = {
+                        "processed": job.progress,
+                        "total": job.total,
+                        "current": "Failed",
+                    }
                     from datetime import UTC, datetime
 
                     job.completed_at = datetime.now(UTC).replace(tzinfo=None)

@@ -7,7 +7,13 @@ Implements the ReAct (Reasoning + Acting) loop that:
 4. Runs the ReAct loop for complex tasks with RAG injection
 5. Streams ThoughtEvent tokens and yields IterationEvent, ToolEvent, etc.
 
-Key features:
+Key features (Task 8 - Native Tool Calls):
+- Uses provider.stream_with_tools() for structured tool call support
+- No fragile Action: text parsing - uses native AIMessage.tool_calls
+- Parallel tool execution via execute_parallel()
+- ToolMessage format for returning results to the model
+
+Legacy features:
 - Real token streaming via provider.stream() -- no fake chunking
 - Tool results fed back to LLM in the next iteration as assistant messages
 - Proper ToolEvent status: "calling" -> "called" or "failed"
@@ -22,9 +28,11 @@ import json
 import logging
 import re
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, TYPE_CHECKING
+import uuid
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, TYPE_CHECKING
 
 from app.agents.assistant.events import (
+    AssistantDeltaEvent,
     BaseEvent,
     DoneEvent,
     ErrorEvent,
@@ -68,9 +76,15 @@ class ProjectContext:
         self,
         project_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        project_name: Optional[str] = None,
+        topic: Optional[str] = None,
+        research_question: Optional[str] = None,
     ) -> None:
         self.project_id = project_id
         self.user_id = user_id
+        self.project_name = project_name
+        self.topic = topic
+        self.research_question = research_question
 
     @property
     def has_project(self) -> bool:
@@ -152,9 +166,9 @@ class ReActAgent:
             project_context_dict = None
             if self.project_context.has_project:
                 project_context_dict = {
-                    "project_name": "",
-                    "topic": "",
-                    "research_question": "",
+                    "project_name": self.project_context.project_name or "",
+                    "topic": self.project_context.topic or "",
+                    "research_question": self.project_context.research_question or "",
                 }
 
             classification = await self._classifier.classify(
@@ -529,31 +543,27 @@ class ReActAgent:
             yield DoneEvent()
 
     async def _run_simple_chat(self, message: str) -> AsyncGenerator[BaseEvent, None]:
-        """Respond to chitchat / greetings with a direct LLM call (no tools)."""
+        """Respond to chitchat / greetings with a direct LLM call (no tools).
+        
+        Streams the visible assistant response as AssistantDeltaEvent tokens
+        so the user sees the answer bubble immediately. Uses ONE model call.
+        """
         system = (
             "You are a friendly research assistant. Keep your response brief and helpful. "
             "If the user greets you, greet them back and briefly mention what you can help with."
         )
         messages = [{"role": "user", "content": message}]
 
+        # Stream visible assistant text as deltas (single model call)
         async for token in self.provider.stream(
             messages=messages,
             system=system,
             max_tokens=512,
         ):
-            yield ThoughtEvent(delta=token, iteration=0, is_final=False)
-        yield ThoughtEvent(delta="", iteration=0, is_final=True)
-
-        try:
-            response = await self.provider.complete(
-                messages=messages,
-                system=system,
-                max_tokens=512,
-            )
-            yield MessageEvent(role="assistant", content=response)
-        except Exception as exc:
-            logger.warning("Simple chat failed: %s", exc)
-            yield MessageEvent(role="assistant", content="I'm here to help with research tasks.")
+            yield AssistantDeltaEvent(delta=token, is_final=False)
+        
+        # Signal completion of the assistant message stream
+        yield AssistantDeltaEvent(delta="", is_final=True)
         yield DoneEvent()
 
     async def _list_project_summaries(self) -> list[str]:
@@ -580,7 +590,7 @@ class ReActAgent:
             logger.warning("Failed to list projects: %s", exc)
             return []
 
-    # ── ReAct loop (direct async, no LangGraph) ──────────────────────────────
+    # ── ReAct loop with Native Tool Calls (Task 8) ──────────────────────────
 
     async def _run_react_loop(
         self,
@@ -588,13 +598,15 @@ class ReActAgent:
         start_time: float,
         cancel_event: Optional[asyncio.Event],
     ) -> AsyncGenerator[BaseEvent, None]:
-        """Run the main ReAct reasoning loop using a direct async loop.
+        """Run the main ReAct reasoning loop with native structured tool calls.
 
-        FIX: Replaces the LangGraph-based loop with a direct async loop that:
-        - Uses real provider.stream() for token streaming
-        - Feeds tool results back to the LLM as assistant messages
-        - Uses bounded queue with backpressure
-        - Emits heartbeat events during long LLM calls
+        Task 8: Replaces fragile Action: text parsing with native AIMessage.tool_calls.
+        
+        Key changes:
+        - Uses provider.stream_with_tools() for structured tool call streaming
+        - Parses tool calls from stream chunks, not text
+        - Executes independent tool calls in parallel via execute_parallel()
+        - Formats tool results as ToolMessage for the next LLM turn
 
         Args:
             message: The user's message.
@@ -605,8 +617,7 @@ class ReActAgent:
             IterationEvent, ThoughtEvent, ToolEvent, MessageEvent, WaitEvent.
         """
         iteration = 0
-        conversation_messages: List[Dict[str, str]] = []
-        last_tool_result_for_llm: Optional[Dict[str, str]] = None
+        conversation_messages: List[Dict[str, Any]] = []  # ToolMessage format
 
         while iteration < self.max_iterations:
             # ── Limit checks ──────────────────────────────────────────────
@@ -625,102 +636,143 @@ class ReActAgent:
                 return
 
             # ── Build messages for LLM ─────────────────────────────────────
-            # Include the original user message on first iteration only;
-            # subsequent iterations get the tool result as an assistant turn.
-            if iteration == 0:
-                user_content = message
-            elif last_tool_result_for_llm is not None:
-                user_content = last_tool_result_for_llm["content"]
-            else:
-                user_content = message  # fallback
-
-            messages = self._build_react_messages(user_content, conversation_messages)
+            messages = self._build_react_messages_with_tools(message, conversation_messages)
 
             # ── Emit iteration event ───────────────────────────────────────
             yield IterationEvent(n=iteration, max=self.max_iterations, phase="reasoning")
 
-            # ── Stream LLM response ────────────────────────────────────────
+            # ── Stream LLM response with native tool calls ─────────────────
             response_text = ""
-
+            tool_calls_found: List[ToolCall] = []
+            tool_call_args: Dict[str, Dict[str, Any]] = {}  # call_id -> {name, args}
+            
             # Track last heartbeat time for timeout detection
             last_heartbeat = time.monotonic()
 
-            async def stream_with_heartbeat():
-                nonlocal response_text, last_heartbeat
-                async for token in self._stream_llm(messages, cancel_event):
-                    response_text += token
-                    last_heartbeat = time.monotonic()
-                    yield ThoughtEvent(delta=token, iteration=iteration, is_final=False)
-
-                    # Check if we've exceeded heartbeat timeout (LLM might be stuck)
-                    elapsed_since_heartbeat = time.monotonic() - last_heartbeat
-                    if elapsed_since_heartbeat > DEFAULT_HEARTBEAT_SECONDS * 3:
-                        logger.warning(
-                            "LLM stream stalled for %.1fs at iteration %d",
-                            elapsed_since_heartbeat,
-                            iteration,
+            try:
+                async for chunk in self.provider.stream_with_tools(
+                    messages=messages,
+                    system=None,  # System prompt is in messages
+                    max_tokens=2048,
+                    tools=self._get_tool_definitions(),
+                ):
+                    from app.ai.provider import (
+                        TextChunk, ToolCallStart, ToolCallArgsDelta, 
+                        ToolCallDone, StreamDone
+                    )
+                    
+                    if isinstance(chunk, TextChunk):
+                        # Text delta for thought/answer
+                        response_text += chunk.delta
+                        last_heartbeat = time.monotonic()
+                        yield ThoughtEvent(delta=chunk.delta, iteration=iteration, is_final=False)
+                        
+                        # Check heartbeat timeout
+                        elapsed_since = time.monotonic() - last_heartbeat
+                        if elapsed_since > DEFAULT_HEARTBEAT_SECONDS * 3:
+                            logger.warning(
+                                "LLM stream stalled for %.1fs at iteration %d",
+                                elapsed_since, iteration,
+                            )
+                    
+                    elif isinstance(chunk, ToolCallStart):
+                        # Start of a tool call
+                        tool_call_args[chunk.call_id] = {
+                            "name": chunk.name,
+                            "args_str": "",
+                        }
+                        yield ToolEvent(
+                            tool_call_id=chunk.call_id,
+                            name=chunk.name,
+                            status="calling",
+                            function=chunk.name,
+                            args={},  # Will be filled as args arrive
                         )
-
-            # Run LLM stream
-            async for _ in stream_with_heartbeat():
-                pass
+                    
+                    elif isinstance(chunk, ToolCallArgsDelta):
+                        # Partial arguments delta
+                        if chunk.call_id in tool_call_args:
+                            tool_call_args[chunk.call_id]["args_str"] += chunk.delta
+                    
+                    elif isinstance(chunk, ToolCallDone):
+                        # Tool call complete
+                        call_data = tool_call_args.get(chunk.call_id, {})
+                        name = chunk.name or call_data.get("name", "unknown")
+                        args = chunk.arguments or {}
+                        
+                        # Parse args from accumulated string if not provided
+                        if not args and call_data.get("args_str"):
+                            try:
+                                args = json.loads(call_data["args_str"])
+                            except json.JSONDecodeError:
+                                args = {}
+                        
+                        tool_calls_found.append(
+                            ToolCall(name=name, arguments=args, call_id=chunk.call_id)
+                        )
+                    
+                    elif isinstance(chunk, StreamDone):
+                        # Stream finished
+                        if chunk.tool_calls:
+                            for tc in chunk.tool_calls:
+                                tool_calls_found.append(
+                                    ToolCall(
+                                        name=tc["name"],
+                                        arguments=tc["arguments"] or {},
+                                        call_id=tc["id"],
+                                    )
+                                )
+            
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("stream_with_tools failed: %s", exc)
+                # Fall back to text-based parsing
+                response_text = await self._fallback_text_stream(messages, cancel_event)
 
             # Emit final thought event
             yield ThoughtEvent(delta="", iteration=iteration, is_final=True)
 
-            # ── Parse tool calls from response ──────────────────────────────
-            tool_calls = self._parse_tool_calls_from_text(response_text)
-
-            if not tool_calls:
+            # ── Check for tool calls ───────────────────────────────────────
+            if not tool_calls_found:
                 # No tool calls — this is the final answer
                 final_answer = self._extract_final_answer(response_text)
-                yield MessageEvent(role="assistant", content=final_answer)
+                # Stream the final answer as deltas for immediate user feedback
+                for token in final_answer:
+                    yield AssistantDeltaEvent(delta=token, is_final=False)
+                yield AssistantDeltaEvent(delta="", is_final=True)
                 yield DoneEvent()
                 return
 
-            # ── Execute tools ───────────────────────────────────────────────
+            # ── Execute tools in parallel ───────────────────────────────────
             yield IterationEvent(n=iteration, max=self.max_iterations, phase="acting")
+
+            # Execute all tool calls in parallel
+            execution_results = await self._tool_caller.execute_parallel(
+                self._tool_map, tool_calls_found
+            )
 
             # Track whether any tool asked for user clarification
             has_wait = False
+            tool_messages: List[Dict[str, Any]] = []  # For ToolMessage format
 
-            for tool_call in tool_calls:
-                # Emit "calling" status
-                yield ToolEvent(
-                    tool_call_id=tool_call.call_id,
-                    name=tool_call.name,
-                    status="calling",
-                    function=tool_call.name,
-                    args=tool_call.arguments,
-                )
-
-                # Execute tool
-                tool = self._tool_map.get(tool_call.name)
-                if tool is None:
-                    result = {"ok": False, "error": f"Unknown tool: {tool_call.name}"}
+            for tool_call, result, is_wait in execution_results:
+                status = "failed"
+                
+                if is_wait:
+                    has_wait = True
+                    status = "called"
+                    yield WaitEvent(
+                        question=result.get("question", "Bạn có thể cho tôi biết thêm chi tiết?"),
+                        options=result.get("options"),
+                        placeholder=result.get("question"),
+                    )
+                elif result.get("ok") is False:
                     status = "failed"
                 else:
-                    try:
-                        result, is_wait = await self._tool_caller.execute(
-                            tool, tool_call.arguments
-                        )
-                    except Exception as exc:
-                        logger.error("Tool %s failed: %s", tool_call.name, exc)
-                        result = {"ok": False, "error": str(exc)}
-                        status = "failed"
+                    status = "called"
 
-                    if is_wait:
-                        has_wait = True
-                        status = "called"
-                        yield WaitEvent(
-                            question=result.get("question", "Bạn có thể cho tôi biết thêm chi tiết?"),
-                            options=result.get("options"),
-                            placeholder=result.get("question"),
-                        )
-                    else:
-                        status = "failed" if result.get("ok") is False else "called"
-
-                # Emit result with correct status
+                # Emit result event
                 yield ToolEvent(
                     tool_call_id=tool_call.call_id,
                     name=tool_call.name,
@@ -731,7 +783,7 @@ class ReActAgent:
                     error=result.get("error") if status == "failed" else None,
                 )
 
-                # Add observation to scratchpad (only for successful non-wait calls)
+                # Add to scratchpad
                 if status == "called" and not has_wait:
                     self._scratchpad.add_observation(
                         tool_call.name,
@@ -739,17 +791,19 @@ class ReActAgent:
                         result,
                     )
 
-                # Add tool result to conversation so LLM sees it in next iteration
+                # Add tool result as ToolMessage (Task 8: native format)
                 if not has_wait:
-                    obs_text = self._format_observation_for_llm(
-                        tool_call.name, tool_call.arguments, result
-                    )
-                    conversation_messages.append(
-                        {"role": "assistant", "content": response_text}
-                    )
-                    conversation_messages.append(
-                        {"role": "user", "content": obs_text}
-                    )
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.call_id,
+                        "name": tool_call.name,
+                        "content": json.dumps(result, default=str, ensure_ascii=False),
+                    })
+
+            # Add assistant message and tool results to conversation
+            if not has_wait:
+                conversation_messages.append({"role": "assistant", "content": response_text})
+                conversation_messages.extend(tool_messages)
 
             # If any tool asked for clarification, stop the loop
             if has_wait:
@@ -827,8 +881,18 @@ class ReActAgent:
 
         # System prompt with tools
         tools_desc = self._format_tools_for_prompt()
+        
+        context_str = ""
+        if self.project_context.has_project:
+            context_str = (
+                "\n\n**Current Project Context**:\n"
+                f"- Project Name: {self.project_context.project_name or 'Unknown'}\n"
+                f"- Topic: {self.project_context.topic or 'None'}\n"
+                f"- Research Question: {self.project_context.research_question or 'None'}\n"
+            )
+
         system_content = REACT_SYSTEM_PROMPT.format(
-            tools_description=tools_desc,
+            tools_description=tools_desc + context_str,
         )
         messages.append({"role": "system", "content": system_content})
 
@@ -873,6 +937,90 @@ class ReActAgent:
             f"  Args: {args_str}\n"
             f"  Result: {result_str}"
         )
+
+    # ── Native Tool Call Helpers (Task 8) ────────────────────────────────────
+
+    def _get_tool_definitions(self) -> List[Dict[str, Any]]:
+        """Get tool definitions for native tool calling (Task 8).
+
+        Returns tool definitions in OpenAI function calling format
+        for use with stream_with_tools().
+
+        Returns:
+            List of tool definitions.
+        """
+        return self._tool_caller.convert_to_openai_format(self._tools)
+
+    def _build_react_messages_with_tools(
+        self,
+        user_message: str,
+        conversation_messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Build messages for the ReAct loop with native tool call support (Task 8).
+
+        Uses ToolMessage format for tool results instead of text format.
+
+        Args:
+            user_message: The user's message (or tool result on subsequent iterations).
+            conversation_messages: Previous turns in ToolMessage format.
+
+        Returns:
+            List of messages in ChatML/ToolMessage format.
+        """
+        messages: List[Dict[str, Any]] = []
+
+        # System prompt with tools
+        tools_desc = self._format_tools_for_prompt()
+        
+        context_str = ""
+        if self.project_context.has_project:
+            context_str = (
+                "\n\n**Current Project Context**:\n"
+                f"- Project Name: {self.project_context.project_name or 'Unknown'}\n"
+                f"- Topic: {self.project_context.topic or 'None'}\n"
+                f"- Research Question: {self.project_context.research_question or 'None'}\n"
+            )
+
+        system_content = REACT_SYSTEM_PROMPT.format(
+            tools_description=tools_desc + context_str,
+        )
+        messages.append({"role": "system", "content": system_content})
+
+        # Add scratchpad context (RAG + previous observations)
+        scratchpad_msgs = self._scratchpad.to_messages()
+        messages.extend(scratchpad_msgs)
+
+        # Add previous turns (assistant messages + tool results) from this ReAct run
+        messages.extend(conversation_messages)
+
+        # User message
+        messages.append({"role": "user", "content": user_message})
+
+        return messages
+
+    async def _fallback_text_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        cancel_event: Optional[asyncio.Event],
+    ) -> str:
+        """Fallback to text-based streaming when stream_with_tools fails.
+
+        Used for providers that don't support native tool calls.
+
+        Args:
+            messages: The messages to send to the LLM.
+            cancel_event: Optional event to check for cancellation.
+
+        Returns:
+            The full text response.
+        """
+        response_text = ""
+        try:
+            async for token in self._stream_llm(messages, cancel_event):
+                response_text += token
+        except Exception as exc:
+            logger.error("Fallback text stream also failed: %s", exc)
+        return response_text
 
     def _parse_tool_calls_from_text(self, text: str) -> List[ToolCall]:
         """Parse tool calls from LLM response text.

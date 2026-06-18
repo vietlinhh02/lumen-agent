@@ -107,7 +107,7 @@ def _regex_classify(message: str) -> Optional[Intent]:
 # ── FastRouter ──────────────────────────────────────────────────────────────
 
 
-_ROUTER_MODEL = "mimo-2.5-pro"
+_ROUTER_MODEL = "mimo-v2.5-pro"
 _ROUTER_TIMEOUT_SECONDS = 1.0
 _MAX_OUTPUT_TOKENS = 20
 

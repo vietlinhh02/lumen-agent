@@ -134,6 +134,12 @@ async def lifespan(app: FastAPI):
             )
         except Exception as exc:
             logger.warning("HNSW index skipped: %s", exc)
+        await conn.execute(
+            text(
+                "ALTER TABLE literature_matrix_rows "
+                "ADD COLUMN IF NOT EXISTS content_hash VARCHAR(16)"
+            )
+        )
 
     # Phase 4: Constraint updates
     async with engine.begin() as conn:
@@ -161,6 +167,9 @@ async def lifespan(app: FastAPI):
                 "'report_generate', 'paper_search'"
                 "))"
             )
+        )
+        await conn.execute(
+            text("ALTER TABLE background_jobs ADD COLUMN IF NOT EXISTS progress_json JSONB")
         )
 
     # Phase 5: Assistant tables (Plan-Act chat surface).

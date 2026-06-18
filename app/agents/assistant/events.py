@@ -39,6 +39,14 @@ class BaseEvent(BaseModel):
     id: str = Field(default_factory=generate_event_id)
     timestamp: datetime = Field(default_factory=now)
     type: str = ""
+    turn_id: str | None = Field(
+        default=None,
+        description=(
+            "Turn identifier grouping all events for a single user request. "
+            "All events (user message, assistant response, tools, etc.) "
+            "belonging to the same turn share the same turn_id."
+        ),
+    )
 
     model_config = {"extra": "forbid"}
 
@@ -177,6 +185,47 @@ class ProgressEvent(BaseEvent):
     )
 
 
+class MessageAckEvent(BaseEvent):
+    """Acknowledges a client-generated message ID and provides the canonical ID.
+
+    When a client sends a message with a client_message_id, the backend
+    emits this event to:
+    1. Confirm the message was received
+    2. Provide the canonical event ID that will be used for persistence
+    3. Allow the frontend to deduplicate optimistic messages
+
+    The frontend should replace any optimistic message with the same
+    client_message_id using the canonical message_id from this ack.
+    """
+
+    type: Literal["message_ack"] = "message_ack"
+    client_message_id: str = Field(..., description="The client's message ID")
+    canonical_id: str = Field(..., description="The canonical event ID assigned by backend")
+    turn_id: str = Field(..., description="The turn ID for this user request")
+
+
+class AssistantDeltaEvent(BaseEvent):
+    """A streaming chunk of the visible assistant message.
+
+    This event carries the actual answer text that the user sees in the
+    chat bubble. Unlike ThoughtEvent (which streams internal reasoning),
+    AssistantDeltaEvent streams the final assistant response.
+
+    The frontend should:
+    - Create an assistant message entry when the first delta arrives
+    - Accumulate `delta` into the message content
+    - Update the message in place as more deltas arrive
+    - This provides immediate feedback while the model is still generating
+    """
+
+    type: Literal["assistant_delta"] = "assistant_delta"
+    delta: str = Field(..., description="Incremental token chunk for the visible assistant message")
+    is_final: bool = Field(
+        default=False,
+        description="True for the last token, signaling the message is complete",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Union type for all events
 # ---------------------------------------------------------------------------
@@ -191,6 +240,8 @@ AssistantEvent = Union[
     ThoughtEvent,
     IterationEvent,
     ProgressEvent,
+    MessageAckEvent,
+    AssistantDeltaEvent,
 ]
 
 # Type alias for event type literals
@@ -204,4 +255,6 @@ EventType = Literal[
     "thought",
     "iteration",
     "progress",
+    "message_ack",
+    "assistant_delta",
 ]

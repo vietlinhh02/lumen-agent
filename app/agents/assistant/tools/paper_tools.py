@@ -280,11 +280,16 @@ async def _list_project_papers_impl(
 
         paper_list = []
         for p in papers:
+            # Truncate authors to prevent context explosion
+            truncated_authors = p.authors[:3] if isinstance(p.authors, list) else []
+            if isinstance(p.authors, list) and len(p.authors) > 3:
+                truncated_authors.append({"name": "et al.", "author_id": ""})
+
             paper_list.append({
                 "project_paper_id": str(p.id),
                 "paper_id": str(p.paper_id),
                 "title": p.title,
-                "authors": p.authors,
+                "authors": truncated_authors,
                 "year": p.year,
                 "doi": p.doi,
                 "arxiv_id": p.arxiv_id,
@@ -342,21 +347,27 @@ async def search_papers(
 @tool
 async def save_paper_to_project(
     project_id: str,
-    paper: Dict[str, Any],
+    paper_json: str,
 ) -> Dict[str, Any]:
     """
     Save a paper to a specific project.
 
     Use this when the user asks to save a paper they found or specified.
-    The paper dict should include: title, authors, year, doi (if available).
+    The paper data should be a JSON string containing: title, authors, year, doi (if available).
 
     Returns:
         project_paper_id and save status.
 
     Args:
         project_id: The target project UUID.
-        paper: Paper data with at least title and authors.
+        paper_json: JSON string representing paper data with at least title and authors.
     """
+    import json
+    try:
+        paper = json.loads(paper_json)
+    except Exception as exc:
+        return _error_result("INVALID_JSON", f"Failed to parse paper_json: {exc}")
+
     user = get_user()
     uid = get_user_id()
     return await _save_paper_impl(project_id, paper, uid, user)
@@ -394,6 +405,9 @@ async def list_project_papers(
 
     Use this when the user wants to see what papers are saved in a project,
     or to verify a paper was saved correctly.
+
+    IMPORTANT: Do not call this tool multiple times for the same project. 
+    Once you receive the list of papers, stop calling tools and present the summary to the user.
 
     Returns:
         List of papers with metadata.

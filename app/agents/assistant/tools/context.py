@@ -20,7 +20,11 @@ Usage:
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from langchain_core.tools import BaseTool
+    from app.db.models import User
 
 # Context variables - these are process-global but values are request-scoped
 # Each asyncio task / thread gets its own copy of the context
@@ -28,6 +32,7 @@ from typing import Optional
 _user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
 _project_id_var: ContextVar[Optional[str]] = ContextVar("project_id", default=None)
 _user_var: ContextVar[Optional["User"]] = ContextVar("user", default=None)
+_tools_var: ContextVar[Optional[List["BaseTool"]]] = ContextVar("tools", default=None)
 
 
 class UserContext:
@@ -58,6 +63,7 @@ def set_user_context(
     user_id: Optional[str] = None,
     project_id: Optional[str] = None,
     user: Optional["User"] = None,
+    tools: Optional[List["BaseTool"]] = None,
 ) -> None:
     """
     Set user/project context for the current request.
@@ -69,10 +75,23 @@ def set_user_context(
         user_id: The authenticated user's ID.
         project_id: The active project ID.
         user: The User model instance (optional).
+        tools: List of available LangChain tools (optional).
     """
     _user_id_var.set(user_id)
     _project_id_var.set(project_id)
     _user_var.set(user)
+    if tools is not None:
+        _tools_var.set(tools)
+
+
+def get_tools() -> Optional[List["BaseTool"]]:
+    """
+    Get the current list of available tools.
+
+    Returns:
+        List of BaseTool instances, or None if not set.
+    """
+    return _tools_var.get()
 
 
 def get_user_context() -> UserContext:
@@ -129,6 +148,7 @@ def clear_user_context() -> None:
     _user_id_var.set(None)
     _project_id_var.set(None)
     _user_var.set(None)
+    _tools_var.set(None)
 
 
 class UserContextVar:
@@ -184,6 +204,7 @@ __all__ = [
     "get_user_id",
     "get_project_id",
     "get_user",
+    "get_tools",
     "clear_user_context",
     "UserContextVar",
-]
+] 

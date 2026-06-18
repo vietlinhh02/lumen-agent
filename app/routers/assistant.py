@@ -41,10 +41,12 @@ from app.schemas.assistant import (
     SessionResponse,
     SessionSummary,
     SessionTitleUpdate,
+    SessionProjectUpdate,
 )
 from app.services.assistant.metrics import metrics
 from app.services.assistant.rate_limit import rate_limiter
 from app.services.assistant.session_service import AssistantSessionService
+from app.agents.assistant.graph.adapter import is_graph_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +347,69 @@ async def update_session_title(
     )
 
 
+@router.patch(
+    "/sessions/{session_id}/project",
+    response_model=SessionResponse,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        400: {"model": ErrorResponse},
+    },
+)
+async def update_session_project(
+    session_id: UUID,
+    body: SessionProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SessionResponse:
+    """
+    Update the project linked to an assistant session.
+    """
+    service = AssistantSessionService(db=db)
+    session = await service.get_session(user, session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found or you don't have access to it.",
+        )
+
+    # If setting to a new project, verify project exists and user owns it
+    if body.project_id:
+        from app.db.models import Project
+        from sqlalchemy import select
+        result = await db.execute(
+            select(Project).where(
+                Project.id == body.project_id,
+                Project.owner_id == user.id,
+            )
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Project not found or you don't have access to it.",
+            )
+
+    await service.update_session_project(session, body.project_id)
+
+    logger.info(
+        "Assistant session project updated",
+        extra={
+            "session_id": str(session_id),
+            "user_id": str(user.id),
+            "project_id": str(body.project_id) if body.project_id else None,
+        },
+    )
+
+    return SessionResponse(
+        id=session.id,
+        title=session.title,
+        project_id=session.project_id,
+        status=session.status,
+        created_at=session.created_at,
+    )
+
+
 # ── Chat & Control Endpoints ───────────────────────────────────────────────────
 
 
@@ -398,13 +463,27 @@ async def chat(
     step_count = 0
     tool_calls: Counter[str] = Counter()
 
+    # Use LangGraph-based chat by default (Task 9: LangGraph integration)
+    use_graph = is_graph_enabled()
+    logger.info("Using %s-based chat for session %s", "LangGraph" if use_graph else "ReActAgent", session_id)
+
     # Create event generator with metrics tracking
     async def event_generator() -> AsyncGenerator[dict]:
         nonlocal step_count
         session_start_time = time.time()
 
         try:
-            async for event in service.chat(session_id, user.id, body.message):
+            # Use graph-based chat if enabled (Task 9)
+            if use_graph and hasattr(service, 'chat_with_graph'):
+                chat_generator = service.chat_with_graph(
+                    session_id, user.id, body.message, client_message_id=body.client_message_id
+                )
+            else:
+                chat_generator = service.chat(
+                    session_id, user.id, body.message, client_message_id=body.client_message_id
+                )
+            
+            async for event in chat_generator:
                 event_dict = None
                 try:
                     sse_data = EventMapper.event_to_sse_event(event)
@@ -454,10 +533,7 @@ async def chat(
                 tokens_used=0,  # Token tracking requires integration with provider
             )
 
-    # Get persisted events for replay
-    persisted_events = await service.get_persisted_events(session_id)
-
-    # If session not found, return error
+    # Verify session exists
     session = await service.get_session(user, session_id)
     if session is None:
         raise HTTPException(
@@ -468,21 +544,8 @@ async def chat(
     # Record message after validation
     rate_limiter.record_message(user.id)
 
-    async def stream_with_replay():
-        """Stream events, first replaying history, then live events."""
-        # First, yield replay events
-        for event in persisted_events:
-            sse_data = EventMapper.event_to_sse_event(event)
-            yield {
-                "event": sse_data["event"],
-                "data": json.dumps(sse_data["data"], default=str),
-            }
-        # Then stream live events
-        async for event_dict in event_generator():
-            yield event_dict
-
     return EventSourceResponse(
-        stream_with_replay(),
+        event_generator(),
         media_type="text/event-stream",
         headers={
             # Disable Nginx buffering so tokens stream to the client immediately

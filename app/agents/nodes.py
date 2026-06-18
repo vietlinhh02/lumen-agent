@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
@@ -26,7 +27,7 @@ from app.ai.prompts import (
     REVIEW_WRITER_CHUNK_SYSTEM,
     REVIEW_WRITER_CHUNK_USER,
 )
-from app.ai.provider import get_provider
+from app.ai.provider import get_matrix_verifier_provider, get_provider
 from app.ai.structured_outputs import (
     GapListOutput,
     MatrixRowOutput,
@@ -44,6 +45,20 @@ logger = logging.getLogger(__name__)
 
 _VALID_CONFIDENCE = {"high", "medium", "low"}
 _MAX_CHUNK_CONTEXT_CHARS = 8000
+
+# Matrix extraction parallelization constants
+_MATRIX_CONCURRENCY = 8  # Bound by LLM rate limit (typical 10 concurrent)
+_MAX_CHUNKS_PER_PAPER = 5
+_MAX_PAPERS = 20
+_COLLABORATIVE_MATRIX_MAX_TOKENS = 2000
+_MATRIX_VERIFICATION_SYSTEM = """You verify literature-matrix extractions against paper evidence.
+
+Rules:
+- Correct unsupported or hallucinated fields.
+- If the extraction is already correct, return it unchanged.
+- Keep all fields concise and grounded in the evidence.
+- Use only these confidence labels: high, medium, low.
+"""
 
 
 # ── Node 0: Query Planner ──────────────────────────────────────────────────
@@ -427,9 +442,6 @@ async def save_screened_node(state: ResearchState, db) -> dict:
 
 # ── Node 3: Matrix Extraction ──────────────────────────────────────────────
 
-_MAX_CHUNKS_PER_PAPER = 5
-_MAX_PAPERS = 20
-
 
 def _build_chunk_context(
     chunks: list[RetrievedChunk], max_chars: int = _MAX_CHUNK_CONTEXT_CHARS
@@ -470,16 +482,75 @@ def _rows_to_json_safe(rows: list[dict]) -> list[dict]:
     return [{k: str(v) if isinstance(v, UUID) else v for k, v in row.items()} for row in rows]
 
 
-async def matrix_extraction_node(state: ResearchState, db) -> dict:
+def _normalize_matrix_extraction(result: dict[str, Any]) -> dict[str, Any]:
+    """Normalize matrix extraction output into persisted row fields."""
+    confidence = result.get("confidence", result.get("extraction_confidence", "medium"))
+    if confidence not in _VALID_CONFIDENCE:
+        confidence = "medium"
+    return {
+        "research_problem": result.get("research_problem", "not specified"),
+        "method": result.get("method", "not specified"),
+        "dataset_or_context": result.get("dataset_or_context", "not specified"),
+        "key_result": result.get("key_result", "not specified"),
+        "limitation": result.get("limitation", "not specified"),
+        "contribution": result.get("contribution", "not specified"),
+        "relevance": result.get("relevance", "not specified"),
+        "extraction_confidence": confidence,
+    }
+
+
+async def _verify_matrix_extraction(
+    verifier_provider,
+    *,
+    user_topic: str | None,
+    paper,
+    chunk_context: str,
+    primary_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Ask the verifier model to confirm or correct one matrix extraction."""
+    verify_prompt = f"""Verify this literature-matrix extraction against the paper evidence.
+
+Project topic: {user_topic or "Not specified"}
+Paper title: {paper.title}
+Paper abstract: {paper.abstract or "No abstract available"}
+Paper venue: {paper.venue or "not specified"}
+Paper year: {paper.year or "unknown"}
+
+Existing extraction:
+{json.dumps(primary_result, indent=2)}
+
+Evidence:
+{chunk_context or "No full-text sections available."}
+"""
+    return await verifier_provider.complete_structured(
+        messages=[{"role": "user", "content": verify_prompt}],
+        system=_MATRIX_VERIFICATION_SYSTEM,
+        schema=MatrixRowOutput.model_json_schema(),
+        tool_name="matrix_verify",
+        max_tokens=_COLLABORATIVE_MATRIX_MAX_TOKENS,
+    )
+
+
+async def matrix_extraction_node(
+    state: ResearchState,
+    db,
+    progress_callback: Callable[[int, int, str], Awaitable[None]] | None = None,
+) -> dict:
     """Generate literature matrix rows using metadata + retrieved chunks.
+
+    Uses parallel processing with asyncio.Semaphore to bound concurrency
+    and asyncio.gather for fan-out. This provides 3-5x speedup over
+    sequential processing (20 papers × 2s = 40s → ~8s with concurrency=8).
 
     DB session is used only for data access, not held during LLM calls.
     """
-    from sqlalchemy import exists, select
+    import asyncio
+
+    from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.db.models import LiteratureMatrixRow, ProjectPaper
-    from app.services.literature_matrix import upsert_rows
+    from app.db.models import ProjectPaper
+    from app.services.literature_matrix import build_content_hash, upsert_rows
 
     if not state.project_id:
         return {
@@ -488,14 +559,16 @@ async def matrix_extraction_node(state: ResearchState, db) -> dict:
             "errors": ["No project_id in state"],
         }
 
-    # 1. Load saved project_papers, excluding those that already have matrix rows
+    # 1. Load saved project_papers with existing matrix rows for cache checks.
     stmt = (
         select(ProjectPaper)
-        .options(selectinload(ProjectPaper.paper))
+        .options(
+            selectinload(ProjectPaper.paper),
+            selectinload(ProjectPaper.matrix_row),
+        )
         .where(
             ProjectPaper.project_id == state.project_id,
             ProjectPaper.status == "saved",
-            ~exists().where(LiteratureMatrixRow.project_paper_id == ProjectPaper.id),
         )
         .limit(_MAX_PAPERS)
     )
@@ -508,80 +581,162 @@ async def matrix_extraction_node(state: ResearchState, db) -> dict:
             "matrix_rows": [],
         }
 
-    # 2. Per-paper retrieval: get top chunks for each paper individually
+    # ── Parallel extraction with bounded concurrency ──
+    sem = asyncio.Semaphore(_MATRIX_CONCURRENCY)
+    progress_lock = asyncio.Lock()
+    processed = 0
+    total_papers = len(papers_to_process)
+
+    async def _record_progress(current_title: str) -> None:
+        nonlocal processed
+        if progress_callback is None:
+            return
+        async with progress_lock:
+            processed += 1
+            await progress_callback(processed, total_papers, current_title)
+
+    # 2. Per-paper retrieval: get top chunks for each paper individually.
     query = state.user_topic or ""
-
-    # ── DB session is no longer needed below; LLM calls happen next ──
-
-    # 3. Extract matrix rows via LLM (with per-paper chunks)
-    provider = get_provider()
-    rows: list[dict] = []
+    candidate_papers: list[tuple[ProjectPaper, str]] = []
 
     for pp in papers_to_process:
         paper = pp.paper
-        # Per-paper retrieval: top chunks for THIS paper only
-        paper_chunks = await retrieve_paper_evidence(
-            db,
-            pp.id,
-            query,
-            limit=_MAX_CHUNKS_PER_PAPER,
-            content_types=["method", "results", "limitation", "table", "narrative"],
-        )
-        chunk_context = _build_chunk_context(paper_chunks)
+        content_hash = build_content_hash(pp.id, getattr(paper, "updated_at", None))
+        existing_row = getattr(pp, "matrix_row", None)
+        if existing_row and existing_row.content_hash == content_hash:
+            logger.info("Skipping '%s' — content unchanged", paper.title[:60])
+            await _record_progress(paper.title)
+            continue
+        candidate_papers.append((pp, content_hash))
 
-        try:
-            user_msg = MATRIX_EXTRACTION_CHUNK_USER.format(
-                project_topic=state.user_topic,
-                title=paper.title,
-                authors=", ".join(
-                    a.get("name", str(a)) if isinstance(a, dict) else str(a)
-                    for a in (paper.authors or [])
-                ),
-                year=paper.year or "unknown",
-                abstract=paper.abstract or "No abstract available",
-                venue=paper.venue or "not specified",
-                chunk_context=chunk_context,
-            )
-            result = await provider.complete_structured(
-                messages=[{"role": "user", "content": user_msg}],
-                system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
-                schema=MatrixRowOutput.model_json_schema(),
-                tool_name="matrix_row",
-                max_tokens=2000,
-            )
-            confidence = result.get("confidence", "medium")
-            if confidence not in _VALID_CONFIDENCE:
-                confidence = "medium"
-            rows.append(
-                {
+    if not candidate_papers:
+        return {
+            "current_node": "matrix_extraction",
+            "matrix_status": "completed",
+            "matrix_rows": [],
+        }
+
+    provider = get_provider()
+    verifier_provider = get_matrix_verifier_provider()
+
+    async def _extract_one(pp, content_hash: str) -> dict | None:
+        """Extract matrix row for a single paper with semaphore-bounded concurrency."""
+        async with sem:
+            paper = pp.paper
+
+            # Per-paper retrieval: top chunks for THIS paper only
+            try:
+                paper_chunks = await retrieve_paper_evidence(
+                    db,
+                    pp.id,
+                    query,
+                    limit=_MAX_CHUNKS_PER_PAPER,
+                    content_types=["method", "results", "limitation", "table", "narrative"],
+                )
+                chunk_context = _build_chunk_context(paper_chunks)
+            except Exception as exc:
+                logger.warning(
+                    "Retrieval failed for paper '%s': %s",
+                    paper.title[:60],
+                    exc,
+                )
+                chunk_context = ""
+
+            try:
+                user_msg = MATRIX_EXTRACTION_CHUNK_USER.format(
+                    project_topic=state.user_topic,
+                    title=paper.title,
+                    authors=", ".join(
+                        a.get("name", str(a)) if isinstance(a, dict) else str(a)
+                        for a in (paper.authors or [])
+                    ),
+                    year=paper.year or "unknown",
+                    abstract=paper.abstract or "No abstract available",
+                    venue=paper.venue or "not specified",
+                    chunk_context=chunk_context,
+                )
+                primary_result = await provider.complete_structured(
+                    messages=[{"role": "user", "content": user_msg}],
+                    system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
+                    schema=MatrixRowOutput.model_json_schema(),
+                    tool_name="matrix_row",
+                    max_tokens=2000,
+                )
+                normalized = _normalize_matrix_extraction(primary_result)
+                if verifier_provider is not None:
+                    try:
+                        verified_result = await _verify_matrix_extraction(
+                            verifier_provider,
+                            user_topic=state.user_topic,
+                            paper=paper,
+                            chunk_context=chunk_context,
+                            primary_result=primary_result,
+                        )
+                        verified_normalized = _normalize_matrix_extraction(verified_result)
+                        if verified_normalized != normalized:
+                            logger.info(
+                                "Verifier adjusted matrix extraction for '%s'",
+                                paper.title[:60],
+                            )
+                            if (
+                                verified_normalized["extraction_confidence"] == "high"
+                                and normalized != verified_normalized
+                            ):
+                                verified_normalized["extraction_confidence"] = "medium"
+                        normalized = verified_normalized
+                    except Exception as exc:
+                        logger.warning(
+                            "Matrix verification failed for paper '%s': %s",
+                            paper.title[:60],
+                            exc,
+                        )
+                return {
                     "project_paper_id": pp.id,
-                    "research_problem": result.get("research_problem", "not specified"),
-                    "method": result.get("method", "not specified"),
-                    "dataset_or_context": result.get("dataset_or_context", "not specified"),
-                    "key_result": result.get("key_result", "not specified"),
-                    "limitation": result.get("limitation", "not specified"),
-                    "contribution": result.get("contribution", "not specified"),
-                    "relevance": result.get("relevance", "not specified"),
-                    "extraction_confidence": confidence,
+                    "research_problem": normalized["research_problem"],
+                    "method": normalized["method"],
+                    "dataset_or_context": normalized["dataset_or_context"],
+                    "key_result": normalized["key_result"],
+                    "limitation": normalized["limitation"],
+                    "contribution": normalized["contribution"],
+                    "relevance": normalized["relevance"],
+                    "content_hash": content_hash,
+                    "extraction_confidence": normalized["extraction_confidence"],
                 }
-            )
-        except Exception as exc:
-            logger.warning(
-                "Matrix extraction failed for paper '%s': %s",
-                paper.title[:60],
-                exc,
-            )
+            except Exception as exc:
+                logger.warning(
+                    "Matrix extraction failed for paper '%s': %s",
+                    paper.title[:60],
+                    exc,
+                )
+                return None
+            finally:
+                await _record_progress(paper.title)
 
-    # 5. Persist to DB
+    # Fan out — wall-clock: ~40s → ~8s (concurrency=8, 20 papers)
+    # return_exceptions=True prevents one failure from cancelling others
+    results = await asyncio.gather(
+        *[_extract_one(pp, content_hash) for pp, content_hash in candidate_papers],
+        return_exceptions=True,
+    )
+
+    # Collect successful results (filter out None and exceptions)
+    rows = [r for r in results if isinstance(r, dict)]
+
+    # 4. Persist to DB
     matrix_status = "completed"
     if rows:
         try:
             saved_count = await upsert_rows(db, state.project_id, rows)
-            logger.info("Persisted %d matrix rows for project %s", saved_count, state.project_id)
+            logger.info(
+                "Persisted %d matrix rows for project %s (from %d papers)",
+                saved_count,
+                state.project_id,
+                len(candidate_papers),
+            )
         except Exception as exc:
             logger.error("Failed to persist matrix rows: %s", exc)
             matrix_status = "failed"
-    elif not papers_to_process:
+    elif not candidate_papers:
         matrix_status = "completed"
     else:
         matrix_status = "failed"
@@ -600,6 +755,12 @@ _MAX_GAP_CHUNKS_TOTAL = 40
 _MAX_CHUNKS_PER_GAP_PAPER = 5
 _MIN_MATRIX_ROWS_FOR_GAPS = 5
 _MIN_EVIDENCE_PAPERS_FOR_GAP = 2
+
+# Map-Reduce constants for hierarchical gap analysis
+_CHUNK_ROWS_FOR_GAP = 12  # Rows per chunk for Map phase
+_MAX_GAPS_PER_CHUNK = 3   # Max candidate gaps per chunk
+_MAX_FINAL_GAPS = 8       # Max final gaps after Reduce
+_GAP_CONCURRENCY = 4      # Bound LLM calls during Map phase
 
 _GAP_RETRIEVAL_QUERIES = [
     "limitations future work {topic}",
@@ -642,11 +803,124 @@ async def _multi_query_gap_retrieval(
     return chunks_by_paper
 
 
+# ── Gap Analysis Map-Reduce Helpers ─────────────────────────────────────────
+
+
+async def _gap_map_chunk(
+    rows_chunk: list,
+    project_topic: str,
+    relevant_chunks: list[RetrievedChunk],
+    provider,
+) -> list[dict]:
+    """Map phase: extract candidate gaps from a chunk of matrix rows.
+
+    Each chunk processes up to _CHUNK_ROWS_FOR_GAP rows independently,
+    avoiding the middle curse problem with large row sets.
+    """
+    safe_rows = _rows_to_json_safe(
+        [
+            {
+                "project_paper_id": r.project_paper_id,
+                "research_problem": r.research_problem,
+                "method": r.method,
+                "dataset_or_context": r.dataset_or_context,
+                "key_result": r.key_result,
+                "limitation": r.limitation,
+            }
+            for r in rows_chunk
+        ]
+    )
+
+    # Build chunk context from relevant chunks for this rows chunk
+    chunk_parts: list[str] = []
+    total_chars = 0
+    for c in relevant_chunks[:_MAX_CHUNKS_PER_GAP_PAPER]:
+        label = c.section_label or c.content_type or "section"
+        block = f"---{label}---\n{c.chunk_text}"
+        if total_chars + len(block) > _MAX_CHUNK_CONTEXT_CHARS:
+            break
+        chunk_parts.append(block)
+        total_chars += len(block)
+    chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
+
+    user_msg = GAP_ANALYSIS_CHUNK_USER.format(
+        project_topic=project_topic,
+        paper_ids_json=json.dumps([str(r.project_paper_id) for r in rows_chunk]),
+        matrix_rows_json=json.dumps(safe_rows, indent=2),
+        chunk_context=chunk_context,
+    )
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": user_msg}],
+            system=GAP_ANALYSIS_CHUNK_SYSTEM,
+            schema=GapListOutput.model_json_schema(),
+            tool_name="gap_chunk_analysis",
+            max_tokens=3000,
+        )
+        return result.get("gaps", [])[:_MAX_GAPS_PER_CHUNK]
+    except Exception as exc:
+        logger.warning("Gap map chunk failed: %s", exc)
+        return []
+
+
+async def _gap_reduce(
+    candidates: list[dict],
+    project_topic: str,
+    provider,
+) -> list[dict]:
+    """Reduce phase: deduplicate and rank candidate gaps from all map chunks.
+
+    Takes all candidate gaps from Map phase, deduplicates by title similarity,
+    and ranks by evidence strength (number of supporting papers).
+    Returns up to _MAX_FINAL_GAPS final gaps.
+    """
+    if not candidates:
+        return []
+
+    dedup_prompt = f"""Deduplicate and rank these candidate research gaps.
+
+Rules:
+1. Merge gaps with similar titles or descriptions (keep the more comprehensive one)
+2. Prefer gaps backed by more evidence papers
+3. Return max {_MAX_FINAL_GAPS} final gaps
+4. Each gap must have: title, description, suggested_direction, evidence_paper_ids
+
+Candidate gaps:
+{json.dumps(candidates, indent=2)}"""
+
+    dedup_system = f"""You are a research gap analyst. Your task is to:
+1. Merge and deduplicate candidate gaps that cover similar territory
+2. Keep only unique, evidence-backed gaps
+3. Rank by evidence strength (more supporting papers = higher rank)
+4. Return max {_MAX_FINAL_GAPS} final gaps in the same JSON format as input"""
+
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": dedup_prompt}],
+            system=dedup_system,
+            schema=GapListOutput.model_json_schema(),
+            tool_name="gap_dedup",
+            max_tokens=3000,
+        )
+        return result.get("gaps", [])[:_MAX_FINAL_GAPS]
+    except Exception as exc:
+        logger.warning("Gap reduce failed: %s", exc)
+        # Fallback: return candidates as-is (limited to max)
+        return candidates[:_MAX_FINAL_GAPS]
+
+
 async def gap_analysis_node(state: ResearchState, db) -> dict:
     """Detect research gaps from matrix rows + RAG chunks, persist to DB.
 
-    Uses multi-query retrieval with deduplication for broader evidence coverage.
+    Uses hierarchical Map-Reduce pattern:
+    - Map: Split rows into chunks, parallel extract candidate gaps
+    - Reduce: Merge + dedup + rank candidate gaps
+
+    This avoids the "middle curse" problem where models underperform on
+    middle sections of long contexts.
     """
+    import asyncio
+
     from sqlalchemy import select
 
     from app.db.models import LiteratureMatrixRow, ProjectPaper
@@ -689,71 +963,56 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
     )
     valid_pp_ids = set((await db.execute(pp_stmt)).scalars().all())
 
-    # 4. Build prompt
-    safe_rows = _rows_to_json_safe(
-        [
-            {
-                "project_paper_id": r.project_paper_id,
-                "research_problem": r.research_problem,
-                "method": r.method,
-                "dataset_or_context": r.dataset_or_context,
-                "key_result": r.key_result,
-                "limitation": r.limitation,
-            }
-            for r in matrix_rows
-        ]
+    # 4. Hierarchical Map-Reduce for gap analysis
+    # Split rows into chunks of _CHUNK_ROWS_FOR_GAP rows each
+    row_chunks = [
+        matrix_rows[i : i + _CHUNK_ROWS_FOR_GAP]
+        for i in range(0, len(matrix_rows), _CHUNK_ROWS_FOR_GAP)
+    ]
+    logger.info(
+        "Gap analysis: %d rows → %d chunks for Map phase",
+        len(matrix_rows),
+        len(row_chunks),
     )
-    paper_ids_json = json.dumps([str(r.project_paper_id) for r in matrix_rows])
 
-    # Build chunk context from all retrieved chunks
-    chunk_parts: list[str] = []
-    total_chars = 0
-    limit_reached = False
-    for pp_id, chunks in chunks_by_paper.items():
-        if limit_reached:
-            break
-        for c in chunks[:_MAX_CHUNKS_PER_GAP_PAPER]:
-            label = c.section_label or c.content_type or "section"
-            block = f"---{label} (paper {str(pp_id)[:8]})---\n{c.chunk_text}"
-            if total_chars + len(block) > _MAX_CHUNK_CONTEXT_CHARS:
-                limit_reached = True
-                break
-            chunk_parts.append(block)
-            total_chars += len(block)
-    chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
-    graph_context = await _build_graph_context(
-        db,
-        state.project_id,
-        f"research gaps limitations {state.user_topic or ''}",
-    )
-    prompt_context = _combine_graph_and_chunk_context(graph_context, chunk_context)
+    # Map phase: parallel gap extraction per chunk (bounded by semaphore)
+    provider = get_provider()
+    sem = asyncio.Semaphore(_GAP_CONCURRENCY)
 
-    try:
-        user_msg = GAP_ANALYSIS_CHUNK_USER.format(
-            project_topic=state.user_topic,
-            paper_ids_json=paper_ids_json,
-            matrix_rows_json=json.dumps(safe_rows, indent=2),
-            chunk_context=prompt_context,
-        )
-        provider = get_provider()
-        result = await provider.complete_structured(
-            messages=[{"role": "user", "content": user_msg}],
-            system=GAP_ANALYSIS_CHUNK_SYSTEM,
-            schema=GapListOutput.model_json_schema(),
-            tool_name="gap_analysis",
-            max_tokens=4000,
-        )
-        raw_gaps = result.get("gaps", [])
-    except Exception as exc:
-        logger.exception("Gap analysis failed")
-        return {
-            "current_node": "gap_analysis",
-            "gap_status": "failed",
-            "errors": [f"Gap analysis failed: {exc}"],
-        }
+    async def _map_with_semaphore(rows_chunk: list) -> list[dict]:
+        async with sem:
+            # Get chunks relevant to this rows chunk (by project_paper_id)
+            relevant_chunks: list[RetrievedChunk] = []
+            for r in rows_chunk:
+                relevant_chunks.extend(chunks_by_paper.get(r.project_paper_id, []))
+            return await _gap_map_chunk(
+                rows_chunk, state.user_topic or "", relevant_chunks, provider
+            )
+
+    map_tasks = [_map_with_semaphore(chunk) for chunk in row_chunks]
+    map_results = await asyncio.gather(*map_tasks, return_exceptions=True)
+
+    # Flatten map results
+    all_candidates: list[dict] = []
+    for r in map_results:
+        if isinstance(r, list):
+            all_candidates.extend(r)
+        elif isinstance(r, Exception):
+            logger.warning("Map chunk raised exception: %s", r)
+
+    logger.info("Map phase complete: %d candidate gaps", len(all_candidates))
+
+    # Reduce phase: deduplicate and rank
+    if all_candidates:
+        final_gaps = await _gap_reduce(all_candidates, state.user_topic or "", provider)
+        logger.info("Reduce phase complete: %d final gaps", len(final_gaps))
+    else:
+        final_gaps = []
 
     # 5. Validate evidence_paper_ids + evidence coverage guard
     validated_gaps: list[dict] = []
+    raw_gaps = final_gaps  # Use gaps from reduce phase
+
     for gap in raw_gaps:
         raw_ids = gap.get("evidence_paper_ids", [])
         try:
@@ -785,7 +1044,7 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
 
         # Guard: downgrade confidence if no chunk evidence was available
         confidence = gap.get("confidence", "medium")
-        has_chunk_evidence = chunk_context != "No full-text sections available."
+        has_chunk_evidence = bool(chunks_by_paper)  # Check if any chunks were retrieved
         if not has_chunk_evidence and confidence == "high":
             confidence = "medium"
             logger.info("Downgraded gap confidence to 'medium' — no chunk evidence")

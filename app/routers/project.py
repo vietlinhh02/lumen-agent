@@ -102,6 +102,82 @@ async def delete_project_endpoint(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
+# ── AI Project Metadata Generation ─────────────────────────────────────
+
+
+from pydantic import BaseModel, Field
+
+
+class GenerateMetadataRequest(BaseModel):
+    idea: str = Field(..., min_length=1, max_length=2000)
+
+
+class GenerateMetadataResponse(BaseModel):
+    title: str
+    topic: str
+    research_question: str | None = None
+
+
+@router.post("/generate-metadata", response_model=GenerateMetadataResponse)
+async def generate_project_metadata(
+    body: GenerateMetadataRequest,
+    user: User = Depends(get_current_user),
+) -> GenerateMetadataResponse:
+    """Use AI to generate a proper project title, topic, and research question
+    from a free-form idea description."""
+    from app.ai.provider import get_provider
+
+    class _ProjectMeta(BaseModel):
+        title: str = Field(
+            description="Short, descriptive project title (max 60 chars). "
+            "Academic style, no quotes. NOT the raw user message.",
+        )
+        topic: str = Field(
+            description="Refined research topic (1-2 sentences).",
+        )
+        research_question: str | None = Field(
+            default=None,
+            description="A concrete research question if one can be inferred, else null.",
+        )
+
+    system = (
+        "You are a research project metadata extractor. Given a user's "
+        "idea or description, produce a concise project title, a refined "
+        "research topic, and an optional research question.\n\n"
+        "Rules:\n"
+        "- Title: max 60 characters, academic style, no quotes.\n"
+        "- Topic: 1-2 clear sentences describing the research area.\n"
+        "- Research question: a focused, answerable question if possible, "
+        "otherwise null.\n"
+        "- ALL output MUST be in English. If the user's input is in another "
+        "language (e.g. Vietnamese), translate and normalize it to English "
+        "to optimize for paper searching.\n"
+        "- Do NOT copy the raw user message verbatim."
+    )
+
+    provider = get_provider()
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": body.idea.strip()}],
+            schema=_ProjectMeta.model_json_schema(),
+            tool_name="extract_project_metadata",
+            system=system,
+            max_tokens=300,
+        )
+        meta = _ProjectMeta.model_validate(result)
+        return GenerateMetadataResponse(
+            title=(meta.title.strip()[:60] or "Untitled Research").rstrip(),
+            topic=(meta.topic.strip() or body.idea.strip())[:512],
+            research_question=meta.research_question,
+        )
+    except Exception as exc:
+        logger.warning("AI metadata generation failed: %s", exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate project metadata. Please fill in manually.",
+        ) from exc
+
+
 # ── Paper Management ───────────────────────────────────────────────────
 
 
