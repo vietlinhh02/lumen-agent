@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -44,6 +45,23 @@ _REVIEW_BASE_KEYWORDS = (
     "research gaps",
     "conflicting findings",
 )
+
+# Multi-section report generation constants
+_REPORT_ANGLE_QUERIES = [
+    "{topic} methodology comparison framework evaluation metrics",
+    "{topic} dataset benchmark performance results ablation",
+    "{topic} limitations weakness failure case generalization",
+    "{topic} application domain real-world deployment practical",
+    "{topic} temporal progression evolution future direction",
+    "{topic} theoretical foundation assumption prior work",
+    "{topic} conflicting findings disagreement debate",
+    "{topic} gap underexplored missing comparison",
+]
+_MAX_CHUNKS_PER_ANGLE = 15
+_MAX_SECTION_CHUNK_BUDGET = 8000  # chars per section
+_MAX_SECTION_TOKENS = 3000
+_REPORT_SECTION_CONCURRENCY = 4  # Parallel section generation
+_MIN_SECTIONS_FOR_PLANNING = 5
 
 
 def _build_review_retrieval_query(
@@ -118,6 +136,271 @@ def _normalize_query_term(value: object) -> str:
     return " ".join(text.split())
 
 
+# ── Multi-Section Report Generation Helpers ──────────────────────────────────
+
+
+async def _retrieve_multi_angle(
+    db: AsyncSession,
+    project_id: UUID,
+    topic: str,
+    research_question: str | None,
+    matrix_rows: Sequence[object],
+    gaps: Sequence[object],
+    conflicts: Sequence[object],
+) -> list[RetrievedChunk]:
+    """Run multiple thematic queries and merge + dedupe results.
+
+    Each query targets a different angle (methodology, results, gaps, etc.)
+    for broader evidence coverage than a single query.
+    """
+    all_chunks: list[RetrievedChunk] = []
+    seen_chunk_ids: set[UUID] = set()
+    seen_queries: set[str] = set()
+    query_topic = topic if not research_question else f"{topic} {research_question}"
+    queries = [
+        _build_review_retrieval_query(
+            topic, research_question, matrix_rows, gaps, conflicts
+        ),
+        *[template.format(topic=query_topic) for template in _REPORT_ANGLE_QUERIES],
+    ]
+
+    for query in queries:
+        normalized_query = " ".join(query.split())
+        if not normalized_query or normalized_query in seen_queries:
+            continue
+        seen_queries.add(normalized_query)
+        try:
+            chunks = await retrieve_project_evidence(
+                db, project_id, normalized_query, limit=_MAX_CHUNKS_PER_ANGLE
+            )
+            for c in chunks:
+                if c.chunk_id not in seen_chunk_ids:
+                    seen_chunk_ids.add(c.chunk_id)
+                    all_chunks.append(c)
+        except Exception as exc:
+            logger.warning(
+                "Multi-angle retrieval query failed for '%s': %s",
+                normalized_query[:40],
+                exc,
+            )
+
+    # Sort by score and limit total
+    all_chunks.sort(key=lambda c: c.score, reverse=True)
+    all_chunks = all_chunks[:_MAX_RAG_CHUNKS]
+
+    return all_chunks
+
+
+def _group_chunks_by_paper(
+    chunks: list[RetrievedChunk],
+) -> dict[UUID, list[RetrievedChunk]]:
+    """Group retrieved chunks by project_paper_id."""
+    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
+    for chunk in chunks:
+        chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
+    for paper_chunks in chunks_by_paper.values():
+        paper_chunks.sort(key=lambda chunk: chunk.score, reverse=True)
+    return chunks_by_paper
+
+
+async def _plan_sections(
+    topic: str,
+    research_question: str | None,
+    safe_rows: list[dict],
+    safe_gaps: list[dict],
+    safe_conflicts: list[dict],
+    provider,
+) -> list[dict]:
+    """Plan literature review sections using LLM.
+
+    Returns a list of section plans, each with heading, theme, focus_paper_ids, key_angles.
+    """
+    plan_prompt = f"""Given the following literature:
+
+Topic: {topic}
+Research Question: {research_question or 'Not specified'}
+Matrix Rows (first 10): {json.dumps(safe_rows[:10], indent=2)}
+Gaps: {json.dumps(safe_gaps, indent=2) if safe_gaps else 'None'}
+Conflicts: {json.dumps(safe_conflicts, indent=2) if safe_conflicts else 'None'}
+
+Plan a literature review with 5-8 sections. Each section should cover a distinct angle:
+- At least one section on methodology comparison
+- At least one section on findings and results synthesis
+- At least one section on limitations and challenges
+- If gaps exist, at least one section addressing research gaps
+- If conflicts exist, at least one section on conflicting findings
+- Include a section on applications and future directions
+
+Return a JSON object with a "sections" array, each section having:
+- "heading": section name
+- "theme": 1-2 sentence description of what this section synthesizes
+- "focus_paper_ids": list of paper IDs most relevant to this section
+- "key_angles": list of themes this section covers (e.g., ["methodology", "results"])
+
+Example format:
+{{"sections": [
+  {{"heading": "...", "theme": "...", "focus_paper_ids": ["..."], "key_angles": ["..."]}}
+]}}"""
+
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": plan_prompt}],
+            system=(
+                "You are a literature review planner. Return ONLY a JSON object "
+                "with sections array."
+            ),
+            schema={"type": "object", "properties": {"sections": {"type": "array"}}},
+            tool_name="review_plan",
+            max_tokens=3000,
+        )
+        raw_sections = result.get("sections", [])
+        if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, str):
+            return []
+
+        sections = [
+            section
+            for section in raw_sections
+            if isinstance(section, Mapping)
+            and section.get("heading")
+            and section.get("theme")
+            and isinstance(section.get("focus_paper_ids", []), list)
+        ]
+        if len(sections) < _MIN_SECTIONS_FOR_PLANNING:
+            logger.warning(
+                "Section planning returned only %d usable sections; falling back",
+                len(sections),
+            )
+            return []
+        return [dict(section) for section in sections[:8]]
+    except Exception as exc:
+        logger.warning("Section planning failed: %s", exc)
+        return []
+
+
+async def _generate_section(
+    section_plan: dict,
+    chunks_by_paper: dict[UUID, list[RetrievedChunk]],
+    paper_ids_json: str,
+    topic: str,
+    provider,
+) -> dict | None:
+    """Generate a single section of the literature review.
+
+    Uses focus_paper_ids to select relevant chunks, limiting context per section.
+    Returns the generated section dict or None on failure.
+    """
+    # Get chunks from focus papers
+    focus_chunks: list[RetrievedChunk] = []
+    for pid_str in section_plan.get("focus_paper_ids", []):
+        try:
+            pid = UUID(pid_str)
+            focus_chunks.extend(chunks_by_paper.get(pid, []))
+        except (ValueError, TypeError):
+            pass
+
+    # Sort by score and limit chunk budget
+    focus_chunks.sort(key=lambda c: c.score, reverse=True)
+
+    chunk_parts: list[str] = []
+    total = 0
+    included_pids = set()
+    for c in focus_chunks[:8]:
+        label = c.section_label or c.content_type or "section"
+        block = f"---{label} (Paper ID: {c.project_paper_id})---\n{c.chunk_text}"
+        if total + len(block) > _MAX_SECTION_CHUNK_BUDGET:
+            break
+        chunk_parts.append(block)
+        included_pids.add(str(c.project_paper_id))
+        total += len(block)
+
+    chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text available."
+    local_paper_ids_json = json.dumps(list(included_pids))
+
+    section_prompt = f"""Write the following literature review section:
+
+Topic: {topic}
+Section: {section_plan.get('heading', 'Untitled')}
+Theme: {section_plan.get('theme', '')}
+
+Available paper IDs: {local_paper_ids_json}
+
+Full-text evidence:
+{chunk_context}
+
+Write this section in academic prose. Each paragraph MUST cite papers using their project_paper_id.
+After your first paragraph, add a blockquote starting with "**Key synthesis:**" with citations.
+Structure the section with 2-3 focused paragraphs that synthesize the evidence.
+"""
+
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": section_prompt}],
+            system=REVIEW_WRITER_CHUNK_SYSTEM,
+            schema=ReviewOutput.model_json_schema(),
+            tool_name="review_section",
+            max_tokens=_MAX_SECTION_TOKENS,
+        )
+        sections = result.get("sections", [])
+        if sections:
+            # The LLM returns a sections array, we want the first one
+            return sections[0]
+        return None
+    except Exception as exc:
+        logger.warning(
+            "Section generation failed for '%s': %s",
+            section_plan.get("heading", ""),
+            exc,
+        )
+        return None
+
+
+async def _aggregate_sections(
+    sections: list[dict],
+    safe_conflicts: list[dict],
+    safe_gaps: list[dict],
+    provider,
+) -> list[dict]:
+    """Final pass: weave in conflicts + gaps, ensure smooth transitions.
+
+    Reviews generated sections and ensures conflicts/gaps are addressed.
+    """
+    if not sections:
+        return []
+
+    aggregate_prompt = f"""You have generated {len(sections)} sections for a literature review.
+Please review and improve them:
+
+1. Ensure each section has meaningful citations (no empty citation_paper_ids)
+2. Add smooth transitions between sections
+3. If conflicts exist but not addressed, add a paragraph on conflicting findings
+4. If gaps exist but not addressed, add a paragraph on research gaps
+5. Ensure consistent citation style throughout
+
+Existing sections:
+{json.dumps(sections, indent=2)}
+
+Conflicts to address (if any):
+{json.dumps(safe_conflicts, indent=2) if safe_conflicts else 'None'}
+
+Research gaps to address (if any):
+{json.dumps(safe_gaps, indent=2) if safe_gaps else 'None'}
+
+Return the improved sections as a JSON object with "sections" array."""
+
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": aggregate_prompt}],
+            system=REVIEW_WRITER_CHUNK_SYSTEM,
+            schema=ReviewOutput.model_json_schema(),
+            tool_name="review_aggregate",
+            max_tokens=6000,
+        )
+        return result.get("sections", sections)  # Fallback to original if failed
+    except Exception as exc:
+        logger.warning("Section aggregation failed: %s", exc)
+        return sections
+
+
 async def generate_report(
     db: AsyncSession,
     project_id: UUID,
@@ -161,27 +444,7 @@ async def generate_report(
     conflict_stmt = select(ConflictingFinding).where(ConflictingFinding.project_id == project_id)
     conflicts = list((await db.execute(conflict_stmt)).scalars().all())
 
-    # 5. RAG retrieval
-    query = _build_review_retrieval_query(topic, research_question, matrix_rows, gaps, conflicts)
-    all_chunks = await retrieve_project_evidence(db, project_id, query, limit=_MAX_RAG_CHUNKS)
-    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
-    for chunk in all_chunks:
-        chunks_by_paper.setdefault(chunk.project_paper_id, []).append(chunk)
-
-    # 6. Build chunk context
-    chunk_parts: list[str] = []
-    total_chars = 0
-    for pp_id, chunks in chunks_by_paper.items():
-        for c in chunks[:_MAX_CHUNKS_PER_PAPER]:
-            label = c.section_label or c.content_type or "section"
-            block = f"---{label} (paper {str(pp_id)[:8]})---\n{c.chunk_text}"
-            if total_chars + len(block) > _MAX_CHUNK_CONTEXT_CHARS:
-                break
-            chunk_parts.append(block)
-            total_chars += len(block)
-    chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
-
-    # 7. Build prompt
+    # 5. Build prompt data (chunk_context for fallback will be built later)
     safe_rows = _rows_to_json_safe(
         [
             {
@@ -228,33 +491,112 @@ async def generate_report(
 
     report_title = title or f"Literature Review: {topic}"
 
-    # 8. First LLM attempt
-    sections, audit, content_markdown = await _generate_and_validate(
+    # 8. Multi-section generation flow
+    provider = get_provider()
+
+    # 8a. Multi-angle RAG retrieval for broader evidence coverage
+    all_chunks = await _retrieve_multi_angle(
         db,
         project_id,
         topic,
         research_question,
-        paper_ids_json,
-        safe_rows,
-        safe_gaps,
-        safe_conflicts,
-        chunk_context,
-        valid_pp_ids,
+        matrix_rows,
+        gaps,
+        conflicts,
+    )
+    chunks_by_paper = _group_chunks_by_paper(all_chunks)
+    logger.info(
+        "Multi-angle retrieval: %d chunks from %d papers",
+        len(all_chunks),
+        len(chunks_by_paper),
     )
 
-    # 9. Retry if >30% invalid
-    if audit["total_citations"] > 0:
+    # 8b. Section planning
+    sections_plan = await _plan_sections(
+        topic, research_question, safe_rows, safe_gaps, safe_conflicts, provider
+    )
+    logger.info("Section planning: %d sections planned", len(sections_plan))
+    chunk_context: str | None = None
+    local_paper_ids_json: str | None = None
+
+    # 8c. Per-section generation (parallel)
+    if sections_plan:
+        sem = asyncio.Semaphore(_REPORT_SECTION_CONCURRENCY)
+
+        async def _generate_with_semaphore(plan: dict) -> dict | None:
+            async with sem:
+                return await _generate_section(
+                    plan, chunks_by_paper, paper_ids_json, topic, provider
+                )
+
+        section_tasks = [_generate_with_semaphore(plan) for plan in sections_plan]
+        section_results = await asyncio.gather(*section_tasks, return_exceptions=True)
+        generated_sections = [
+            s for s in section_results if isinstance(s, dict)
+        ]
+        logger.info(
+            "Section generation: %d/%d sections generated",
+            len(generated_sections),
+            len(sections_plan),
+        )
+    else:
+        # Fallback: use single-pass generation if planning failed
+        generated_sections = []
+
+    # 8d. Aggregate + weave conflicts/gaps
+    if generated_sections:
+        sections = await _aggregate_sections(
+            generated_sections, safe_conflicts, safe_gaps, provider
+        )
+    else:
+        # Ultimate fallback: use single-pass generation with original retrieval
+        # Build chunk context from all_chunks
+        chunk_parts: list[str] = []
+        total_chars = 0
+        included_pids = set()
+        for pp_id, chunks in chunks_by_paper.items():
+            for c in chunks[:_MAX_CHUNKS_PER_PAPER]:
+                label = c.section_label or c.content_type or "section"
+                block = f"---{label} (Paper ID: {str(pp_id)})---\n{c.chunk_text}"
+                if total_chars + len(block) > _MAX_CHUNK_CONTEXT_CHARS:
+                    break
+                chunk_parts.append(block)
+                included_pids.add(str(pp_id))
+                total_chars += len(block)
+        chunk_context = (
+            "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
+        )
+        local_paper_ids_json = json.dumps(list(included_pids))
+
+        sections, _, _ = await _generate_and_validate(
+            db,
+            project_id,
+            topic,
+            research_question,
+            local_paper_ids_json,
+            safe_rows,
+            safe_gaps,
+            safe_conflicts,
+            chunk_context,
+            valid_pp_ids,
+        )
+
+    # 9. Validate citations
+    cleaned_sections, audit = await _validate_citations(db, project_id, sections)
+
+    # 10. Retry if >30% invalid (only for single-pass fallback)
+    if audit["total_citations"] > 0 and not generated_sections and chunk_context is not None:
         invalid_ratio = audit["invalid_citations"] / audit["total_citations"]
         if invalid_ratio > 0.3:
             logger.info(
                 "Retrying review generation — %.0f%% invalid citations", invalid_ratio * 100
             )
-            sections2, audit2, content_markdown2 = await _generate_and_validate(
+            sections2, audit2, _ = await _generate_and_validate(
                 db,
                 project_id,
                 topic,
                 research_question,
-                paper_ids_json,
+                local_paper_ids_json,
                 safe_rows,
                 safe_gaps,
                 safe_conflicts,
@@ -265,21 +607,24 @@ async def generate_report(
                 ),
             )
             if audit2["invalid_citations"] < audit["invalid_citations"]:
-                sections, audit, content_markdown = sections2, audit2, content_markdown2
+                cleaned_sections, audit = await _validate_citations(db, project_id, sections2)
 
-    # 10. Determine validation status
+    # 11. Determine validation status
     validation_status = "valid" if audit["invalid_citations"] == 0 else "invalid"
 
-    # 11. Build references from DB
+    # 12. Build references from DB
     cited_ids = set()
-    for section in sections:
+    for section in cleaned_sections:
         for para in section.get("paragraphs", []):
             for pid in para.get("citation_paper_ids", []):
                 if isinstance(pid, UUID):
                     cited_ids.add(pid)
     references = await _build_references(db, cited_ids)
 
-    # 12. Persist
+    # 13. Build markdown from cleaned sections
+    content_markdown = _build_content_markdown(cleaned_sections, references)
+
+    # 14. Persist
     report = await _persist_report(
         db,
         project_id,
@@ -287,7 +632,7 @@ async def generate_report(
         report_title,
         content_markdown,
         validation_status,
-        sections,
+        cleaned_sections,
     )
 
     return {

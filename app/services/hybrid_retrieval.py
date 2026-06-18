@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import encode_text
@@ -119,6 +119,7 @@ async def retrieve_project_evidence(
         .where(
             ProjectPaper.project_id == project_id,
             ProjectPaper.status == "saved",
+            or_(ProjectPaper.relevance_label != "low", ProjectPaper.relevance_label.is_(None)),
             PaperChunk.chunk_type == "full_text",
             PaperChunk.embedding.isnot(None),
         )
@@ -280,6 +281,7 @@ async def _keyword_only_fallback(
         .where(
             ProjectPaper.project_id == project_id,
             ProjectPaper.status == "saved",
+            or_(ProjectPaper.relevance_label != "low", ProjectPaper.relevance_label.is_(None)),
             PaperChunk.chunk_type == "full_text",
         )
     )

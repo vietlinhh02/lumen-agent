@@ -58,7 +58,7 @@ class MatrixRowOutput(BaseModel):
     contribution: str = Field(description="What the paper uniquely adds to the field.")
     relevance: str = Field(description="Why this paper matters to the project topic.")
     confidence: Literal["high", "medium", "low"] = Field(
-        description="Extraction confidence based on available text quality."
+        description="Extraction confidence based on available text quality. Must output 'low' if the paper's content is unrelated or irrelevant to the project's topic."
     )
 
 

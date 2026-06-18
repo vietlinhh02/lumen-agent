@@ -63,7 +63,7 @@ async def detect_and_generate_variants(
                 "required": ["detected_language", "variants"],
             },
             tool_name="language_bias",
-            max_tokens=1000,
+            max_tokens=2000,
         )
         detected_lang = result.get("detected_language", "en")
         variants = [

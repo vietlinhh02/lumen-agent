@@ -307,7 +307,7 @@ class ProjectPaper(Base):
             "status IN ('saved', 'rejected', 'uncertain')", name="ck_project_papers_status"
         ),
         CheckConstraint(
-            "relevance_label IS NULL OR relevance_label IN ('core', 'related', 'background')",
+            "relevance_label IS NULL OR relevance_label IN ('core', 'related', 'background', 'low')",
             name="ck_project_papers_relevance",
         ),
         Index("ix_project_papers_project_status", "project_id", "status"),
@@ -443,6 +443,7 @@ class LiteratureMatrixRow(Base):
     limitation: Mapped[str | None] = mapped_column(Text, nullable=True)
     contribution: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(16), nullable=True)
     extraction_confidence: Mapped[str] = mapped_column(
         String(16), nullable=False, default="medium", server_default="medium"
     )
@@ -774,6 +775,7 @@ class BackgroundJob(Base):
     )
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    progress_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     result: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -895,11 +897,16 @@ class PaperChunk(Base):
 
 # ── Assistant (Plan-Act Chat) ────────────────────────────────────────────────
 #
-# Three tables that back the `/assistant` chat surface. Every artifact the
-# assistant produces (papers, matrix rows, gaps, reports, …) is still stored on
-# the existing `Project`-scoped tables; these tables only persist the chat
-# conversation, the live execution plan, and the SSE event stream so a session
-# can be resumed after a refresh.
+# Three tables that back the `/assistant` chat surface:
+# - `assistant_sessions`: session metadata
+# - `assistant_messages`: canonical chat messages (user + assistant)
+# - `assistant_events`: high-value audit events (tool, progress, done, etc.)
+# - `assistant_plans`: execution plan (legacy, not actively used)
+#
+# NOTE: Token streaming events (thought, assistant_delta) are NOT persisted.
+# They are transient UX events only. The UI reconstructs the transcript from
+# canonical messages. Every artifact the assistant produces (papers, matrix
+# rows, gaps, reports, …) is still stored on the existing `Project`-scoped tables.
 
 
 class AssistantSession(Base):
@@ -933,6 +940,12 @@ class AssistantSession(Base):
 
     user: Mapped["User"] = relationship(back_populates="assistant_sessions")
     project: Mapped["Project | None"] = relationship(back_populates="assistant_sessions")
+    messages: Mapped[list["AssistantMessage"]] = relationship(
+        back_populates="session",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="AssistantMessage.created_at",
+    )
     events: Mapped[list["AssistantEvent"]] = relationship(
         back_populates="session",
         lazy="selectin",
@@ -947,18 +960,63 @@ class AssistantSession(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active', 'archived')",
+            "status IN ('active', 'completed', 'failed', 'cancelled', 'archived')",
             name="ck_assistant_sessions_status",
         ),
         Index("ix_assistant_sessions_user_updated", "user_id", "updated_at"),
     )
 
 
-class AssistantEvent(Base):
-    """A single Server-Sent Event emitted by the Plan-Act flow.
+class AssistantMessage(Base):
+    """Canonical chat message for transcript reconstruction.
 
-    `event_type` mirrors the Pydantic event discriminator (Task 2); `payload`
-    stores the full serialized event so the UI can replay it verbatim.
+    Stores user and assistant messages separately from audit events.
+    This is the source of truth for the chat transcript display.
+
+    NOTE: Token streaming events (thought, assistant_delta) are NOT stored.
+    The assistant message content is accumulated in-memory and persisted
+    as a single row when complete.
+    """
+
+    __tablename__ = "assistant_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("assistant_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    client_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    session: Mapped["AssistantSession"] = relationship(back_populates="messages")
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant')",
+            name="ck_assistant_messages_role",
+        ),
+        # Index for fast session message retrieval ordered by time.
+        Index("ix_assistant_messages_session_created", "session_id", "created_at"),
+        # Index for turn-based grouping.
+        Index("ix_assistant_messages_session_turn", "session_id", "turn_id"),
+    )
+
+
+class AssistantEvent(Base):
+    """High-value audit event for the Plan-Act flow.
+
+    Stores tool executions, progress milestones, run completion, and other
+    significant events. Token streaming events (thought, assistant_delta)
+    are NOT persisted - they are transient UX events.
     """
 
     __tablename__ = "assistant_events"
@@ -974,6 +1032,7 @@ class AssistantEvent(Base):
         nullable=False,
         index=True,
     )
+    turn_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -982,10 +1041,10 @@ class AssistantEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('message', 'title', 'iteration', 'thought', 'plan', 'step', 'tool', 'done', 'error', 'wait')",
+            "event_type IN ('title', 'tool', 'progress', 'done', 'error', 'wait', 'message_ack')",
             name="ck_assistant_events_type",
         ),
-        # Composite index for fast history replay ordered by time.
+        # Composite index for fast audit event retrieval ordered by time.
         Index("ix_assistant_events_session_created", "session_id", "created_at"),
     )
 

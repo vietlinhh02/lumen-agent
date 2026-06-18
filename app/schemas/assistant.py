@@ -42,6 +42,15 @@ class SessionTitleUpdate(BaseModel):
     )
 
 
+class SessionProjectUpdate(BaseModel):
+    """Payload for updating a session's project."""
+
+    project_id: UUID | None = Field(
+        ...,
+        description="New project ID to link this session to. Can be null to unlink.",
+    )
+
+
 class SessionSummary(BaseModel):
     """Lightweight session summary for list display."""
 
@@ -113,6 +122,14 @@ class ChatRequest(BaseModel):
         min_length=1,
         max_length=10000,
         description="The user's message to the assistant.",
+    )
+    client_message_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional client-generated ID for deduplication. "
+            "If provided, the backend will emit a message_ack event "
+            "with the canonical ID that maps to this client ID."
+        ),
     )
 
 

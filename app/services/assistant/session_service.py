@@ -4,8 +4,15 @@ This service owns the session lifecycle (create/get/list/delete) and exposes
 `chat()` as an AsyncGenerator[BaseEvent] that:
 1. Builds toolkits with the user's context
 2. Loads ReActAgent scratchpad context if resuming
-3. Runs ReActAgent
-4. Persists every event to the DB
+3. Runs ReActAgent (or AssistantGraph when USE_LANGGRAPH_ASSISTANT=true)
+4. Persists high-value events to the DB
+
+LangGraph Integration (Task 9):
+    When USE_LANGGRAPH_ASSISTANT=true, the service uses AssistantGraph
+    with checkpointing instead of ReActAgent. This provides:
+    - Persistent scratchpad across interruptions
+    - Native LangGraph state management
+    - Reliable wait/resume capability
 
 Usage:
     service = AssistantSessionService(db=db)
@@ -42,11 +49,21 @@ from app.agents.assistant.events import (
     DoneEvent,
     ErrorEvent,
     MessageEvent,
+    TitleEvent,
 )
 from app.agents.assistant.react.agent import ReActAgent, ProjectContext
 from app.agents.assistant.react.memory import Scratchpad
 from app.agents.assistant.tools import get_all_tools, get_all_toolkits
 from app.agents.assistant.tools.context import set_user_context, clear_user_context
+
+# LangGraph integration (Task 9)
+try:
+    from app.agents.assistant.graph.adapter import create_graph_runner, is_graph_enabled
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    LANGGRAPH_AVAILABLE = False
+    def is_graph_enabled() -> bool:
+        return False
 from app.db.models import AssistantEvent as DBAssistantEvent
 from app.db.models import AssistantSession as DBAssistantSession
 from app.db.models import Project
@@ -393,6 +410,16 @@ class AssistantSessionService:
         session.updated_at = datetime.now()
         await self.db.commit()
 
+    async def update_session_project(
+        self,
+        session: DBAssistantSession,
+        project_id: uuid.UUID | None,
+    ) -> None:
+        """Update a session's project."""
+        session.project_id = project_id
+        session.updated_at = datetime.now()
+        await self.db.commit()
+
     # ── Chat Operation ─────────────────────────────────────────────────────────
 
     async def chat(
@@ -515,6 +542,9 @@ class AssistantSessionService:
                 project_context=ProjectContext(
                     project_id=str(session.project_id) if session.project_id else None,
                     user_id=str(user_id),
+                    project_name=session.project.title if session.project else None,
+                    topic=session.project.topic if session.project else None,
+                    research_question=session.project.research_question if session.project else None,
                 ),
             )
 
@@ -564,6 +594,19 @@ class AssistantSessionService:
                 },
             )
 
+            generated_title = message.strip().splitlines()[0] if message.strip() else ""
+            if generated_title and not title_from_history and not session.title:
+                title_from_history = generated_title[:60].rstrip()
+                if title_from_history:
+                    await self.update_session_title(session, title_from_history)
+                    title_event = TitleEvent(title=title_from_history)
+                    await self._persist_event(
+                        session_id=session.id,
+                        event_type="title",
+                        payload=EventMapper.event_to_sse_event(title_event)["data"],
+                    )
+                    yield title_event
+
             # Mark chat as active
             _active_chat_flags[session_id_str] = True
 
@@ -579,18 +622,6 @@ class AssistantSessionService:
                     event_type=event.type,
                     payload=EventMapper.event_to_sse_event(event)["data"],
                 )
-
-                # Auto-generate session title from the first user message.
-                # Only set once per session, and truncate to keep list views tidy.
-                if (
-                    isinstance(event, MessageEvent)
-                    and event.role == "user"
-                    and not title_from_history
-                ):
-                    cleaned = message.strip().splitlines()[0] if message.strip() else ""
-                    title_from_history = cleaned[:60].rstrip()
-                    if title_from_history:
-                        await self.update_session_title(session, title_from_history)
 
                 # Update session status on completion
                 if isinstance(event, DoneEvent):
@@ -641,13 +672,543 @@ class AssistantSessionService:
         logger.info("Stop requested for session %s", session_id)
         return True
 
+    # ── LangGraph Chat (Task 9) ─────────────────────────────────────────────────
+
+    async def chat_with_graph(
+        self,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+        message: str,
+        client_message_id: str | None = None,
+    ) -> AsyncGenerator[BaseEvent, None]:
+        """
+        Run the chat flow using LangGraph-based AssistantGraph.
+
+        This method provides checkpointing for reliable wait/resume:
+        - Scratchpad is persisted in LangGraph state
+        - No need to reconstruct from SQL events on resume
+        - Native LangGraph state management
+
+        Enabled via USE_LANGGRAPH_ASSISTANT=true environment variable.
+
+        Args:
+            session_id: The session ID.
+            user_id: The authenticated user's ID.
+            message: The user's message.
+            client_message_id: Optional client-generated ID for deduplication.
+
+        Yields:
+            BaseEvent: Events from the agent execution.
+        """
+        if not LANGGRAPH_AVAILABLE:
+            logger.warning("LangGraph not available, falling back to chat()")
+            async for event in self.chat(session_id, user_id, message, client_message_id):
+                yield event
+            return
+
+        session_id_str = str(session_id)
+        logger.info("Chat with graph started for session %s", session_id_str)
+
+        # Generate turn_id for this user request
+        turn_id = str(uuid.uuid4())
+
+        # Check for concurrent chat
+        if _active_chat_flags.get(session_id_str, False):
+            yield ErrorEvent(
+                code="SESSION_BUSY",
+                message="A chat is already running on this session.",
+            )
+            yield DoneEvent(summary="Session is busy.")
+            return
+
+        # Load session
+        from sqlalchemy.orm import selectinload
+        from app.db.models import AssistantMessage
+
+        result = await self.db.execute(
+            select(DBAssistantSession)
+            .where(
+                DBAssistantSession.id == session_id,
+                DBAssistantSession.user_id == user_id,
+            )
+            .options(
+                selectinload(DBAssistantSession.project),
+                selectinload(DBAssistantSession.messages),
+                selectinload(DBAssistantSession.events),
+            )
+        )
+        session = result.scalar_one_or_none()
+
+        if session is None:
+            yield ErrorEvent(
+                code="SESSION_NOT_FOUND",
+                message=f"Session {session_id} not found.",
+            )
+            yield DoneEvent(summary="Session not found.")
+            return
+
+        # Get cancellation event
+        cancel_event = _get_cancellation_event(session_id_str)
+
+        try:
+            # Build project context
+            project_context: Dict[str, Any] = {}
+            if session.project:
+                project_context = {
+                    "project_id": str(session.project.id),
+                    "project_name": session.project.title,
+                    "topic": session.project.topic,
+                    "research_question": session.project.research_question,
+                }
+
+            # Get user
+            from app.db.models import User
+            user_result = await self.db.execute(
+                select(User).where(User.id == user_id)
+            )
+            user = user_result.scalar_one_or_none()
+
+            if user is None:
+                yield ErrorEvent(code="USER_NOT_FOUND", message="User not found.")
+                yield DoneEvent(summary="User not found.")
+                return
+
+            # Get tools
+            tools = get_all_tools(
+                user_id=str(user_id),
+                project_id=str(session.project_id) if session.project_id else None,
+                user=user,
+            )
+
+            # Set user context for tools (include tools for graph access)
+            set_user_context(
+                user_id=str(user_id),
+                project_id=str(session.project_id) if session.project_id else None,
+                user=user,
+                tools=tools,
+            )
+
+            # Get provider
+            from app.ai.provider import get_provider
+            provider = get_provider()
+
+            # Check if session was waiting (for resume)
+            resume = False
+            sorted_events = sort_session_events(session.events)
+            if sorted_events:
+                for event in sorted_events[-10:]:
+                    if event.event_type == "wait":
+                        resume = True
+                        break
+
+            # ── Auto-create project if session has none ─────────────────────
+            # Only auto-create for research-related intents (not greetings,
+            # chitchat, or ambiguous messages). Uses IntentClassifier to
+            # check intent BEFORE creating a project.
+            _RESEARCH_INTENTS = {
+                "research_pipeline", "search_only", "matrix_only",
+                "gap_only", "report_only", "qa", "create_project",
+            }
+            auto_created_message: Optional[MessageEvent] = None
+            if session.project_id is None:
+                # Classify intent first to avoid creating projects for greetings
+                from app.agents.assistant.react.intent_classifier import IntentClassifier
+                _classifier = IntentClassifier(provider)
+                try:
+                    _intent = await _classifier.classify(message, project_context or None)
+                    _should_create = _intent.intent in _RESEARCH_INTENTS
+                except Exception as _exc:
+                    logger.warning("Intent pre-check failed, skipping auto-create: %s", _exc)
+                    _should_create = False
+
+                if _should_create:
+                    auto_project = await self._auto_create_project(session, message, user)
+                    if auto_project is not None:
+                        session.project_id = auto_project.id
+                        await self.db.commit()
+                        await self.db.refresh(session, attribute_names=["project"])
+                        # Rebuild project_context with the new project so the
+                        # graph and downstream tools see it.
+                        project_context = {
+                            "project_id": str(auto_project.id),
+                            "project_name": auto_project.title,
+                            "topic": auto_project.topic,
+                            "research_question": auto_project.research_question,
+                        }
+                        # Update user context (tools look up project_id from here)
+                        set_user_context(
+                            user_id=str(user_id),
+                            project_id=str(auto_project.id),
+                            user=user,
+                            tools=tools,
+                        )
+                        logger.info(
+                            "Auto-created project %s for session %s",
+                            auto_project.id,
+                            session_id,
+                        )
+                        # Surface the project creation to the user before the
+                        # pipeline starts so the action is visible in the chat.
+                        auto_created_message = MessageEvent(
+                            role="assistant",
+                            content=(
+                                f"Đã tạo project mới: **{auto_project.title}**. "
+                                "Em sẽ chạy research pipeline với chủ đề này nhé."
+                            ),
+                        )
+
+            # ── Build conversation context (windowed + truncated) ──────────
+            # For long-running sessions the LLM context window would explode
+            # if we passed every prior turn verbatim. _build_conversation_context
+            # keeps the last 8 messages and truncates each to 1200 chars
+            # (matches the legacy ReAct path so behavior is consistent).
+            sorted_events = sort_session_events(session.events)
+            conversation_context = _build_conversation_context(sorted_events)
+            graph_message = message
+            if conversation_context:
+                graph_message = (
+                    "Previous conversation in this session:\n"
+                    f"{conversation_context}\n\n"
+                    "Current user request:\n"
+                    f"{message}"
+                )
+
+            # Create graph runner
+            runner = create_graph_runner(
+                session_id=session.id,
+                user_id=user.id,
+                project_context=project_context,
+                tools=tools,
+                provider=provider,
+            )
+
+            # Save user message
+            canonical_message_id = client_message_id or str(uuid.uuid4())
+            from app.db.models import AssistantMessage
+            user_message = AssistantMessage(
+                session_id=session.id,
+                turn_id=turn_id,
+                role="user",
+                content=message,
+                client_message_id=client_message_id,
+            )
+            self.db.add(user_message)
+            await self.db.flush()  # Flush to get the user_message.id
+            # Also persist event for frontend compatibility
+            await self._persist_event(
+                session_id=session.id,
+                event_type="message",
+                payload={
+                    "id": str(user_message.id),
+                    "type": "message",
+                    "role": "user",
+                    "content": message,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "turn_id": turn_id,
+                },
+                turn_id=turn_id,
+            )
+            await self.db.commit()
+
+            generated_title = message.strip().splitlines()[0] if message.strip() else ""
+            if generated_title and not session.title:
+                title = generated_title[:60].rstrip()
+                if title:
+                    session.title = title
+                    session.updated_at = datetime.now()
+                    await self.db.commit()
+                    title_event = TitleEvent(title=title, turn_id=turn_id)
+                    await self._persist_event(
+                        session_id=session.id,
+                        event_type="title",
+                        payload=EventMapper.event_to_sse_event(title_event)["data"],
+                        turn_id=turn_id,
+                    )
+                    yield title_event
+
+            # Emit ack if client provided ID
+            if client_message_id:
+                from app.agents.assistant.events import MessageAckEvent as MAE
+                yield MAE(
+                    client_message_id=client_message_id,
+                    canonical_id=canonical_message_id,
+                    turn_id=turn_id,
+                )
+
+            # Surface auto-created project (if any) to the user before the
+            # pipeline starts. Persist to DB so it's part of the transcript.
+            if auto_created_message is not None:
+                # Persist as a message row so reload shows the same text
+                acm_row = AssistantMessage(
+                    session_id=session.id,
+                    turn_id=turn_id,
+                    role="assistant",
+                    content=auto_created_message.content,
+                )
+                self.db.add(acm_row)
+                await self.db.flush()
+                # Also persist as a message event for FE compatibility
+                await self._persist_event(
+                    session_id=session.id,
+                    event_type="message",
+                    payload={
+                        "id": str(acm_row.id),
+                        "type": "message",
+                        "role": "assistant",
+                        "content": auto_created_message.content,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "turn_id": turn_id,
+                    },
+                    turn_id=turn_id,
+                )
+                await self.db.commit()
+                yield auto_created_message
+
+            # Mark chat as active
+            _active_chat_flags[session_id_str] = True
+
+            # Track accumulators for assistant message
+            assistant_content = ""
+            assistant_pending = False
+
+            # Run graph
+            async for event in runner.run(
+                graph_message,
+                resume=resume,
+                cancel_event=cancel_event,
+            ):
+                event.turn_id = turn_id
+
+                # Handle assistant delta accumulation
+                from app.agents.assistant.events import AssistantDeltaEvent as ADE
+                if isinstance(event, ADE):
+                    # Accumulate delta content
+                    if event.delta:
+                        assistant_content += event.delta
+                        assistant_pending = True
+                    
+                    # When final delta arrives (is_final=True), persist the message
+                    # regardless of whether this final delta had content
+                    if event.is_final and assistant_pending:
+                        # Yield the final delta FIRST so frontend closes the streaming message
+                        yield event
+
+                        # Persist final assistant message
+                        assistant_msg = AssistantMessage(
+                            session_id=session.id,
+                            turn_id=turn_id,
+                            role="assistant",
+                            content=assistant_content,
+                        )
+                        self.db.add(assistant_msg)
+                        await self.db.flush()  # Flush to get the assistant_msg.id
+                        # Also persist event for frontend compatibility
+                        await self._persist_event(
+                            session_id=session.id,
+                            event_type="message",
+                            payload={
+                                "id": str(assistant_msg.id),
+                                "type": "message",
+                                "role": "assistant",
+                                "content": assistant_content,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "turn_id": turn_id,
+                            },
+                            turn_id=turn_id,
+                        )
+                        await self.db.commit()
+
+                        # Emit MessageEvent to frontend with canonical ID
+                        # so the frontend can replace the streaming message
+                        from app.agents.assistant.events import MessageEvent as ME
+                        yield ME(
+                            id=str(assistant_msg.id),
+                            role="assistant",
+                            content=assistant_content,
+                            turn_id=turn_id,
+                        )
+
+                        assistant_pending = False
+                        assistant_content = ""
+                        continue  # Skip yielding the event again at the bottom
+
+                elif isinstance(event, MessageEvent) and event.role == "assistant":
+                    # Persist direct message events immediately
+                    assistant_msg = AssistantMessage(
+                        session_id=session.id,
+                        turn_id=turn_id,
+                        role="assistant",
+                        content=event.content,
+                    )
+                    self.db.add(assistant_msg)
+                    await self.db.flush()
+                    
+                    event.id = str(assistant_msg.id)
+                    
+                    await self._persist_event(
+                        session_id=session.id,
+                        event_type="message",
+                        payload={
+                            "id": str(assistant_msg.id),
+                            "type": "message",
+                            "role": "assistant",
+                            "content": event.content,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "turn_id": turn_id,
+                        },
+                        turn_id=turn_id,
+                    )
+                    await self.db.commit()
+
+                # Update session status on completion
+                if isinstance(event, DoneEvent):
+                    if event.summary and "cancelled" in event.summary.lower():
+                        session.status = "cancelled"
+                    else:
+                        session.status = "completed"
+                    await self.db.commit()
+
+                yield event
+
+        except asyncio.CancelledError:
+            logger.info("Graph chat cancelled for session %s", session_id)
+            if session:
+                session.status = "cancelled"
+                await self.db.commit()
+            yield ErrorEvent(code="CANCELLED", message="Session was cancelled.")
+            yield DoneEvent(summary="Session cancelled.")
+        except Exception as exc:
+            logger.exception("Graph chat failed for session %s: %s", session_id, exc)
+            if session:
+                session.status = "failed"
+                await self.db.commit()
+            yield ErrorEvent(code="CHAT_FAILED", message=f"Chat failed: {exc}")
+            yield DoneEvent(summary="Chat failed.")
+        finally:
+            _active_chat_flags.pop(session_id_str, None)
+            _clear_cancellation_event(session_id_str)
+            clear_user_context()
+
     # ── Internal Helpers ───────────────────────────────────────────────────────
+
+    async def _auto_create_project(
+        self,
+        session: "DBAssistantSession",
+        message: str,
+        user: "User",
+    ):
+        """Auto-create a Project when a chat session has no project pinned.
+
+        Uses the LLM to analyze the user's message and generate a concise,
+        descriptive project title, a refined research topic, and a research
+        question — instead of naively copying the raw message.
+
+        Falls back to simple text extraction if the LLM call fails.
+
+        Args:
+            session: The chat session.
+            message: The user's first message.
+            user: The authenticated user (becomes project owner).
+
+        Returns:
+            The created Project instance, or None on failure.
+        """
+        from app.schemas.project import ProjectCreate
+        from app.services.project import create_project
+
+        title, topic, research_question = await self._extract_project_metadata(message)
+
+        try:
+            project = await create_project(
+                self.db,
+                user,
+                ProjectCreate(
+                    title=title,
+                    topic=topic,
+                    research_question=research_question,
+                ),
+            )
+            return project
+        except Exception as exc:
+            logger.warning("Auto-create project failed for session %s: %s", session.id, exc)
+            return None
+
+    async def _extract_project_metadata(
+        self,
+        message: str,
+    ) -> tuple[str, str, str | None]:
+        """Use LLM to extract a proper title, topic, and research question.
+
+        Returns:
+            (title, topic, research_question) tuple. research_question may
+            be None if the LLM cannot infer one.
+        """
+        import asyncio
+        from pydantic import BaseModel, Field
+
+        class _ProjectMeta(BaseModel):
+            title: str = Field(
+                description="Short, descriptive project title (max 60 chars). "
+                "NOT the raw user message. Example: 'RAG for Medical QA'.",
+            )
+            topic: str = Field(
+                description="Refined research topic (1-2 sentences). "
+                "Example: 'Retrieval-Augmented Generation applied to medical question answering systems'.",
+            )
+            research_question: str | None = Field(
+                default=None,
+                description="A concrete research question if one can be inferred, else null. "
+                "Example: 'How does RAG improve accuracy in medical QA compared to fine-tuned LLMs?'",
+            )
+
+        system = (
+            "You are a research project metadata extractor. Given a user's "
+            "chat message, produce a concise project title, a refined research "
+            "topic, and an optional research question.\n\n"
+            "Rules:\n"
+            "- Title: max 60 characters, academic style, no quotes.\n"
+            "- Topic: 1-2 clear sentences describing the research area.\n"
+            "- Research question: a focused, answerable question if possible, "
+            "otherwise null.\n"
+            "- ALL output MUST be in English. If the user's input is in another "
+            "language (e.g. Vietnamese), translate and normalize it to English "
+            "to optimize for paper searching.\n"
+            "- Do NOT copy the raw user message verbatim."
+        )
+
+        try:
+            from app.ai.provider import get_provider
+            provider = get_provider()
+
+            result = await asyncio.wait_for(
+                provider.complete_structured(
+                    messages=[{"role": "user", "content": message.strip()}],
+                    schema=_ProjectMeta.model_json_schema(),
+                    tool_name="extract_project_metadata",
+                    system=system,
+                    max_tokens=300,
+                ),
+                timeout=8.0,
+            )
+            meta = _ProjectMeta.model_validate(result)
+            title = (meta.title.strip()[:60] or "Untitled Research").rstrip()
+            topic = (meta.topic.strip() or message.strip())[:512]
+            return title, topic, meta.research_question
+        except Exception as exc:
+            logger.warning("LLM project metadata extraction failed: %s", exc)
+
+        # Fallback: simple extraction
+        first_line = (message.strip().splitlines() or [""])[0].strip()
+        title = (first_line[:60].rstrip()) or "Untitled Research"
+        topic = (message.strip() or title)[:512]
+        return title, topic, None
 
     async def _persist_event(
         self,
         session_id: uuid.UUID,
         event_type: str,
         payload: Dict[str, Any],
+        turn_id: Optional[str] = None,
     ) -> DBAssistantEvent:
         """
         Persist an event to the database.
@@ -656,12 +1217,18 @@ class AssistantSessionService:
             session_id: The session ID.
             event_type: The event type string.
             payload: The serialized event payload.
+            turn_id: The turn ID for grouping events.
 
         Returns:
             The created DBAssistantEvent.
         """
+        # Default turn_id to "initial" if not provided
+        if turn_id is None:
+            turn_id = "initial"
+
         event = DBAssistantEvent(
             session_id=session_id,
+            turn_id=turn_id,
             event_type=event_type,
             payload=payload,
         )
@@ -676,6 +1243,7 @@ class AssistantSessionService:
             session.updated_at = datetime.now()
 
         await self.db.commit()
+        await self.db.refresh(event)
         return event
 
     # ── Event Replay ───────────────────────────────────────────────────────────

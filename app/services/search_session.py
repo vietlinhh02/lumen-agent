@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import select
@@ -170,6 +171,121 @@ async def get_saved_paper_ids(
                 break
 
     return saved
+
+
+async def find_paper_index_in_session(
+    run: SearchRun,
+    *,
+    semantic_scholar_id: str | None = None,
+    doi: str | None = None,
+    arxiv_id: str | None = None,
+    title: str | None = None,
+) -> int:
+    """Find the index of a paper inside ``run.results_json``.
+
+    Tries the strongest identifier first (ss_id → doi → arxiv_id → title).
+    Returns ``-1`` if no match is found.
+    """
+    results = run.results_json or []
+    for i, p in enumerate(results):
+        if semantic_scholar_id and p.get("semantic_scholar_id") == semantic_scholar_id:
+            return i
+    for i, p in enumerate(results):
+        if doi and p.get("doi") == doi:
+            return i
+    for i, p in enumerate(results):
+        if arxiv_id and p.get("arxiv_id") == arxiv_id:
+            return i
+    if title:
+        target = title.strip().lower()
+        for i, p in enumerate(results):
+            if (p.get("title") or "").strip().lower() == target:
+                return i
+    return -1
+
+
+async def download_single_session_paper(
+    db: AsyncSession,
+    user: User,
+    session_id: UUID,
+    *,
+    semantic_scholar_id: str | None = None,
+    doi: str | None = None,
+    arxiv_id: str | None = None,
+    title: str | None = None,
+) -> dict:
+    """Download a single paper's PDF on-demand from a search session.
+
+    Updates ``SearchRun.results_json[index]`` with the new ``pdf_downloaded``,
+    ``pdf_path`` and ``pdf_source`` fields and commits the change so the
+    next GET to the session returns the updated state.
+
+    Returns the updated paper dict.
+    """
+    run = await get_search_session(db, user, session_id)
+    if not run:
+        return {"error": "Session not found"}
+
+    idx = await find_paper_index_in_session(
+        run,
+        semantic_scholar_id=semantic_scholar_id,
+        doi=doi,
+        arxiv_id=arxiv_id,
+        title=title,
+    )
+    if idx < 0:
+        return {"error": "Paper not found in session"}
+
+    paper_dict = (run.results_json or [])[idx]
+    if paper_dict.get("pdf_downloaded") and paper_dict.get("pdf_path"):
+        # Idempotent: already downloaded
+        return {"ok": True, "paper": paper_dict, "index": idx, "already_downloaded": True}
+
+    from app.core.config import get_settings
+    from app.services.paper_search import dict_to_raw_paper
+    from app.services.pdf_downloader import PDFDownloader
+
+    settings = get_settings()
+    raw = dict_to_raw_paper(paper_dict)
+
+    downloader = PDFDownloader(output_dir=Path(settings.paper_pdf_dir), timeout=90)
+    pdf_path = await downloader.download(raw)
+
+    if pdf_path is None:
+        # Download failed — surface reason back to caller
+        from app.services.paper_search import _failure_reason
+
+        return {
+            "ok": False,
+            "paper": paper_dict,
+            "index": idx,
+            "error": _failure_reason(raw),
+        }
+
+    paper_dict["pdf_downloaded"] = True
+    # Store the public URL path (mounted at /api/pdf-files) — matches the
+    # convention used by /projects/{id}/papers so the frontend can render
+    # the PDF directly.
+    paper_dict["pdf_path"] = f"/api/pdf-files/{pdf_path.name}"
+
+    # Best-effort classify the source
+    if raw.arxiv_id:
+        paper_dict["pdf_source"] = "arxiv_cdn"
+    elif raw.source_specific.get("pdf_url"):
+        paper_dict["pdf_source"] = "s2_oa"
+    elif raw.source_specific.get("paperhub_source"):
+        paper_dict["pdf_source"] = str(raw.source_specific["paperhub_source"])
+    else:
+        paper_dict["pdf_source"] = paper_dict.get("pdf_source") or "direct"
+
+    # Persist back into the session
+    results = list(run.results_json or [])
+    results[idx] = paper_dict
+    run.results_json = results
+    await db.commit()
+    await db.refresh(run)
+
+    return {"ok": True, "paper": paper_dict, "index": idx}
 
 
 async def auto_save_high_papers(
@@ -370,6 +486,7 @@ async def get_job_status(
         "status": job.status,
         "progress": job.progress,
         "total": job.total,
+        "progress_json": job.progress_json,
         "result": job.result,
         "error_message": job.error_message,
         "created_at": str(job.created_at),
@@ -459,13 +576,22 @@ async def _run_search_job(
             job.status = "running"
             await bg_db.commit()
 
-            # Run search — always try to download PDFs in parallel so the
-            # user immediately sees which papers are downloadable (sorted to top)
+            # Run search WITHOUT pre-downloading PDFs. The UI shows results
+            # immediately and the user can request a PDF per-paper on demand
+            # (see POST /api/papers/search/sessions/{id}/download-pdf).
+            # We still mark `can_download` on each result from metadata so the
+            # UI can sort / hint which papers are likely downloadable.
             from app.services.paper_search import search_and_download
 
-            search_req = PaperSearchRequest(query=query, limit=limit, download_pdfs=True)
+            search_req = PaperSearchRequest(query=query, limit=limit, download_pdfs=False)
             outcome = await search_and_download(search_req)
             results_dicts = [p.model_dump() for p in outcome.response.papers]
+
+            # Attach a lightweight `can_download` flag derived from metadata
+            # (arxiv_id or open-access pdf_url) — no network calls.
+            from app.services.paper_search import annotate_can_download
+
+            annotate_can_download(results_dicts)
 
             audit_data = outcome.response.language_bias_audit
 

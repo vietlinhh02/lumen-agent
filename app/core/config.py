@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://opencode.ai/zen/go/v1"
     default_model: str = "deepseek-v4-flash"
+    matrix_verifier_model: str = ""
 
     # Embeddings (NVIDIA Nemotron via OpenRouter API)
     openrouter_api_key: str = ""

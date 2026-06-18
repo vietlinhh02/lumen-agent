@@ -377,6 +377,53 @@ def _failure_reason(paper: RawPaper) -> str:
     return "download failed (server error, paywall, or non-PDF response)"
 
 
+def _can_download_from_dict(paper_dict: dict) -> bool:
+    """Return True if a paper dict has any metadata indicating a downloadable PDF.
+
+    Uses only static metadata — no network calls. A paper is considered
+    downloadable if it has an ``arxiv_id`` (always available from arXiv CDN)
+    or a direct open-access PDF URL from Semantic Scholar.
+    """
+    if paper_dict.get("arxiv_id"):
+        return True
+    source_specific = paper_dict.get("source_specific") or {}
+    if source_specific.get("pdf_url"):
+        return True
+    return False
+
+
+def annotate_can_download(papers: list[dict]) -> None:
+    """In-place annotate ``can_download`` on each paper dict.
+
+    The flag is a pure function of static metadata so this is cheap and
+    safe to call after every search.
+    """
+    for p in papers:
+        p["can_download"] = _can_download_from_dict(p)
+
+
+def dict_to_raw_paper(paper_dict: dict) -> RawPaper:
+    """Reconstruct a :class:`RawPaper` from a search result dict.
+
+    Used by the lazy per-paper download endpoint, which receives the
+    paper metadata that was persisted to ``SearchRun.results_json``.
+    """
+    return RawPaper(
+        title=paper_dict.get("title", ""),
+        abstract=paper_dict.get("abstract"),
+        year=paper_dict.get("year"),
+        venue=paper_dict.get("venue"),
+        doi=paper_dict.get("doi"),
+        arxiv_id=paper_dict.get("arxiv_id"),
+        semantic_scholar_id=paper_dict.get("semantic_scholar_id"),
+        url=paper_dict.get("url"),
+        citation_count=paper_dict.get("citation_count"),
+        authors=paper_dict.get("authors") or [],
+        source_name=(paper_dict.get("source_names") or ["paperhub"])[0],
+        source_specific=paper_dict.get("source_specific") or {},
+    )
+
+
 async def _search_sources_parallel(
     source_query_map: dict[str, str],
     limit: int,

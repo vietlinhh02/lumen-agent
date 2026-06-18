@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,6 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import LiteratureMatrixRow, ProjectPaper
 
 logger = logging.getLogger(__name__)
+
+
+def build_content_hash(project_paper_id: UUID, paper_updated_at: datetime | None) -> str:
+    """Build a short content hash for matrix cache invalidation."""
+    updated_at = paper_updated_at.isoformat() if paper_updated_at else "unknown"
+    raw = f"{project_paper_id}:{updated_at}".encode()
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 async def get_existing_paper_ids(
@@ -37,6 +46,7 @@ async def upsert_rows(
         - project_paper_id: UUID
         - research_problem, method, dataset_or_context, key_result,
           limitation, contribution, relevance: str | None
+        - content_hash: str | None
         - extraction_confidence: str ('high', 'medium', 'low')
     """
     if not rows:
@@ -55,6 +65,7 @@ async def upsert_rows(
                 limitation=row.get("limitation"),
                 contribution=row.get("contribution"),
                 relevance=row.get("relevance"),
+                content_hash=row.get("content_hash"),
                 extraction_confidence=row.get("extraction_confidence", "medium"),
                 created_by="ai",
             )
@@ -68,12 +79,23 @@ async def upsert_rows(
                     "limitation": row.get("limitation"),
                     "contribution": row.get("contribution"),
                     "relevance": row.get("relevance"),
+                    "content_hash": row.get("content_hash"),
                     "extraction_confidence": row.get("extraction_confidence", "medium"),
                     "created_by": "ai",
                 },
             )
         )
         await db.execute(stmt)
+
+        # Sync low confidence to ProjectPaper relevance_label
+        if row.get("extraction_confidence") == "low":
+            from sqlalchemy import update
+            update_stmt = (
+                update(ProjectPaper)
+                .where(ProjectPaper.id == row["project_paper_id"])
+                .values(relevance_label="low")
+            )
+            await db.execute(update_stmt)
 
     await db.commit()
     return len(rows)
