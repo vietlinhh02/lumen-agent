@@ -166,10 +166,26 @@ class ResearchPipeline:
                 yield DoneEvent()
                 return
 
+            # ── Stage 3b: Wait for ingest ──────────────────────────────────────
+            yield ProgressEvent(
+                stage="ingest",
+                progress=0.45,
+                message="Waiting for full-text extraction to complete...",
+            )
+
+            ingested_count = await self._wait_for_ingest(saved_ids, timeout=120)
+
+            yield ProgressEvent(
+                stage="ingest",
+                progress=0.55,
+                message=f"Full-text ready for {ingested_count}/{len(saved_ids)} papers",
+                data={"ingested": ingested_count},
+            )
+
             # ── Stage 4: Generate matrix ───────────────────────────────────────
             yield ProgressEvent(
                 stage="matrix",
-                progress=0.45,
+                progress=0.55,
                 message="Generating literature matrix from saved papers...",
             )
 
@@ -267,7 +283,7 @@ class ResearchPipeline:
         from app.services.paper_search import search_and_download
 
         request = PaperSearchRequest(
-            query=self.config.query,
+            query=self.config.query[:500],
             sources=self.config.sources or ["semantic_scholar", "exa"],
             limit=30,
             download_pdfs=False,
@@ -364,6 +380,51 @@ class ResearchPipeline:
             lines.append(f"[{i+1}] Title: {paper.get('title', 'Unknown')}\nAbstract: {abstract}")
         return "\n\n".join(lines)
 
+    async def _wait_for_ingest(self, project_paper_ids: list[str], timeout: int = 120) -> int:
+        """Poll full_text_status until all papers are done or timeout.
+
+        Returns the number of papers that completed ingestion successfully.
+        """
+        from uuid import UUID as PyUUID
+
+        from sqlalchemy import select
+
+        from app.db.models import ProjectPaper
+        from app.db.session import async_session_factory
+
+        terminal_statuses = {"completed", "failed", "no_pdf"}
+        deadline = asyncio.get_event_loop().time() + timeout
+        ids = [PyUUID(pid) for pid in project_paper_ids]
+
+        while asyncio.get_event_loop().time() < deadline:
+            async with async_session_factory() as db:
+                result = await db.execute(
+                    select(ProjectPaper.id, ProjectPaper.full_text_status)
+                    .where(ProjectPaper.id.in_(ids))
+                )
+                rows = result.all()
+
+            statuses = {str(r[0]): r[1] for r in rows}
+            pending = [
+                pid for pid in project_paper_ids
+                if statuses.get(pid) not in terminal_statuses
+            ]
+
+            if not pending:
+                break
+
+            await asyncio.sleep(3)
+
+        # Count completed ones
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(ProjectPaper.id, ProjectPaper.full_text_status)
+                .where(ProjectPaper.id.in_(ids))
+            )
+            rows = result.all()
+
+        return sum(1 for _, status in rows if status == "completed")
+
     async def _save_papers(self, papers: list[dict[str, Any]]) -> list[str]:
         """Save papers to project, return list of project_paper_ids."""
         from uuid import UUID as PyUUID
@@ -380,8 +441,18 @@ class ResearchPipeline:
         pid = PyUUID(self.config.project_id)
         saved_ids: list[str] = []
 
+        # Prioritize arXiv papers first — they download as HTML/MD reliably.
+        # Secondary sort: has any open-access URL, then by citation count desc.
+        def _sort_key(p: dict) -> tuple:
+            has_arxiv = 1 if p.get("arxiv_id") else 0
+            has_url = 1 if (p.get("url") or p.get("doi")) else 0
+            citations = p.get("citation_count") or 0
+            return (-has_arxiv, -has_url, -citations)
+
+        sorted_papers = sorted(papers, key=_sort_key)
+
         async with async_session_factory() as db:
-            for paper in papers[: self.config.max_papers_to_save]:
+            for paper in sorted_papers[: self.config.max_papers_to_save]:
                 try:
                     save_request = SavePaperRequest(
                         paper_title=paper.get("title", ""),
@@ -587,15 +658,22 @@ class ResearchPipeline:
     ) -> str:
         """Build the final summary message."""
         lines = [
-            "## Research Pipeline Complete",
+            "## ✅ Research Pipeline Complete",
             "",
-            f"- Papers found: {papers_found}",
-            f"- Papers saved: {papers_saved}",
-            f"- Matrix rows: {matrix_rows}",
-            f"- Research gaps: {gaps}",
+            f"| | |",
+            f"|---|---|",
+            f"| 📄 Papers found | **{papers_found}** |",
+            f"| 💾 Papers saved to project | **{papers_saved}** |",
+            f"| 🔬 Literature matrix rows | **{matrix_rows}** |",
+            f"| 🔍 Research gaps identified | **{gaps}** |",
         ]
 
         if report_id:
-            lines.append(f"- Report: generated (view at /projects/{self.config.project_id}/report/{report_id})")
+            report_url = f"/projects/{self.config.project_id}/report/{report_id}"
+            lines += [
+                "",
+                f"---",
+                f"📋 **Report ready!** → [View Full Report]({report_url})",
+            ]
 
         return "\n".join(lines)
