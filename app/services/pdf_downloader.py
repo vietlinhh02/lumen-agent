@@ -18,6 +18,7 @@ from paperhub_cli.reader.fetcher import PaperReadError, fetch_paper_by_id
 from app.core.config import get_settings
 from app.sources.base import RawPaper
 from app.sources.paperhub import _configure_paperhub_environment
+from app.services.html_extractor import fetch_arxiv_html, fetch_europepmc_xml
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,33 @@ class PDFDownloader:
 
     async def download(self, paper: RawPaper) -> Path | None:
         """Download the PDF for *paper*, return local file path or None."""
+        # First try to extract HTML/XML if IDs are available
+        if paper.arxiv_id:
+            safe_arxiv = paper.arxiv_id.replace("/", "_")
+            dest_md = self._dir / f"{safe_arxiv}.md"
+            if dest_md.exists():
+                return dest_md
+                
+            text = await fetch_arxiv_html(paper.arxiv_id)
+            if text:
+                dest_md.write_text(text, encoding='utf-8')
+                logger.info(f"Extracted arXiv HTML to: {dest_md} ({len(text)} chars)")
+                return dest_md
+
+        pmc_id = paper.source_specific.get("pmc_id") if paper.source_specific else None
+        if pmc_id:
+            safe_pmc = pmc_id.replace("/", "_")
+            dest_md = self._dir / f"{safe_pmc}.md"
+            if dest_md.exists():
+                return dest_md
+                
+            text = await fetch_europepmc_xml(pmc_id)
+            if text:
+                dest_md.write_text(text, encoding='utf-8')
+                logger.info(f"Extracted Europe PMC XML to: {dest_md} ({len(text)} chars)")
+                return dest_md
+                
+        # 2. Fallback to PDF download
         pdf_url = await self.resolve_pdf_url(paper)
         if not pdf_url:
             return None
@@ -130,7 +158,10 @@ class PDFDownloader:
 def _make_filename(paper: RawPaper) -> str:
     """Build a safe, unique filename from paper metadata."""
     if paper.arxiv_id:
-        return f"{paper.arxiv_id}.pdf"
+        # Sanitize: old-style arXiv IDs like 'gr-qc/0204022' contain a slash
+        # which would create a subdirectory. Replace with underscore.
+        safe_id = paper.arxiv_id.replace("/", "_")
+        return f"{safe_id}.pdf"
 
     # Fall back to a hash of title
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", paper.title.strip().lower())[:80]
