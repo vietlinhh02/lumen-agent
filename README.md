@@ -1,5 +1,9 @@
 # Lumen - AI Literature Review Assistant
 
+![PRs Merged](https://img.shields.io/badge/PRs_Merged-%E2%89%A510-brightgreen)
+
+**🎥 [Watch the MVP Demo Video](https://youtu.be/uNt316BZaY8)**
+
 Lumen is a research workflow assistant for building citation-safe literature
 reviews. It helps a researcher create projects, search and save papers, extract
 structured evidence, generate a literature matrix, identify research gaps and
@@ -139,6 +143,15 @@ Check the API:
 ```bash
 curl http://localhost:8010/api/health
 ```
+
+## Sample Queries
+
+Here are a few sample queries you can use in the system to search for papers:
+- "Machine learning applications in early stage cancer detection"
+- "Impact of microplastics on marine ecosystems"
+- "Advancements in solid-state battery technology for EVs"
+- "Effectiveness of cognitive behavioral therapy for remote workers"
+- "Optimization algorithms for supply chain management post-pandemic"
 
 ## Quality Checks
 
