@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -41,7 +42,13 @@ def _make_chunk(
     )
 
 
-def _make_project_paper(pp_id=None, title="Test Paper", abstract="Test abstract"):
+def _make_project_paper(
+    pp_id=None,
+    title="Test Paper",
+    abstract="Test abstract",
+    updated_at: datetime | None = None,
+    matrix_row=None,
+):
     pp = SimpleNamespace()
     pp.id = pp_id or uuid4()
     pp.status = "saved"
@@ -51,6 +58,8 @@ def _make_project_paper(pp_id=None, title="Test Paper", abstract="Test abstract"
     pp.paper.authors = ["Author A"]
     pp.paper.year = 2024
     pp.paper.venue = "Test Venue"
+    pp.paper.updated_at = updated_at or datetime.now(UTC)
+    pp.matrix_row = matrix_row
     return pp
 
 
@@ -199,6 +208,260 @@ async def test_matrix_extraction_with_chunks():
     assert len(result["matrix_rows"]) == 1
     assert result["matrix_rows"][0]["project_paper_id"] == str(pp_id)
     assert "Dense retrieval" in result["matrix_rows"][0]["method"]
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_reports_progress_per_processed_paper():
+    pp_id_1 = uuid4()
+    pp_id_2 = uuid4()
+    state = _make_state()
+    db = _mock_db_with_papers(
+        [
+            _make_project_paper(pp_id=pp_id_1, title="Paper A"),
+            _make_project_paper(pp_id=pp_id_2, title="Paper B"),
+        ]
+    )
+    progress_updates: list[tuple[int, int, str]] = []
+
+    async def _record_progress(processed: int, total: int, current: str) -> None:
+        progress_updates.append((processed, total, current))
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_paper_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.literature_matrix.upsert_rows",
+            new_callable=AsyncMock,
+            return_value=2,
+        ),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "research_problem": "Medical QA accuracy",
+            "method": "Dense retrieval with BERT",
+            "dataset_or_context": "PubMedQA",
+            "key_result": "Improved accuracy by 5%",
+            "limitation": "English only",
+            "contribution": "Novel RAG pipeline",
+            "relevance": "Directly relevant",
+            "confidence": "high",
+        }
+
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await matrix_extraction_node(
+                state,
+                db,
+                progress_callback=_record_progress,
+            )
+
+    assert result["matrix_status"] == "completed"
+    assert [update[0] for update in progress_updates] == [1, 2]
+    assert all(update[1] == 2 for update in progress_updates)
+    assert {update[2] for update in progress_updates} == {"Paper A", "Paper B"}
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_skips_unchanged_cached_rows():
+    from app.services.literature_matrix import build_content_hash
+
+    pp_id = uuid4()
+    updated_at = datetime(2026, 6, 18, tzinfo=UTC)
+    cached_hash = build_content_hash(pp_id, updated_at)
+    cached_row = SimpleNamespace(content_hash=cached_hash)
+    state = _make_state()
+    db = _mock_db_with_papers(
+        [
+            _make_project_paper(
+                pp_id=pp_id,
+                title="Cached Paper",
+                updated_at=updated_at,
+                matrix_row=cached_row,
+            )
+        ]
+    )
+    progress_updates: list[tuple[int, int, str]] = []
+
+    async def _record_progress(processed: int, total: int, current: str) -> None:
+        progress_updates.append((processed, total, current))
+
+    with (
+        patch("app.agents.nodes.retrieve_paper_evidence", new_callable=AsyncMock) as mock_retrieve,
+        patch("app.services.literature_matrix.upsert_rows", new_callable=AsyncMock) as mock_upsert,
+        patch("app.agents.nodes.get_provider") as mock_get_provider,
+    ):
+        result = await matrix_extraction_node(
+            state,
+            db,
+            progress_callback=_record_progress,
+        )
+
+    mock_retrieve.assert_not_called()
+    mock_upsert.assert_not_called()
+    mock_get_provider.assert_not_called()
+    assert result["matrix_status"] == "completed"
+    assert result["matrix_rows"] == []
+    assert progress_updates == [(1, 1, "Cached Paper")]
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_reextracts_when_content_hash_changes():
+    from app.services.literature_matrix import build_content_hash
+
+    pp_id = uuid4()
+    old_updated_at = datetime(2026, 6, 17, tzinfo=UTC)
+    new_updated_at = datetime(2026, 6, 18, tzinfo=UTC)
+    cached_row = SimpleNamespace(content_hash=build_content_hash(pp_id, old_updated_at))
+    state = _make_state()
+    db = _mock_db_with_papers(
+        [
+            _make_project_paper(
+                pp_id=pp_id,
+                title="Updated Paper",
+                updated_at=new_updated_at,
+                matrix_row=cached_row,
+            )
+        ]
+    )
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_paper_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.literature_matrix.upsert_rows",
+            new_callable=AsyncMock,
+            return_value=1,
+        ) as mock_upsert,
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.complete_structured.return_value = {
+            "research_problem": "Updated problem",
+            "method": "Updated method",
+            "dataset_or_context": "Updated context",
+            "key_result": "Updated result",
+            "limitation": "Updated limitation",
+            "contribution": "Updated contribution",
+            "relevance": "Updated relevance",
+            "confidence": "high",
+        }
+
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+            result = await matrix_extraction_node(state, db)
+
+    upsert_call = mock_upsert.await_args
+    assert upsert_call is not None
+    upsert_rows = upsert_call.args[2]
+    assert upsert_rows[0]["content_hash"] == build_content_hash(pp_id, new_updated_at)
+    assert result["matrix_status"] == "completed"
+    assert len(result["matrix_rows"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_verifier_can_adjust_primary_result():
+    pp_id = uuid4()
+    state = _make_state()
+    db = _mock_db_with_papers([_make_project_paper(pp_id=pp_id, title="Verifier Paper")])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_paper_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.literature_matrix.upsert_rows",
+            new_callable=AsyncMock,
+            return_value=1,
+        ),
+    ):
+        primary_provider = AsyncMock()
+        primary_provider.complete_structured.return_value = {
+            "research_problem": "Primary problem",
+            "method": "Primary method",
+            "dataset_or_context": "Primary context",
+            "key_result": "Primary result",
+            "limitation": "Primary limitation",
+            "contribution": "Primary contribution",
+            "relevance": "Primary relevance",
+            "confidence": "high",
+        }
+        verifier_provider = AsyncMock()
+        verifier_provider.complete_structured.return_value = {
+            "research_problem": "Verified problem",
+            "method": "Verified method",
+            "dataset_or_context": "Verified context",
+            "key_result": "Verified result",
+            "limitation": "Verified limitation",
+            "contribution": "Verified contribution",
+            "relevance": "Verified relevance",
+            "confidence": "high",
+        }
+
+        with (
+            patch("app.agents.nodes.get_provider", return_value=primary_provider),
+            patch(
+                "app.agents.nodes.get_matrix_verifier_provider",
+                return_value=verifier_provider,
+            ),
+        ):
+            result = await matrix_extraction_node(state, db)
+
+    row = result["matrix_rows"][0]
+    assert row["method"] == "Verified method"
+    assert row["key_result"] == "Verified result"
+    assert row["extraction_confidence"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_verifier_failure_falls_back_to_primary():
+    pp_id = uuid4()
+    state = _make_state()
+    db = _mock_db_with_papers([_make_project_paper(pp_id=pp_id, title="Fallback Paper")])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_paper_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.literature_matrix.upsert_rows",
+            new_callable=AsyncMock,
+            return_value=1,
+        ),
+    ):
+        primary_provider = AsyncMock()
+        primary_provider.complete_structured.return_value = {
+            "research_problem": "Primary problem",
+            "method": "Primary method",
+            "dataset_or_context": "Primary context",
+            "key_result": "Primary result",
+            "limitation": "Primary limitation",
+            "contribution": "Primary contribution",
+            "relevance": "Primary relevance",
+            "confidence": "high",
+        }
+        verifier_provider = AsyncMock()
+        verifier_provider.complete_structured.side_effect = Exception("Verifier timeout")
+
+        with (
+            patch("app.agents.nodes.get_provider", return_value=primary_provider),
+            patch(
+                "app.agents.nodes.get_matrix_verifier_provider",
+                return_value=verifier_provider,
+            ),
+        ):
+            result = await matrix_extraction_node(state, db)
+
+    row = result["matrix_rows"][0]
+    assert row["method"] == "Primary method"
+    assert row["key_result"] == "Primary result"
+    assert row["extraction_confidence"] == "high"
 
 
 @pytest.mark.asyncio

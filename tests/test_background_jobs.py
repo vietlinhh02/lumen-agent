@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.db.models import User
-from app.services.search_session import get_saved_paper_ids
+from app.services.search_session import get_job_status, get_saved_paper_ids
 
 # ── get_saved_paper_ids batch query tests ────────────────────────────────────
 
@@ -133,6 +133,40 @@ async def test_auto_save_no_high_papers():
     )
     assert result["saved"] == 0
     assert result["skipped"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_job_status_includes_progress_json():
+    user = cast(User, SimpleNamespace(id=uuid4()))
+    job_id = uuid4()
+    job = SimpleNamespace(
+        id=job_id,
+        job_type="matrix_generate",
+        status="running",
+        progress=3,
+        total=10,
+        progress_json={"processed": 3, "total": 10, "current": "Paper C"},
+        result={},
+        error_message=None,
+        created_at="2026-06-18T00:00:00",
+        completed_at=None,
+        user_id=user.id,
+    )
+
+    db = AsyncMock()
+    db.execute = AsyncMock(
+        return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=job))
+    )
+
+    result = await get_job_status(db, user, job_id)
+
+    assert result is not None
+    assert result["progress"] == 3
+    assert result["progress_json"] == {
+        "processed": 3,
+        "total": 10,
+        "current": "Paper C",
+    }
 
 
 @pytest.mark.asyncio

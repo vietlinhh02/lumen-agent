@@ -1,4 +1,4 @@
-"""Tests for RAG-aware review_writer_node."""
+"""Tests for RAG-aware review_writer_node and report generation helpers."""
 
 from __future__ import annotations
 
@@ -11,16 +11,26 @@ import pytest
 from app.agents.nodes import review_writer_node
 from app.agents.state import ResearchState
 from app.services.hybrid_retrieval import RetrievedChunk
-from app.services.report_generation import _build_review_retrieval_query
+from app.services.report_generation import (
+    _build_review_retrieval_query,
+    _plan_sections,
+    _retrieve_multi_angle,
+)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_chunk(project_paper_id=None, section_label="method", chunk_text="We used BERT."):
+def _make_chunk(
+    project_paper_id=None,
+    section_label="method",
+    chunk_text="We used BERT.",
+    chunk_id=None,
+    score=0.8,
+):
     return RetrievedChunk(
         project_paper_id=project_paper_id or uuid4(),
         paper_id=uuid4(),
-        chunk_id=uuid4(),
+        chunk_id=chunk_id or uuid4(),
         title="Test Paper",
         chunk_text=chunk_text,
         section_label=section_label,
@@ -30,7 +40,7 @@ def _make_chunk(project_paper_id=None, section_label="method", chunk_text="We us
         page_start=1,
         page_end=2,
         content_hash=None,
-        score=0.8,
+        score=score,
         keyword_score=0.4,
         vector_score=0.4,
     )
@@ -122,6 +132,114 @@ def test_review_retrieval_query_uses_matrix_gap_and_conflict_terms():
     assert "Low-resource language gap" in query
     assert "Reranking disagreement" in query
     assert "Reranking reduces recall" in query
+
+
+@pytest.mark.asyncio
+async def test_retrieve_multi_angle_keeps_broad_query_and_dedupes():
+    pp_id = uuid4()
+    rows = [_make_matrix_row(pp_id=pp_id, method="Graph RAG", dataset="Clinical QA")]
+    gaps = [
+        {
+            "title": "Low-resource gap",
+            "description": "Vietnamese benchmarks are missing",
+            "suggested_direction": "Build multilingual evaluation sets",
+            "evidence_summary": "Most papers evaluate only English corpora.",
+        }
+    ]
+    conflicts = [
+        {
+            "title": "Retriever disagreement",
+            "shared_context": "same QA benchmark",
+            "claim_a": "Dense retrieval improves answer grounding",
+            "claim_b": "Dense retrieval hurts recall",
+            "possible_explanation": "Different chunking and scoring settings",
+        }
+    ]
+    broad_query = _build_review_retrieval_query(
+        "RAG for medical QA",
+        "How does retrieval improve clinical answers?",
+        rows,
+        gaps,
+        conflicts,
+    )
+    duplicate_chunk_id = uuid4()
+    broad_chunk = _make_chunk(
+        project_paper_id=pp_id,
+        chunk_text="Broad evidence",
+        chunk_id=duplicate_chunk_id,
+        score=0.7,
+    )
+    angle_chunk = _make_chunk(
+        project_paper_id=pp_id,
+        chunk_text="Method evidence",
+        score=0.9,
+    )
+    extra_chunk = _make_chunk(
+        project_paper_id=pp_id,
+        chunk_text="Dataset evidence",
+        score=0.8,
+    )
+    seen_queries: list[str] = []
+
+    async def _fake_retrieve(_db, _project_id, query, limit):
+        assert limit == 15
+        seen_queries.append(query)
+        if query == broad_query:
+            return [broad_chunk]
+        if "methodology comparison framework evaluation metrics" in query:
+            return [broad_chunk, angle_chunk]
+        if "dataset benchmark performance results ablation" in query:
+            return [extra_chunk]
+        return []
+
+    with patch(
+        "app.services.report_generation.retrieve_project_evidence",
+        new=AsyncMock(side_effect=_fake_retrieve),
+    ):
+        chunks = await _retrieve_multi_angle(
+            AsyncMock(),
+            uuid4(),
+            "RAG for medical QA",
+            "How does retrieval improve clinical answers?",
+            rows,
+            gaps,
+            conflicts,
+        )
+
+    assert seen_queries[0] == broad_query
+    assert any("methodology comparison framework evaluation metrics" in q for q in seen_queries)
+    assert any("dataset benchmark performance results ablation" in q for q in seen_queries)
+    assert [chunk.chunk_text for chunk in chunks] == [
+        "Method evidence",
+        "Dataset evidence",
+        "Broad evidence",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_plan_sections_rejects_thin_plan():
+    mock_provider = AsyncMock()
+    mock_provider.complete_structured.return_value = {
+        "sections": [
+            {
+                "heading": "Methods",
+                "theme": "Compare retrieval pipelines.",
+                "focus_paper_ids": [str(uuid4())],
+                "key_angles": ["methodology"],
+            }
+        ]
+    }
+
+    result = await _plan_sections(
+        "RAG for medical QA",
+        "How does retrieval improve clinical answers?",
+        [{"project_paper_id": str(uuid4()), "method": "Graph RAG"}],
+        [],
+        [],
+        mock_provider,
+    )
+
+    assert result == []
 
 
 @pytest.mark.asyncio

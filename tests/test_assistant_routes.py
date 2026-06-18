@@ -450,6 +450,156 @@ class TestChatEndpoint:
 
             assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
 
+    @pytest.mark.asyncio
+    async def test_chat_does_not_replay_persisted_events(self):
+        """
+        Regression test: POST /sessions/{id}/chat should NOT replay history.
+        
+        When sending a second message to an existing session, only live events
+        for that turn should be streamed. Old persisted events must NOT be
+        replayed in the SSE stream to prevent:
+        - Duplicate messages in the UI
+        - Old events being re-appended during a new stream
+        - Flickering and message-count jumps
+        
+        History loading is handled by GET /sessions/{id} only.
+        """
+        from app.schemas.assistant import ChatRequest
+        from app.agents.assistant.events import DoneEvent
+
+        user = MockUser()
+        session_id = uuid.uuid4()
+        mock_session = MockAssistantSession(id=session_id, user_id=user.id)
+
+        # Track whether get_persisted_events was called
+        persisted_events_called = False
+        
+        async def mock_chat_generator(*args, **kwargs):
+            """Mock async generator for service.chat()."""
+            # Only yield one DoneEvent for the new message
+            yield DoneEvent(summary="Second response only")
+
+        def create_mock_service(db=None):
+            """Create a mock service instance."""
+            nonlocal persisted_events_called
+            service = MagicMock()
+            service.get_session = AsyncMock(return_value=mock_session)
+            service.chat = mock_chat_generator
+            # Track if get_persisted_events is called
+            def track_persisted():
+                nonlocal persisted_events_called
+                persisted_events_called = True
+                return []
+            service.get_persisted_events = track_persisted
+            return service
+
+        # Patch the service class to return our mock service
+        with patch(
+            "app.routers.assistant.AssistantSessionService",
+            side_effect=create_mock_service
+        ) as mock_service_class:
+            # Import and call chat endpoint
+            from app.routers.assistant import chat
+            
+            response = await chat(
+                session_id=session_id,
+                body=ChatRequest(message="Second message"),
+                db=MockSession(),
+                user=user,
+            )
+
+            # Collect all events from the SSE stream body
+            streamed_events = []
+            async for event in response.body_iterator:
+                # EventSourceResponse yields dicts with 'event' and 'data' keys
+                if isinstance(event, dict) and 'event' in event:
+                    streamed_events.append(event)
+
+            # Should only have the new live event, NOT replayed history
+            assert len(streamed_events) == 1, (
+                f"Expected 1 live event, got {len(streamed_events)}. "
+                f"Persisted events are being replayed in the POST stream!"
+            )
+            assert streamed_events[0]['event'] == 'done', (
+                f"Expected 'done' event, got '{streamed_events[0]['event']}'"
+            )
+
+            # CRITICAL: Verify get_persisted_events was NOT called
+            # This is the main assertion for this regression test
+            assert not persisted_events_called, (
+                "get_persisted_events should NOT be called in POST chat endpoint. "
+                "History replay has not been removed!"
+            )
+
+            # Verify service.chat was called
+            mock_service_class.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_chat_accepts_client_message_id(self):
+        """
+        Test that ChatRequest accepts client_message_id for deduplication.
+        
+        The client can send a client-generated message ID to:
+        1. Track optimistic messages
+        2. Receive a message_ack with the canonical ID
+        3. Replace the optimistic message with the canonical one
+        """
+        from app.schemas.assistant import ChatRequest
+
+        # Valid request with client_message_id
+        request = ChatRequest(
+            message="Hello, assistant!",
+            client_message_id="client-123-abc"
+        )
+        assert request.message == "Hello, assistant!"
+        assert request.client_message_id == "client-123-abc"
+
+        # Valid request without client_message_id (backward compatible)
+        request_no_id = ChatRequest(message="Hello!")
+        assert request_no_id.message == "Hello!"
+        assert request_no_id.client_message_id is None
+
+    @pytest.mark.asyncio
+    async def test_message_ack_event_has_required_fields(self):
+        """
+        Test that MessageAckEvent has all required fields for deduplication.
+        """
+        from app.agents.assistant.events import MessageAckEvent
+
+        ack = MessageAckEvent(
+            client_message_id="client-123",
+            canonical_id="canonical-456",
+            turn_id="turn-789",
+        )
+        
+        assert ack.client_message_id == "client-123"
+        assert ack.canonical_id == "canonical-456"
+        assert ack.turn_id == "turn-789"
+        assert ack.type == "message_ack"
+        assert ack.id is not None  # Auto-generated
+        assert ack.timestamp is not None  # Auto-generated
+
+    @pytest.mark.asyncio
+    async def test_base_event_has_turn_id(self):
+        """
+        Test that BaseEvent includes turn_id field.
+        
+        All events for a single user request share the same turn_id.
+        """
+        from app.agents.assistant.events import BaseEvent, MessageEvent
+
+        # MessageEvent should accept turn_id
+        msg = MessageEvent(
+            role="user",
+            content="Hello",
+            turn_id="turn-123",
+        )
+        assert msg.turn_id == "turn-123"
+
+        # turn_id should be optional for backward compatibility
+        msg_no_turn = MessageEvent(role="assistant", content="Hi there")
+        assert msg_no_turn.turn_id is None
+
 
 # ── Tests: Stop Endpoint ───────────────────────────────────────────────────────
 
