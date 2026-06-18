@@ -18,10 +18,9 @@ from app.agents.assistant.events import (
     AssistantEvent,
     DoneEvent,
     ErrorEvent,
+    IterationEvent,
     MessageEvent,
-    PlanEvent,
-    PlanStep,
-    StepEvent,
+    ThoughtEvent,
     TitleEvent,
     ToolEvent,
     WaitEvent,
@@ -79,92 +78,6 @@ class TestTitleEvent:
         json_str = original.model_dump_json()
         restored = TitleEvent.model_validate_json(json_str)
         assert restored.title == original.title
-
-
-class TestPlanEvent:
-    """Tests for PlanEvent."""
-
-    def test_create_plan_event(self):
-        """Can create a PlanEvent with steps."""
-        steps = [
-            PlanStep(
-                id="step-1",
-                description="Search for papers",
-                expected_tool="search_papers",
-            ),
-            PlanStep(
-                id="step-2",
-                description="Save papers to project",
-                expected_tool="save_paper_to_project",
-            ),
-        ]
-        event = PlanEvent(
-            plan_id="plan-123",
-            title="Research Plan",
-            language="en",
-            steps=steps,
-        )
-        assert event.plan_id == "plan-123"
-        assert event.title == "Research Plan"
-        assert len(event.steps) == 2
-        assert event.steps[0].expected_tool == "search_papers"
-
-    def test_plan_event_from_steps_factory(self):
-        """PlanEvent.from_steps creates event correctly."""
-        steps = [
-            PlanStep(id="s1", description="Do thing", expected_tool="tool_a"),
-        ]
-        event = PlanEvent.from_steps(
-            plan_id="p-1",
-            title="Test Plan",
-            language="en",
-            steps=steps,
-        )
-        assert event.plan_id == "p-1"
-        assert event.language == "en"
-
-    def test_plan_event_roundtrip(self):
-        """PlanEvent serializes and deserializes correctly."""
-        steps = [
-            PlanStep(
-                id="step-1",
-                description="Search papers",
-                expected_tool="search_papers",
-            ),
-        ]
-        original = PlanEvent(
-            plan_id="plan-456",
-            title="Paper Search",
-            steps=steps,
-        )
-        json_str = original.model_dump_json()
-        restored = PlanEvent.model_validate_json(json_str)
-        assert restored.plan_id == original.plan_id
-        assert len(restored.steps) == 1
-
-
-class TestStepEvent:
-    """Tests for StepEvent."""
-
-    def test_create_step_event(self):
-        """Can create a StepEvent."""
-        event = StepEvent(
-            step_id="step-1",
-            description="Running search",
-            status="running",
-        )
-        assert event.step_id == "step-1"
-        assert event.status == "running"
-
-    def test_step_event_statuses(self):
-        """StepEvent accepts all valid statuses."""
-        for status in ["pending", "running", "completed", "failed"]:
-            event = StepEvent(
-                step_id=f"step-{status}",
-                description=f"Step {status}",
-                status=status,
-            )
-            assert event.status == status
 
 
 class TestToolEvent:
@@ -313,6 +226,96 @@ class TestWaitEvent:
         assert restored.options == original.options
 
 
+class TestThoughtEvent:
+    """Tests for ThoughtEvent (ReAct chain-of-thought streaming)."""
+
+    def test_create_thought_event(self):
+        """Can create a ThoughtEvent with required fields."""
+        event = ThoughtEvent(delta="I need to search for ", iteration=1)
+        assert event.delta == "I need to search for "
+        assert event.iteration == 1
+        assert event.type == "thought"
+        assert event.is_final is False
+
+    def test_thought_event_is_final(self):
+        """ThoughtEvent.is_final flag is preserved."""
+        event = ThoughtEvent(delta="done", iteration=2, is_final=True)
+        assert event.is_final is True
+
+    def test_thought_event_requires_delta(self):
+        """ThoughtEvent.delta is required."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ThoughtEvent(iteration=1)  # type: ignore[call-arg]
+
+    def test_thought_event_requires_iteration(self):
+        """ThoughtEvent.iteration is required."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ThoughtEvent(delta="hello")  # type: ignore[call-arg]
+
+    def test_thought_event_roundtrip(self):
+        """ThoughtEvent serializes and deserializes correctly."""
+        original = ThoughtEvent(delta="next chunk", iteration=3, is_final=True)
+        json_str = original.model_dump_json()
+        restored = ThoughtEvent.model_validate_json(json_str)
+        assert restored.id == original.id
+        assert restored.delta == original.delta
+        assert restored.iteration == original.iteration
+        assert restored.is_final == original.is_final
+        assert restored.type == "thought"
+
+    def test_thought_event_iteration_must_be_non_negative(self):
+        """ThoughtEvent.iteration cannot be negative."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ThoughtEvent(delta="x", iteration=-1)
+
+
+class TestIterationEvent:
+    """Tests for IterationEvent (ReAct iteration phase marker)."""
+
+    def test_create_iteration_event_reasoning(self):
+        """Can create an IterationEvent for the reasoning phase."""
+        event = IterationEvent(n=1, max=15, phase="reasoning")
+        assert event.n == 1
+        assert event.max == 15
+        assert event.phase == "reasoning"
+        assert event.type == "iteration"
+
+    def test_create_iteration_event_acting(self):
+        """Can create an IterationEvent for the acting phase."""
+        event = IterationEvent(n=2, max=15, phase="acting")
+        assert event.phase == "acting"
+
+    def test_iteration_event_invalid_phase(self):
+        """IterationEvent.phase rejects values other than reasoning/acting."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            IterationEvent(n=1, max=15, phase="done")  # type: ignore[arg-type]
+
+    def test_iteration_event_max_must_be_positive(self):
+        """IterationEvent.max must be >= 1."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            IterationEvent(n=0, max=0, phase="reasoning")
+
+    def test_iteration_event_roundtrip(self):
+        """IterationEvent serializes and deserializes correctly."""
+        original = IterationEvent(n=4, max=15, phase="acting")
+        json_str = original.model_dump_json()
+        restored = IterationEvent.model_validate_json(json_str)
+        assert restored.n == original.n
+        assert restored.max == original.max
+        assert restored.phase == original.phase
+        assert restored.type == "iteration"
+
+
 class TestEventMapper:
     """Tests for EventMapper."""
 
@@ -328,18 +331,6 @@ class TestEventMapper:
         assert result["data"]["content"] == "Test message"
         assert "id" in result["data"]
         assert "timestamp" in result["data"]
-
-    def test_event_to_sse_event_plan(self):
-        """event_to_sse_event returns correct shape for PlanEvent."""
-        steps = [
-            PlanStep(id="s1", description="Do thing", expected_tool="tool"),
-        ]
-        event = PlanEvent(plan_id="p-1", title="Plan", steps=steps)
-        result = EventMapper.event_to_sse_event(event)
-        assert result["event"] == "plan"
-        assert result["data"]["type"] == "plan"
-        assert result["data"]["plan_id"] == "p-1"
-        assert len(result["data"]["steps"]) == 1
 
     def test_event_to_sse_event_done(self):
         """event_to_sse_event returns correct shape for DoneEvent."""
@@ -372,6 +363,26 @@ class TestEventMapper:
         assert result["data"]["tool_call_id"] == "c1"
         assert result["data"]["status"] == "calling"
 
+    def test_event_to_sse_event_thought(self):
+        """event_to_sse_event returns correct shape for ThoughtEvent."""
+        event = ThoughtEvent(delta="hello ", iteration=1)
+        result = EventMapper.event_to_sse_event(event)
+        assert result["event"] == "thought"
+        assert result["data"]["type"] == "thought"
+        assert result["data"]["delta"] == "hello "
+        assert result["data"]["iteration"] == 1
+        assert result["data"]["is_final"] is False
+
+    def test_event_to_sse_event_iteration(self):
+        """event_to_sse_event returns correct shape for IterationEvent."""
+        event = IterationEvent(n=2, max=15, phase="acting")
+        result = EventMapper.event_to_sse_event(event)
+        assert result["event"] == "iteration"
+        assert result["data"]["type"] == "iteration"
+        assert result["data"]["n"] == 2
+        assert result["data"]["max"] == 15
+        assert result["data"]["phase"] == "acting"
+
     def test_events_to_sse_events(self):
         """events_to_sse_events converts list correctly."""
         events = [
@@ -395,24 +406,6 @@ class TestEventMapper:
         assert isinstance(event, MessageEvent)
         assert event.role == "assistant"
         assert event.content == "Response"
-
-    def test_parse_event_plan(self):
-        """parse_event reconstructs PlanEvent correctly."""
-        data = {
-            "id": "evt-456",
-            "timestamp": datetime.now(UTC).isoformat(),
-            "plan_id": "plan-1",
-            "title": "My Plan",
-            "language": "en",
-            "steps": [
-                {"id": "s1", "description": "Step 1", "expected_tool": "tool_a"}
-            ],
-            "type": "plan",
-        }
-        event = EventMapper.parse_event("plan", data)
-        assert isinstance(event, PlanEvent)
-        assert event.plan_id == "plan-1"
-        assert len(event.steps) == 1
 
     def test_parse_event_unknown_type_raises(self):
         """parse_event raises ValueError for unknown event type."""
@@ -457,8 +450,6 @@ class TestEventDiscrimination:
         events: list[AssistantEvent] = [
             MessageEvent(role="user", content="Hi"),
             TitleEvent(title="Session"),
-            PlanEvent(plan_id="p1", title="Plan", steps=[]),
-            StepEvent(step_id="s1", description="Step", status="running"),
             ToolEvent(
                 tool_call_id="c1",
                 name="tool",
@@ -469,18 +460,20 @@ class TestEventDiscrimination:
             DoneEvent(),
             ErrorEvent(code="E", message="Error"),
             WaitEvent(question="What?"),
+            ThoughtEvent(delta="thinking", iteration=1),
+            IterationEvent(n=1, max=15, phase="reasoning"),
         ]
         assert len(events) == 8
         types = {e.type for e in events}
         assert types == {
             "message",
             "title",
-            "plan",
-            "step",
             "tool",
             "done",
             "error",
             "wait",
+            "thought",
+            "iteration",
         }
 
 
@@ -495,18 +488,6 @@ class TestEventSerialization:
         # Timestamp should be ISO format string, not a number
         assert isinstance(data["timestamp"], str)
         assert "T" in data["timestamp"]  # ISO format contains 'T'
-
-    def test_nested_plan_steps_serialize(self):
-        """Nested PlanSteps serialize correctly."""
-        steps = [
-            PlanStep(id="s1", description="Step 1", expected_tool="tool_a"),
-            PlanStep(id="s2", description="Step 2", expected_tool="tool_b"),
-        ]
-        event = PlanEvent(plan_id="p1", title="Plan", steps=steps)
-        json_str = event.model_dump_json()
-        data = json.loads(json_str)
-        assert len(data["steps"]) == 2
-        assert data["steps"][0]["id"] == "s1"
 
     def test_include_type_in_data_for_client_dispatch(self):
         """The frontend dispatches SSE payloads by the data.type discriminator."""

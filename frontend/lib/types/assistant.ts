@@ -44,24 +44,6 @@ export interface SessionEvent {
   created_at: string;
 }
 
-export interface PlanStepData {
-  id: string;
-  description: string;
-  expected_tool: string;
-  status: PlanStepStatus;
-}
-
-export interface PlanData {
-  id: string;
-  title: string | null;
-  language: string | null;
-  steps: PlanStepData[];
-  current_step_index: number;
-  status: PlanStatus;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface SessionDetail {
   id: string;
   title: string | null;
@@ -71,14 +53,11 @@ export interface SessionDetail {
   created_at: string;
   updated_at: string;
   events: SessionEvent[];
-  plan: PlanData | null;
 }
 
 // ── Status Types ────────────────────────────────────────────────────────────────
 
 export type SessionStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
-export type PlanStatus = "created" | "in_progress" | "completed" | "failed" | "cancelled";
-export type PlanStepStatus = "pending" | "running" | "completed" | "failed";
 export type ToolStatus = "calling" | "called" | "failed";
 export type MessageRole = "user" | "assistant";
 
@@ -115,37 +94,6 @@ export interface MessageEvent extends BaseEvent {
 export interface TitleEvent extends BaseEvent {
   type: "title";
   title: string;
-}
-
-/**
- * A single step within a plan.
- */
-export interface PlanStep {
-  id: string;
-  description: string;
-  expected_tool: string;
-  status: PlanStepStatus;
-}
-
-/**
- * Plan event - contains the current plan with all steps.
- */
-export interface PlanEvent extends BaseEvent {
-  type: "plan";
-  plan_id: string;
-  title: string;
-  language: string;
-  steps: PlanStep[];
-}
-
-/**
- * Step event - step status change notification.
- */
-export interface StepEvent extends BaseEvent {
-  type: "step";
-  step_id: string;
-  description: string;
-  status: PlanStepStatus;
 }
 
 /**
@@ -191,17 +139,47 @@ export interface WaitEvent extends BaseEvent {
 }
 
 /**
+ * Thought event - streaming chunk of the ReAct agent's chain-of-thought.
+ * The frontend should accumulate `delta` into a per-iteration buffer
+ * so the user sees reasoning tokens stream in real time.
+ */
+export interface ThoughtEvent extends BaseEvent {
+  type: "thought";
+  /** Incremental token chunk for this Thought. */
+  delta: string;
+  /** ReAct iteration index (0-indexed). */
+  iteration: number;
+  /** True for the last token of the current Thought. */
+  is_final?: boolean;
+}
+
+/**
+ * Iteration event - marks the start of a new ReAct iteration and its phase.
+ * Emitted right before reasoning (streaming Thought tokens) and again
+ * right before acting (executing tool calls).
+ */
+export interface IterationEvent extends BaseEvent {
+  type: "iteration";
+  /** Current iteration number (0-indexed). */
+  n: number;
+  /** Max iterations cap (e.g., 15). */
+  max: number;
+  /** Current phase within the iteration. */
+  phase: "reasoning" | "acting";
+}
+
+/**
  * Union type of all possible SSE event data.
  */
 export type AssistantEventData =
   | MessageEvent
   | TitleEvent
-  | PlanEvent
-  | StepEvent
   | ToolEvent
   | DoneEvent
   | ErrorEvent
-  | WaitEvent;
+  | WaitEvent
+  | ThoughtEvent
+  | IterationEvent;
 
 /**
  * Discriminated union event type with event name for SSE.
@@ -217,12 +195,12 @@ export interface SSEEvent {
 export type EventType =
   | "message"
   | "title"
-  | "plan"
-  | "step"
   | "tool"
   | "done"
   | "error"
-  | "wait";
+  | "wait"
+  | "thought"
+  | "iteration";
 
 // ── Chat Result Type ───────────────────────────────────────────────────────────
 
@@ -370,9 +348,6 @@ export interface AssistantState {
   
   // Streaming state
   isStreaming: boolean;
-  
-  // Current plan
-  currentPlan: PlanData | null;
   
   // Current tool artifact (preview data from tool results)
   currentToolArtifact: ToolArtifact | null;

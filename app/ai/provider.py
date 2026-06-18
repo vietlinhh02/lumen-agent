@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, TypeVar, cast
+from typing import Any, AsyncGenerator, Dict, List, Optional, TypeVar, cast
 
 import anthropic
 from openai import AsyncOpenAI
@@ -32,6 +32,23 @@ class AIProvider(ABC):
         max_tokens: int = 2048,
     ) -> str:
         """Return raw text completion."""
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: List[Dict[str, str]],
+        system: Optional[str] = None,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Yield text tokens as they are produced by the model.
+
+        Implementations MUST emit tokens incrementally so the consumer can
+        forward them to a streaming response (e.g., SSE) without buffering
+        the full response first.
+        """
+        raise NotImplementedError
+        yield ""  # pragma: no cover - makes this a generator for type checkers
 
     @abstractmethod
     async def complete_structured(
@@ -78,6 +95,32 @@ class AnthropicAdapter(AIProvider):
             kwargs["system"] = system
         response = await self._client.messages.create(**kwargs)
         return response.content[0].text  # type: ignore[union-attr]
+
+    async def stream(
+        self,
+        messages: List[Dict[str, str]],
+        system: Optional[str] = None,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream text tokens from Anthropic.
+
+        Uses the Anthropic streaming API and yields incremental text
+        deltas from text content blocks. Tool use blocks are ignored here
+        because the ReAct agent uses text-based tool parsing.
+        """
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
+        if system:
+            kwargs["system"] = system
+
+        async with self._client.messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:
+                if text:
+                    yield text
 
     async def complete_structured(
         self,
@@ -167,6 +210,52 @@ class OpenAICompatibleAdapter(AIProvider):
             return reasoning
 
         return ""
+
+    async def stream(
+        self,
+        messages: List[Dict[str, str]],
+        system: Optional[str] = None,
+        max_tokens: int = 2048,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream text tokens from any OpenAI-compatible endpoint.
+
+        Uses the chat completions streaming API. When *tools* are provided
+        the caller should be ready to handle tool-call chunks; for the
+        ReAct text-based flow we ignore tool_calls and only forward the
+        text deltas.
+        """
+        msgs = _build_openai_messages(messages, system)
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": msgs,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        if self._model.startswith("deepseek"):
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+
+        try:
+            stream = await self._client.chat.completions.create(**kwargs)
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                # Prefer text content
+                content = getattr(delta, "content", None)
+                if content:
+                    yield content
+                    continue
+                # Fallback: reasoning_content (DeepSeek thinking)
+                reasoning = getattr(delta, "reasoning_content", None)
+                if reasoning:
+                    yield reasoning
+        except Exception:
+            # Re-raise so the caller can decide whether to fall back.
+            raise
 
     async def complete_structured(
         self,

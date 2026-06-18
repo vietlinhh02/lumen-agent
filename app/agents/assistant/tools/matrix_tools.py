@@ -359,7 +359,7 @@ async def _update_matrix_row_impl(
 
 
 @tool
-def generate_matrix(
+async def generate_matrix(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -379,23 +379,11 @@ def generate_matrix(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _generate_matrix_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_generate_matrix_impl(project_id, uid, user))
+    return await _generate_matrix_impl(project_id, uid, user)
 
 
 @tool
-def list_matrix_rows(
+async def list_matrix_rows(
     project_id: str,
     limit: int = 200,
 ) -> Dict[str, Any]:
@@ -414,23 +402,11 @@ def list_matrix_rows(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _list_matrix_rows_impl(project_id, limit, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_list_matrix_rows_impl(project_id, limit, uid, user))
+    return await _list_matrix_rows_impl(project_id, limit, uid, user)
 
 
 @tool
-def update_matrix_row(
+async def update_matrix_row(
     row_id: str,
     field: str,
     new_value: str,
@@ -460,16 +436,18 @@ def update_matrix_row(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _update_matrix_row_impl(row_id, field, new_value, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_update_matrix_row_impl(row_id, field, new_value, uid, user))
+    return await _update_matrix_row_impl(row_id, field, new_value, uid, user)
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class MatrixToolkit(BaseToolkit):
+    """Toolkit for literature matrix generation."""
+
+    def get_tools(self):
+        return [generate_matrix, list_matrix_rows, update_matrix_row]

@@ -1,12 +1,11 @@
-"""
-AssistantSessionService - Session lifecycle and chat orchestration.
+"""AssistantSessionService - Session lifecycle and chat orchestration.
 
 This service owns the session lifecycle (create/get/list/delete) and exposes
 `chat()` as an AsyncGenerator[BaseEvent] that:
 1. Builds toolkits with the user's context
-2. Loads AssistantPlan from DB if resuming
-3. Runs PlanActFlow
-4. Persists every event and final plan to the DB
+2. Loads ReActAgent scratchpad context if resuming
+3. Runs ReActAgent
+4. Persists every event to the DB
 
 Usage:
     service = AssistantSessionService(db=db)
@@ -43,15 +42,12 @@ from app.agents.assistant.events import (
     DoneEvent,
     ErrorEvent,
     MessageEvent,
-    PlanEvent,
-    PlanStep,
 )
-from app.agents.assistant.flow import PlanActFlow
+from app.agents.assistant.react.agent import ReActAgent, ProjectContext
+from app.agents.assistant.react.memory import Scratchpad
 from app.agents.assistant.tools import get_all_tools, get_all_toolkits
-from app.agents.assistant.agents.planner import PlannerAgent
-from app.agents.assistant.agents.execution import ExecutionAgent
+from app.agents.assistant.tools.context import set_user_context, clear_user_context
 from app.db.models import AssistantEvent as DBAssistantEvent
-from app.db.models import AssistantPlan as DBAssistantPlan
 from app.db.models import AssistantSession as DBAssistantSession
 from app.db.models import Project
 from app.db.models import User
@@ -63,19 +59,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# In-memory cancellation flag map.
+# In-memory maps for tracking.
 # Limitation: only works for a single backend instance.
 # For multi-instance deployment, move to Redis pub/sub in a follow-up.
-_cancellation_flags: Dict[str, asyncio.Event] = {}
+_cancellation_flags: Dict[str, asyncio.Event] = {}  # For external cancellation (stop button)
+_active_chat_flags: Dict[str, bool] = {}  # For tracking concurrent chats
 MAX_CONTEXT_MESSAGES = 8
 MAX_CONTEXT_CHARS_PER_MESSAGE = 1200
+
+
+def sort_session_events(events: list[DBAssistantEvent]) -> list[DBAssistantEvent]:
+    """Sort assistant events chronologically by the timestamp in their payload.
+    
+    Falls back to e.created_at if timestamp is missing or invalid.
+    """
+    def get_event_timestamp(event: DBAssistantEvent) -> datetime:
+        if isinstance(event.payload, dict) and "timestamp" in event.payload:
+            ts_str = event.payload["timestamp"]
+            if isinstance(ts_str, str):
+                try:
+                    if ts_str.endswith("Z"):
+                        ts_str = ts_str[:-1] + "+00:00"
+                    dt = datetime.fromisoformat(ts_str)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except ValueError:
+                    pass
+        created_at = event.created_at
+        if created_at is None or not isinstance(created_at, datetime):
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return created_at
+
+    return sorted(events, key=get_event_timestamp)
 
 
 def _build_conversation_context(events: list[DBAssistantEvent]) -> str:
     """Build a compact chat history block for the next LLM request."""
     messages: list[str] = []
 
-    for event in events:
+    sorted_events = sort_session_events(events)
+    for event in sorted_events:
         if event.event_type != "message":
             continue
 
@@ -94,6 +120,49 @@ def _build_conversation_context(events: list[DBAssistantEvent]) -> str:
         messages.append(f"{role}: {text}")
 
     return "\n".join(messages[-MAX_CONTEXT_MESSAGES:])
+
+
+def _restore_scratchpad_from_events(
+    scratchpad: Scratchpad,
+    events: List["DBAssistantEvent"],
+) -> None:
+    """Restore scratchpad from persisted events for resume.
+
+    Reconstructs observations from tool events so the ReAct loop
+    can continue from where it left off.
+
+    Args:
+        scratchpad: The scratchpad to restore into.
+        events: The persisted session events.
+    """
+    # Sort events first so they are chronological
+    sorted_events = sort_session_events(events)
+    # Only look at recent events to avoid excessive context
+    recent_events = sorted_events[-50:] if len(sorted_events) > 50 else sorted_events
+
+    for event in recent_events:
+        if event.event_type == "tool":
+            payload = event.payload
+            tool_name = payload.get("function") or payload.get("name", "")
+            args = payload.get("args", {})
+            result = payload.get("result")
+
+            if tool_name and result:
+                # Add observation to scratchpad
+                scratchpad.add_observation(tool_name, args, result)
+
+        elif event.event_type == "thought":
+            payload = event.payload
+            delta = payload.get("delta", "")
+            iteration = payload.get("iteration", 0)
+
+            # Add thought to scratchpad trace
+            if delta:
+                scratchpad.trace.append({
+                    "type": "thought",
+                    "content": delta,
+                    "iteration": iteration,
+                })
 
 
 def _get_cancellation_event(session_id: str) -> asyncio.Event:
@@ -156,7 +225,7 @@ class AssistantSessionService:
     Service for managing assistant session lifecycle and chat.
 
     Provides CRUD operations for sessions and the main chat() method
-    that orchestrates the PlanActFlow.
+    that orchestrates the ReActAgent.
 
     Attributes:
         db: SQLAlchemy AsyncSession for database operations.
@@ -247,7 +316,6 @@ class AssistantSessionService:
         if include_events:
             query = query.options(
                 selectinload(DBAssistantSession.events),
-                selectinload(DBAssistantSession.plan),
                 selectinload(DBAssistantSession.project),
             )
 
@@ -339,9 +407,9 @@ class AssistantSessionService:
         This method:
         1. Loads the session and validates ownership
         2. Builds toolkits with user/project context
-        3. Initializes PlannerAgent and ExecutionAgent
-        4. Runs PlanActFlow
-        5. Persists every event and final plan to the DB
+        3. Initializes ReActAgent
+        4. Runs ReActAgent loop
+        5. Persists every event to the DB
 
         Args:
             session_id: The session ID.
@@ -349,17 +417,18 @@ class AssistantSessionService:
             message: The user's message.
 
         Yields:
-            BaseEvent: Events from the flow execution.
+            BaseEvent: Events from the agent execution.
 
         Raises:
             ValueError: If session not found or user doesn't have access.
             RuntimeError: If a chat is already running on this session.
         """
         session_id_str = str(session_id)
+        logger.info("Chat started for session %s", session_id_str)
 
-        # Check for concurrent chat (in-process limitation documented)
-        cancel_event = _get_cancellation_event(session_id_str)
-        if cancel_event.is_set():
+        # Check for concurrent chat using separate flag
+        if _active_chat_flags.get(session_id_str, False):
+            # Previous chat is still running
             # Previous chat is still running
             yield ErrorEvent(
                 code="SESSION_BUSY",
@@ -378,7 +447,6 @@ class AssistantSessionService:
             .options(
                 selectinload(DBAssistantSession.project),
                 selectinload(DBAssistantSession.events),
-                selectinload(DBAssistantSession.plan),
             )
         )
         session = result.scalar_one_or_none()
@@ -391,8 +459,13 @@ class AssistantSessionService:
             yield DoneEvent(summary="Session not found.")
             return
 
-        # Set cancellation flag
-        cancel_event.set()
+        # Note: We don't set cancel_event here because it would trigger
+        # the agent's cancellation check at the start of each loop iteration.
+        # The cancel_event is only meant for external cancellation (stop button).
+        # For tracking concurrent chats, we rely on the SESSION_BUSY check above.
+
+        # Get cancellation event for agent (will be set by stop_session if needed)
+        cancel_event = _get_cancellation_event(session_id_str)
 
         try:
             # Build project context
@@ -420,7 +493,8 @@ class AssistantSessionService:
                 return
 
             # Build toolkit context and tools with the authenticated user.
-            get_all_toolkits(
+            # Set user context so tools can access authenticated user via contextvars
+            set_user_context(
                 user_id=str(user_id),
                 project_id=str(session.project_id) if session.project_id else None,
                 user=user,
@@ -434,48 +508,41 @@ class AssistantSessionService:
             # Get LLM provider
             provider = get_provider()
 
-            # Initialize agents
-            planner = PlannerAgent(provider=provider, tools=tools)
-            executor = ExecutionAgent(provider=provider, tools=tools)
-
-            # Initialize flow
-            flow = PlanActFlow(
-                planner=planner,
-                executor=executor,
-                project_context=project_context,
+            # Initialize ReAct agent
+            agent = ReActAgent(
+                provider=provider,
+                tools=tools,
+                project_context=ProjectContext(
+                    project_id=str(session.project_id) if session.project_id else None,
+                    user_id=str(user_id),
+                ),
             )
+
+            # Sort events chronologically by payload timestamp
+            sorted_events = sort_session_events(session.events)
 
             # Check for title event in persisted events
             title_from_history = None
-            for event in session.events:
+            for event in sorted_events:
                 if event.event_type == "title" and event.payload.get("title"):
                     title_from_history = event.payload["title"]
                     break
 
-            # Resume logic: if session has a plan, resume from it
+            # Resume logic: if session was waiting for user input, restore scratchpad
             resume = False
-            if session.plan and session.plan.status == "in_progress":
-                resume = True
-                # Restore plan state to flow
-                if session.plan.steps:
-                    steps = [
-                        PlanStep(
-                            id=step.get("id", ""),
-                            description=step.get("description", ""),
-                            expected_tool=step.get("expected_tool", ""),
-                            status=step.get("status", "pending"),
-                        )
-                        for step in session.plan.steps
-                    ]
-                    flow._current_plan = PlanEvent(
-                        plan_id=str(session.plan.id),
-                        title=session.plan.title or "Resumed Plan",
-                        language=session.plan.language or "en",
-                        steps=steps,
-                    )
-                    flow._current_step_index = session.plan.current_step_index
+            if sorted_events:
+                # Check if session was in a waiting state (can resume)
+                for event in sorted_events[-10:]:  # Check last 10 events
+                    if event.event_type == "wait":
+                        resume = True
+                        break
 
-            conversation_context = _build_conversation_context(session.events)
+            # Restore scratchpad from persisted events if resuming
+            if resume:
+                # Re-build scratchpad from tool observation events
+                _restore_scratchpad_from_events(agent.scratchpad, sorted_events)
+
+            conversation_context = _build_conversation_context(sorted_events)
             flow_message = message
             if conversation_context:
                 flow_message = (
@@ -497,18 +564,15 @@ class AssistantSessionService:
                 },
             )
 
-            # Run the flow
-            async for event in flow.run(flow_message, resume=resume):
-                # Handle cancellation
-                if not cancel_event.is_set():
-                    flow.cancel()
-                    yield ErrorEvent(
-                        code="CANCELLED",
-                        message="Session was cancelled.",
-                    )
-                    yield DoneEvent(summary="Session cancelled.")
-                    return
+            # Mark chat as active
+            _active_chat_flags[session_id_str] = True
 
+            # Run the agent
+            async for event in agent.run(
+                flow_message,
+                resume=resume,
+                cancel_event=cancel_event,
+            ):
                 # Persist event
                 await self._persist_event(
                     session_id=session.id,
@@ -527,10 +591,6 @@ class AssistantSessionService:
                     title_from_history = cleaned[:60].rstrip()
                     if title_from_history:
                         await self.update_session_title(session, title_from_history)
-
-                # Update plan in DB if we have a PlanEvent
-                if isinstance(event, PlanEvent):
-                    await self._upsert_plan(session_id=session.id, plan_event=event)
 
                 # Update session status on completion
                 if isinstance(event, DoneEvent):
@@ -554,9 +614,10 @@ class AssistantSessionService:
             )
             yield DoneEvent(summary="Chat failed.")
         finally:
-            # Clear cancellation flag
-            cancel_event.clear()
+            # Clear tracking flags and user context
+            _active_chat_flags.pop(session_id_str, None)
             _clear_cancellation_event(session_id_str)
+            clear_user_context()
 
     async def stop_session(self, session_id: uuid.UUID) -> bool:
         """
@@ -569,15 +630,16 @@ class AssistantSessionService:
             True if stopped, False if session was not running.
         """
         session_id_str = str(session_id)
+
+        if not _active_chat_flags.get(session_id_str, False):
+            # No active chat
+            return False
+
+        # Set cancellation event to trigger cancellation
         cancel_event = _get_cancellation_event(session_id_str)
-
-        if cancel_event.is_set():
-            # Clear and re-set to trigger cancellation
-            cancel_event.clear()
-            logger.info("Stop requested for session %s", session_id)
-            return True
-
-        return False
+        cancel_event.set()
+        logger.info("Stop requested for session %s", session_id)
+        return True
 
     # ── Internal Helpers ───────────────────────────────────────────────────────
 
@@ -616,47 +678,6 @@ class AssistantSessionService:
         await self.db.commit()
         return event
 
-    async def _upsert_plan(
-        self,
-        session_id: uuid.UUID,
-        plan_event: PlanEvent,
-    ) -> None:
-        """
-        Create or update a plan in the database.
-
-        Args:
-            session_id: The session ID.
-            plan_event: The PlanEvent to persist.
-        """
-        result = await self.db.execute(
-            select(DBAssistantPlan).where(DBAssistantPlan.session_id == session_id)
-        )
-        plan = result.scalar_one_or_none()
-
-        if plan is None:
-            plan = DBAssistantPlan(
-                session_id=session_id,
-                title=plan_event.title,
-                language=plan_event.language,
-                steps=[step.model_dump() for step in plan_event.steps],
-                current_step_index=0,
-                status="in_progress",
-            )
-            self.db.add(plan)
-        else:
-            plan.title = plan_event.title
-            plan.language = plan_event.language
-            plan.steps = [step.model_dump() for step in plan_event.steps]
-            plan.status = "in_progress"
-
-            # Calculate current step index
-            completed_count = sum(
-                1 for step in plan_event.steps if step.status == "completed"
-            )
-            plan.current_step_index = completed_count
-
-        await self.db.commit()
-
     # ── Event Replay ───────────────────────────────────────────────────────────
 
     async def get_persisted_events(
@@ -678,9 +699,10 @@ class AssistantSessionService:
             .order_by(DBAssistantEvent.created_at)
         )
         events = result.scalars().all()
+        sorted_events = sort_session_events(events)
 
         parsed_events: List[BaseEvent] = []
-        for event in events:
+        for event in sorted_events:
             try:
                 parsed = EventMapper.parse_event(event.event_type, event.payload)
                 parsed_events.append(parsed)

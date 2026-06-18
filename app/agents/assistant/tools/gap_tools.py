@@ -330,7 +330,7 @@ async def _delete_gap_impl(
 
 
 @tool
-def detect_research_gaps(
+async def detect_research_gaps(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -350,23 +350,11 @@ def detect_research_gaps(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _detect_gaps_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_detect_gaps_impl(project_id, uid, user))
+    return await _detect_gaps_impl(project_id, uid, user)
 
 
 @tool
-def list_gaps(
+async def list_gaps(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -383,23 +371,11 @@ def list_gaps(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _list_gaps_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_list_gaps_impl(project_id, uid, user))
+    return await _list_gaps_impl(project_id, uid, user)
 
 
 @tool
-def delete_gap(
+async def delete_gap(
     gap_id: str,
 ) -> Dict[str, Any]:
     """
@@ -416,16 +392,18 @@ def delete_gap(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _delete_gap_impl(gap_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_delete_gap_impl(gap_id, uid, user))
+    return await _delete_gap_impl(gap_id, uid, user)
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class GapToolkit(BaseToolkit):
+    """Toolkit for research gap detection."""
+
+    def get_tools(self):
+        return [detect_research_gaps, list_gaps, delete_gap]

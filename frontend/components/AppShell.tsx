@@ -199,10 +199,12 @@ function AssistantHeaderControls() {
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click / Escape
+  // Close dropdown on outside click / Escape (mobile/tablet only)
   useEffect(() => {
     if (!sessionsOpen) return;
     const onMouse = (e: MouseEvent) => {
+      // Ignore outside clicks for closing on desktop (>= 1280px)
+      if (typeof window !== "undefined" && window.innerWidth >= 1280) return;
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setSessionsOpen(false);
       }
@@ -231,16 +233,19 @@ function AssistantHeaderControls() {
     } finally {
       setIsCreating(false);
     }
-    setSessionsOpen(false);
+    // Only auto-close dropdown on mobile
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      setSessionsOpen(false);
+    }
   };
 
   return (
     <div ref={dropdownRef} className="flex items-center gap-1 mr-2 relative">
-      {/* Sessions dropdown trigger */}
+      {/* Sessions dropdown trigger (hidden on desktop since we have the left toggle button) */}
       <button
         type="button"
         onClick={toggleSessions}
-        className={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 font-ui text-sm transition-all duration-150 active:scale-95 ${
+        className={`xl:hidden flex h-9 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 font-ui text-sm transition-all duration-150 active:scale-95 ${
           sessionsOpen
             ? "bg-primary/10 text-primary"
             : "text-charcoal hover:text-ink hover:bg-surface-bone"
@@ -249,7 +254,7 @@ function AssistantHeaderControls() {
       >
         <List size={18} weight="bold" />
         <span className="hidden sm:inline max-w-[160px] truncate">
-          {currentSession?.title ? currentSession.title : "New chat"}
+          Recent chats
         </span>
         <CaretDown
           size={12}
@@ -278,9 +283,9 @@ function AssistantHeaderControls() {
           `pointer-events-none` keeps it inert when hidden. `overflow-hidden`
           keeps the inner SessionList clipped to the rounded corners. The
           DeleteSessionModal is rendered via portal (see SessionList), so
-          it is NOT clipped by this overflow. */}
+          it is NOT clipped by this overflow. Visible only on mobile/tablet (xl:hidden) */}
       <div
-        className={`absolute right-0 top-[44px] z-50 w-[min(320px,calc(100vw-16px))] rounded-xl bg-canvas shadow-2xl overflow-hidden transition-all duration-200 ease-out origin-top-right ${
+        className={`absolute right-0 top-[44px] z-50 w-[min(320px,calc(100vw-16px))] rounded-xl bg-canvas shadow-2xl overflow-hidden transition-all duration-200 ease-out origin-top-right xl:hidden ${
           sessionsOpen
             ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
             : "opacity-0 -translate-y-1 scale-95 pointer-events-none"

@@ -42,7 +42,7 @@ _MIGRATIONS = [
     "ADD CONSTRAINT ck_paper_chunks_content_type "
     "CHECK (content_type IS NULL OR content_type IN ("
     "'abstract', 'narrative', 'method', 'results', 'limitation', "
-    "'table', 'figure_caption', 'reference'"
+    "'equation', 'table', 'figure_caption', 'reference'"
     "))",
     "CREATE INDEX IF NOT EXISTS ix_paper_chunks_project_content "
     "ON paper_chunks (project_paper_id, content_type)",

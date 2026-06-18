@@ -14,9 +14,10 @@ from app.agents.assistant.events import (
     BaseEvent,
     DoneEvent,
     ErrorEvent,
+    IterationEvent,
     MessageEvent,
-    PlanEvent,
-    StepEvent,
+    ProgressEvent,
+    ThoughtEvent,
     TitleEvent,
     ToolEvent,
     WaitEvent,
@@ -36,12 +37,13 @@ class EventMapper:
     _TYPE_MAPPING: dict[str, type[BaseEvent]] = {
         "message": MessageEvent,
         "title": TitleEvent,
-        "plan": PlanEvent,
-        "step": StepEvent,
         "tool": ToolEvent,
         "done": DoneEvent,
         "error": ErrorEvent,
         "wait": WaitEvent,
+        "thought": ThoughtEvent,
+        "iteration": IterationEvent,
+        "progress": ProgressEvent,
     }
 
     @classmethod

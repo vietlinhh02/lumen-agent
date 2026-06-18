@@ -11,6 +11,7 @@ from app.db.models import Base
 from app.db.session import engine
 from app.routers.admin import router as admin_router
 from app.routers.agent import router as agent_router
+from app.routers.assistant import router as assistant_router
 from app.routers.auth import router as auth_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.gaps import router as gaps_router
@@ -22,7 +23,6 @@ from app.routers.project import router as project_router
 from app.routers.reports import router as reports_router
 from app.routers.search_session import router as search_session_router
 from app.routers.stats import router as stats_router
-from app.routers.assistant import router as assistant_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     from sqlalchemy import text
 
     from app.core.embeddings import close_async_client, init_async_client
+    from app.services.pdf_extraction import register_optional_fallback_engines
     from app.services.reranker import close_rerank_client, init_rerank_client
 
     # Phase 0: Init async HTTP clients
@@ -137,6 +138,18 @@ async def lifespan(app: FastAPI):
     # Phase 4: Constraint updates
     async with engine.begin() as conn:
         await conn.execute(
+            text("ALTER TABLE paper_chunks DROP CONSTRAINT IF EXISTS ck_paper_chunks_content_type")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE paper_chunks ADD CONSTRAINT ck_paper_chunks_content_type "
+                "CHECK (content_type IS NULL OR content_type IN ("
+                "'abstract', 'narrative', 'method', 'results', 'limitation', "
+                "'equation', 'table', 'figure_caption', 'reference'"
+                "))"
+            )
+        )
+        await conn.execute(
             text("ALTER TABLE background_jobs DROP CONSTRAINT IF EXISTS ck_background_jobs_type")
         )
         await conn.execute(
@@ -172,6 +185,18 @@ async def lifespan(app: FastAPI):
             )
         except Exception as exc:
             logger.warning("Assistant index ensure skipped: %s", exc)
+
+    # Phase 6: Register layout-aware / OCR fallback engines whose
+    # optional dependencies are installed (e.g. Docling via
+    # `uv sync --extra docling`). The fast pdf_oxide + pypdf pair runs
+    # on every extraction; the fallback tier runs only when the fast
+    # tier scores below the routing threshold.
+    fallback_names = register_optional_fallback_engines()
+    if fallback_names:
+        logger.info(
+            "PDF extraction fallback engines registered: %s",
+            ", ".join(fallback_names),
+        )
 
     yield
 

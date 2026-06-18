@@ -20,12 +20,12 @@ import type {
   AssistantEventData,
   MessageEvent,
   TitleEvent,
-  PlanEvent,
-  StepEvent,
   ToolEvent,
   DoneEvent,
   ErrorEvent,
   WaitEvent,
+  ThoughtEvent,
+  IterationEvent,
 } from "@/lib/types/assistant";
 
 // ── Type Helpers ───────────────────────────────────────────────────────────────
@@ -124,12 +124,12 @@ export async function stopSession(sessionId: string): Promise<void> {
 export interface ChatEventHandlers {
   onMessage?: (event: MessageEvent) => void;
   onTitle?: (event: TitleEvent) => void;
-  onPlan?: (event: PlanEvent) => void;
-  onStep?: (event: StepEvent) => void;
   onTool?: (event: ToolEvent) => void;
   onDone?: (event: DoneEvent) => void;
   onError?: (event: ErrorEvent) => void;
   onWait?: (event: WaitEvent) => void;
+  onThought?: (event: ThoughtEvent) => void;
+  onIteration?: (event: IterationEvent) => void;
   onAny?: (event: AssistantEventData, eventName: string) => void;
 }
 
@@ -214,6 +214,11 @@ export function chat(
           },
           onerror(error) {
             throw error;
+          },
+          onclose() {
+            // Stream was closed normally or aborted
+            // Resolve the promise to signal completion
+            resolve();
           }
         });
         
@@ -254,12 +259,6 @@ function dispatchEvent(
     case "title":
       handlers.onTitle?.(data as TitleEvent);
       break;
-    case "plan":
-      handlers.onPlan?.(data as PlanEvent);
-      break;
-    case "step":
-      handlers.onStep?.(data as StepEvent);
-      break;
     case "tool":
       handlers.onTool?.(data as ToolEvent);
       break;
@@ -271,6 +270,12 @@ function dispatchEvent(
       break;
     case "wait":
       handlers.onWait?.(data as WaitEvent);
+      break;
+    case "thought":
+      handlers.onThought?.(data as ThoughtEvent);
+      break;
+    case "iteration":
+      handlers.onIteration?.(data as IterationEvent);
       break;
   }
   
@@ -290,10 +295,10 @@ export type {
   SSEEvent,
   MessageEvent,
   TitleEvent,
-  PlanEvent,
-  StepEvent,
   ToolEvent,
   DoneEvent,
   ErrorEvent,
   WaitEvent,
+  ThoughtEvent,
+  IterationEvent,
 };

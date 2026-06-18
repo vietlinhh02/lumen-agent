@@ -308,7 +308,7 @@ async def _list_project_papers_impl(
 
 
 @tool
-def search_papers(
+async def search_papers(
     query: str,
     sources: List[str] = Field(default=["semantic_scholar"]),
     year_from: Optional[int] = None,
@@ -336,22 +336,11 @@ def search_papers(
         year_to: Filter papers until this year.
         limit: Maximum papers per source (default 20, max 100).
     """
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _search_papers_impl(query, sources, year_from, year_to, limit)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_search_papers_impl(query, sources, year_from, year_to, limit))
+    return await _search_papers_impl(query, sources, year_from, year_to, limit)
 
 
 @tool
-def save_paper_to_project(
+async def save_paper_to_project(
     project_id: str,
     paper: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -370,23 +359,11 @@ def save_paper_to_project(
     """
     user = get_user()
     uid = get_user_id()
-
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _save_paper_impl(project_id, paper, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_save_paper_impl(project_id, paper, uid, user))
+    return await _save_paper_impl(project_id, paper, uid, user)
 
 
 @tool
-def remove_paper_from_project(
+async def remove_paper_from_project(
     project_id: str,
     project_paper_id: str,
 ) -> Dict[str, Any]:
@@ -404,23 +381,11 @@ def remove_paper_from_project(
     """
     user = get_user()
     uid = get_user_id()
-
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _remove_paper_impl(project_id, project_paper_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_remove_paper_impl(project_id, project_paper_id, uid, user))
+    return await _remove_paper_impl(project_id, project_paper_id, uid, user)
 
 
 @tool
-def list_project_papers(
+async def list_project_papers(
     project_id: str,
     status: str = "saved",
 ) -> Dict[str, Any]:
@@ -439,16 +404,22 @@ def list_project_papers(
     """
     user = get_user()
     uid = get_user_id()
+    return await _list_project_papers_impl(project_id, status, uid, user)
 
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _list_project_papers_impl(project_id, status, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_list_project_papers_impl(project_id, status, uid, user))
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class PaperToolkit(BaseToolkit):
+    """Toolkit for paper-related operations."""
+
+    def get_tools(self) -> List[BaseTool]:
+        return [
+            search_papers,
+            save_paper_to_project,
+            remove_paper_from_project,
+            list_project_papers,
+        ]

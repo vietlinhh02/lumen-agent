@@ -13,37 +13,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useUIStore } from "@/lib/stores/ui-store";
-import { ChatMessage } from "@/components/assistant/ChatMessage";
+import { ChatMessage, GroupedThoughts } from "@/components/assistant";
 import { ChatBox } from "@/components/assistant/ChatBox";
 import { ToolPanel } from "@/components/assistant/ToolPanel";
+import { IterationPanel } from "@/components/assistant/IterationPanel";
+import { SessionList } from "@/components/assistant/SessionList";
 import type {
   AssistantEventData,
-  DoneEvent,
   ErrorEvent,
-  PlanData,
-  StepEvent,
-  ToolEvent,
+  MessageEvent,
+  ThoughtEvent,
 } from "@/lib/types/assistant";
 import {
   ArrowClockwise,
-  CaretDown,
-  CheckCircle,
-  Circle,
-  Gear,
-  Lightning,
   PaperPlaneTilt,
-  Pulse,
-  Spinner,
   WarningCircle,
-  XCircle,
+  CaretLeft,
+  CaretRight,
 } from "@phosphor-icons/react";
 
 export default function AssistantSessionPage() {
   const params = useParams();
+  const router = useRouter();
   const sessionId = params.id as string;
 
   const token = useAuthStore((s) => s.token);
@@ -52,15 +47,20 @@ export default function AssistantSessionPage() {
   const activeSessionId = useAssistantStore((s) => s.activeSessionId);
   const isStreaming = useAssistantStore((s) => s.isStreaming);
   const loadSessions = useAssistantStore((s) => s.loadSessions);
+  const createSession = useAssistantStore((s) => s.createSession);
   const events = useAssistantStore((s) => s.events);
-  const currentPlan = useAssistantStore((s) => s.currentPlan);
+  const currentPhase = useAssistantStore((s) => s._currentPhase);
 
-  // Tool panel state lives in the global UI store so the header button
-  // (rendered inside AppShell) and the panel itself stay in sync.
+  // Tool panel state lives in the global UI store
   const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
   const setToolPanelOpen = useUIStore((s) => s.setAssistantToolPanelOpen);
 
+  // Sessions left panel state (synced with header trigger)
+  const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
+  const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
+
   const [jumpToLatest, setJumpToLatest] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -82,9 +82,16 @@ export default function AssistantSessionPage() {
     const lastEvent = sessionEvents[sessionEvents.length - 1];
 
     if (lastEvent && !jumpToLatest) {
-      // Auto-scroll for user messages and assistant completions
-      if (lastEvent.type === "message" || lastEvent.type === "done") {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      // Auto-scroll for user messages, thought streams, and completions
+      if (
+        lastEvent.type === "message" ||
+        lastEvent.type === "thought" ||
+        lastEvent.type === "done"
+      ) {
+        containerRef.current?.scrollTo({
+          top: containerRef.current.scrollHeight,
+          behavior: "auto", // Instant snap during streaming avoids latency and layout jitter
+        });
       }
     }
   }, [events, sessionId, jumpToLatest]);
@@ -100,13 +107,126 @@ export default function AssistantSessionPage() {
   // Get events for current session
   const sessionEvents = sessionId ? (events.get(sessionId) ?? []) : [];
   const userName = getUserDisplayName(user?.email);
-  const visibleEvents = sessionEvents.filter((event) =>
-    (event.type === "message" && !isTechnicalMessage(event)) ||
-    event.type === "error"
-  );
+
+  // Pre-compute thought accumulation map once (O(n) instead of O(n²) per render)
+  const thoughtMap = buildThoughtAccumulationMap(sessionEvents);
+
+  // Deduplicate thought events by iteration index to render exactly one thought card per cycle per user message turn
+  const seenThoughtIterations = new Set<number>();
+  const visibleEvents = sessionEvents.filter((event) => {
+    if (event.type === "message" && (event as any).role === "user") {
+      // User message starts a new turn, reset the seen iterations tracker
+      seenThoughtIterations.clear();
+      return true;
+    }
+    if (event.type === "thought") {
+      const iteration = (event as any).iteration;
+      if (seenThoughtIterations.has(iteration)) {
+        return false;
+      }
+      seenThoughtIterations.add(iteration);
+      return true;
+    }
+    return (
+      (event.type === "message" && !isTechnicalMessage(event)) ||
+      event.type === "error"
+    );
+  });
+
+  // Group contiguous thoughts into a single element
+  const chatItems: (
+    | {
+        type: "event";
+        id: string;
+        event: AssistantEventData;
+      }
+    | {
+        type: "grouped-thoughts";
+        id: string;
+        thoughts: {
+          id: string;
+          iteration: number;
+          content: string;
+          isStreaming: boolean;
+        }[];
+        isStreaming: boolean;
+      }
+  )[] = [];
+
+  let currentThoughtsGroup: {
+    type: "grouped-thoughts";
+    id: string;
+    thoughts: {
+      id: string;
+      iteration: number;
+      content: string;
+      isStreaming: boolean;
+    }[];
+    isStreaming: boolean;
+  } | null = null;
+
+  for (const event of visibleEvents) {
+    if (event.type === "thought") {
+      const isLastEvent = sessionEvents.length > 0 && sessionEvents[sessionEvents.length - 1].id === event.id;
+      const content = getAccumulatedThought(event as ThoughtEvent, sessionEvents, thoughtMap);
+
+      if (!currentThoughtsGroup) {
+        currentThoughtsGroup = {
+          type: "grouped-thoughts",
+          id: `group-${event.id}`,
+          thoughts: [],
+          isStreaming: false,
+        };
+      }
+
+      currentThoughtsGroup.thoughts.push({
+        id: event.id,
+        iteration: event.iteration,
+        content,
+        isStreaming: isLastEvent && isStreaming,
+      });
+
+      if (isLastEvent && isStreaming) {
+        currentThoughtsGroup.isStreaming = true;
+      }
+    } else {
+      if (currentThoughtsGroup) {
+        chatItems.push(currentThoughtsGroup);
+        currentThoughtsGroup = null;
+      }
+      chatItems.push({
+        type: "event",
+        id: event.id,
+        event,
+      });
+    }
+  }
+
+  if (currentThoughtsGroup) {
+    chatItems.push(currentThoughtsGroup);
+  }
+
   const activityEvents = sessionEvents.filter((event) =>
-    event.type !== "message" && event.type !== "error" && event.type !== "title"
+    event.type === "tool" || event.type === "done" || event.type === "wait" || event.type === "iteration"
   );
+
+  const currentSessionEventCount = activeSessionId
+    ? (events.get(activeSessionId)?.length ?? 0)
+    : 0;
+  const isCurrentSessionNew = activeSessionId !== null && currentSessionEventCount === 0;
+
+  const handleNewChat = async () => {
+    if (isCreating) return;
+    if (isCurrentSessionNew) return;
+
+    setIsCreating(true);
+    try {
+      const session = await createSession();
+      if (session) router.push(`/assistant/sessions/${session.id}`);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   // Handle send message
   const handleSend = async (message: string) => {
@@ -126,6 +246,43 @@ export default function AssistantSessionPage() {
 
   return (
     <div className="relative flex h-full min-h-0">
+      {/* Left Collapsible Sessions Panel (desktop only) */}
+      <aside
+        className={`hidden xl:block transition-all duration-300 overflow-hidden flex-shrink-0 bg-canvas border-r ${
+          sessionsOpen ? "w-64" : "w-0"
+        }`}
+        style={{ borderColor: "var(--hairline)" }}
+      >
+        <div className="h-full w-64 overflow-y-auto">
+          <SessionList
+            compact
+            isCurrentSessionNew={isCurrentSessionNew}
+            isCreating={isCreating}
+            onClose={() => setSessionsOpen(false)}
+            onNewChat={handleNewChat}
+            onSelectSession={() => {}}
+          />
+        </div>
+      </aside>
+
+      {/* Sidebar Toggle Button (desktop only) */}
+      <button
+        type="button"
+        onClick={() => setSessionsOpen(!sessionsOpen)}
+        className="hidden xl:flex absolute top-4 z-20 h-9 w-9 items-center justify-center rounded-lg border bg-canvas text-charcoal shadow-sm hover:text-ink hover:bg-surface-bone transition-all duration-300 active:scale-95"
+        style={{
+          left: sessionsOpen ? "272px" : "16px",
+          borderColor: "var(--hairline)",
+        }}
+        title={sessionsOpen ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        {sessionsOpen ? (
+          <CaretLeft size={16} weight="bold" />
+        ) : (
+          <CaretRight size={16} weight="bold" />
+        )}
+      </button>
+
       {/* Mobile backdrop for tool panel */}
       {toolPanelOpen && (
         <button
@@ -149,7 +306,7 @@ export default function AssistantSessionPage() {
                 3xl breakpoint. */}
             <div className="mx-auto w-full max-w-4xl space-y-4">
                 {/* Welcome message if no events */}
-                {visibleEvents.length === 0 && (
+                {chatItems.length === 0 && (
                   <div className="text-center py-12">
                     <div className="flex justify-center mb-4">
                       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -178,17 +335,24 @@ export default function AssistantSessionPage() {
                 )}
 
                 {/* Messages */}
-                {visibleEvents.map((event) =>
-                  event.type === "error" ? (
+                {chatItems.map((item) =>
+                  item.type === "grouped-thoughts" ? (
+                    <GroupedThoughts
+                      key={item.id}
+                      thoughts={item.thoughts}
+                      isStreaming={item.isStreaming}
+                    />
+                  ) : item.event.type === "error" ? (
                     <ErrorMessage
-                      key={event.id}
-                      event={event as ErrorEvent}
+                      key={item.id}
+                      event={item.event as ErrorEvent}
                     />
                   ) : (
                     <ChatMessage
-                      key={event.id}
-                      event={event}
+                      key={item.id}
+                      event={item.event}
                       userName={userName}
+                      allEvents={sessionEvents}
                     />
                   )
                 )}
@@ -206,21 +370,15 @@ export default function AssistantSessionPage() {
 
             {/* Activity panel - absolutely positioned in the right
                 whitespace (xl+), inline below on smaller viewports. */}
-            {activityEvents.length > 0 && (
+            {(activityEvents.length > 0 || currentPhase !== null) && (
               <>
                 <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-80 xl:block">
                   <div className="sticky top-4 mr-4 pointer-events-auto">
-                    <ActivityPanel
-                      events={activityEvents}
-                      plan={currentPlan}
-                    />
+                    <IterationPanel title="Agent Progress" />
                   </div>
                 </div>
                 <div className="mt-6 xl:hidden">
-                  <ActivityPanel
-                    events={activityEvents}
-                    plan={currentPlan}
-                  />
+                  <IterationPanel title="Agent Progress" />
                 </div>
               </>
             )}
@@ -231,7 +389,10 @@ export default function AssistantSessionPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                    containerRef.current?.scrollTo({
+                      top: containerRef.current.scrollHeight,
+                      behavior: "smooth",
+                    });
                     setJumpToLatest(false);
                   }}
                   className="flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 font-ui text-xs font-medium text-white shadow-lg transition-colors hover:bg-charcoal"
@@ -309,285 +470,17 @@ function isTechnicalMessage(event: AssistantEventData): boolean {
   );
 }
 
-function ActivityPanel({
-  events,
-  plan,
-}: {
-  events: AssistantEventData[];
-  plan: PlanData | null;
-}) {
-  const completedSteps = plan?.steps.filter((step) => step.status === "completed").length ?? 0;
-  const totalSteps = plan?.steps.length ?? 0;
-  const toolCount = events.filter((event) => event.type === "tool").length;
-  const lastActivity = getActivityLabel(events[events.length - 1], plan);
-  const hasRunning = events.some(
-    (event) =>
-      event.type === "step" && (event as StepEvent).status === "running"
-  );
 
-  return (
-    <aside
-      className="animate-slide-in-right overflow-hidden rounded-2xl border border-charcoal/10 bg-canvas shadow-sm"
-      aria-label="Workflow activity"
-    >
-      <ActivityHeader
-        completedSteps={completedSteps}
-        totalSteps={totalSteps}
-        toolCount={toolCount}
-        lastActivity={lastActivity}
-        hasRunning={hasRunning}
-      />
 
-      <div className="border-t border-charcoal/10 px-4 py-3">
-        {plan && <PlanSection plan={plan} />}
-        {events.length > 0 && <EventList events={events} />}
-      </div>
-    </aside>
-  );
-}
 
-function ActivityHeader({
-  completedSteps,
-  totalSteps,
-  toolCount,
-  lastActivity,
-  hasRunning,
-}: {
-  completedSteps: number;
-  totalSteps: number;
-  toolCount: number;
-  lastActivity: string | null;
-  hasRunning: boolean;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const progress =
-    totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
-  return (
-    <button
-      type="button"
-      onClick={() => setCollapsed((c) => !c)}
-      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-bone/50"
-      aria-expanded={!collapsed}
-    >
-      <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-          hasRunning ? "bg-primary/10" : "bg-surface-bone"
-        }`}
-      >
-        {hasRunning ? (
-          <Pulse size={16} weight="fill" className="text-primary animate-pulse" />
-        ) : (
-          <Lightning size={16} weight="fill" className="text-primary" />
-        )}
-      </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="font-ui text-sm font-semibold text-ink">Activity</p>
-          {totalSteps > 0 && (
-            <span className="font-ui text-[11px] font-medium text-charcoal/60">
-              {completedSteps}/{totalSteps}
-            </span>
-          )}
-          {toolCount > 0 && (
-            <span className="font-ui text-[11px] font-medium text-charcoal/60">
-              · {toolCount} tools
-            </span>
-          )}
-        </div>
-        {lastActivity && (
-          <p className="mt-0.5 truncate font-ui text-[11px] text-charcoal/60">
-            {lastActivity}
-          </p>
-        )}
-        {totalSteps > 0 && (
-          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-bone">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        )}
-      </div>
 
-      <CaretDown
-        size={14}
-        weight="bold"
-        className={`shrink-0 text-charcoal/60 transition-transform duration-300 ${
-          collapsed ? "" : "rotate-180"
-        }`}
-      />
-    </button>
-  );
-}
 
-function PlanSection({ plan }: { plan: PlanData }) {
-  return (
-    <div className="mb-3">
-      <p className="mb-2 font-ui text-[10px] font-semibold uppercase tracking-wider text-charcoal/50">
-        {plan.title || "Plan"}
-      </p>
-      <ol className="space-y-1.5">
-        {plan.steps.map((step, idx) => (
-          <li
-            key={step.id}
-            className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-bone/50 animate-fade-in"
-            style={{ animationDelay: `${idx * 40}ms` }}
-          >
-            <ActivityStatusIcon status={step.status} />
-            <p className="font-ui text-xs leading-relaxed text-ink">
-              {step.description}
-            </p>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
 
-function EventList({ events }: { events: AssistantEventData[] }) {
-  const recent = events.slice(-6);
-  return (
-    <div>
-      <p className="mb-2 font-ui text-[10px] font-semibold uppercase tracking-wider text-charcoal/50">
-        Recent
-      </p>
-      <ul className="space-y-1">
-        {recent.map((event, idx) => (
-          <li
-            key={event.id}
-            className="animate-fade-in"
-            style={{ animationDelay: `${idx * 30}ms` }}
-          >
-            <ActivityEvent event={event} />
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
-function ActivityEvent({ event }: { event: AssistantEventData }) {
-  if (event.type === "step") {
-    const step = event as StepEvent;
-    return (
-      <div className="flex items-start gap-2 rounded-md px-2 py-1 font-ui text-[11px] text-charcoal transition-colors hover:bg-surface-bone/40">
-        <ActivityStatusIcon status={step.status} small />
-        <span className="leading-relaxed">{step.description}</span>
-      </div>
-    );
-  }
 
-  if (event.type === "tool") {
-    const tool = event as ToolEvent;
-    const isRunning = tool.status === "calling";
-    return (
-      <div
-        className={`flex items-start gap-2 rounded-md px-2 py-1 font-ui text-[11px] transition-colors ${
-          isRunning
-            ? "bg-primary/5 text-ink"
-            : "text-charcoal hover:bg-surface-bone/40"
-        }`}
-      >
-        <Gear
-          size={11}
-          weight={isRunning ? "fill" : "regular"}
-          className={`mt-0.5 shrink-0 text-primary ${
-            isRunning ? "animate-spin" : ""
-          }`}
-        />
-        <span className="leading-relaxed">
-          <span className="font-medium">{tool.function}</span>
-          <span className="ml-1 text-charcoal/50">· {tool.status}</span>
-        </span>
-      </div>
-    );
-  }
 
-  if (event.type === "done") {
-    const done = event as DoneEvent;
-    return (
-      <div className="flex items-start gap-2 rounded-md px-2 py-1 font-ui text-[11px] text-charcoal/70 transition-colors hover:bg-surface-bone/40">
-        <CheckCircle
-          size={11}
-          className="mt-0.5 shrink-0 text-green-500"
-          weight="fill"
-        />
-        <span className="leading-relaxed">{done.summary || "Completed"}</span>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function ActivityStatusIcon({
-  status,
-  small,
-}: {
-  status: StepEvent["status"];
-  small?: boolean;
-}) {
-  const size = small ? 11 : 14;
-  if (status === "running") {
-    return (
-      <Spinner
-        size={size}
-        weight="bold"
-        className="mt-0.5 shrink-0 animate-spin text-primary"
-      />
-    );
-  }
-  if (status === "completed") {
-    return (
-      <CheckCircle
-        size={size}
-        weight="fill"
-        className="mt-0.5 shrink-0 text-green-500"
-      />
-    );
-  }
-  if (status === "failed") {
-    return (
-      <XCircle
-        size={size}
-        weight="fill"
-        className="mt-0.5 shrink-0 text-red-500"
-      />
-    );
-  }
-  return (
-    <Circle
-      size={size}
-      weight="regular"
-      className="mt-0.5 shrink-0 text-charcoal/30"
-    />
-  );
-}
-
-function getActivityLabel(
-  event: AssistantEventData | undefined,
-  plan: PlanData | null
-): string | null {
-  if (!event) {
-    return plan?.title ?? null;
-  }
-  if (event.type === "step") {
-    return (event as StepEvent).description;
-  }
-  if (event.type === "tool") {
-    const tool = event as ToolEvent;
-    return `${tool.function} · ${tool.status}`;
-  }
-  if (event.type === "done") {
-    return (event as DoneEvent).summary ?? "Completed";
-  }
-  if (event.type === "plan") {
-    return "Plan updated";
-  }
-  return null;
-}
 
 function ErrorMessage({ event }: { event: ErrorEvent }) {
   return (
@@ -626,4 +519,49 @@ function ErrorMessage({ event }: { event: ErrorEvent }) {
       </div>
     </div>
   );
+}
+
+function getAccumulatedThought(
+  event: ThoughtEvent,
+  allEvents: AssistantEventData[],
+  thoughtMap: Map<string, string> // Pre-computed thought accumulation map
+): string {
+  // Use pre-computed accumulation map for O(1) lookup instead of O(n) scan
+  return thoughtMap.get(event.id) ?? event.delta ?? "";
+}
+
+/**
+ * Pre-compute thought accumulation map for O(1) getAccumulatedThought calls.
+ * Builds: event.id -> accumulated thought text for that event's iteration
+ */
+function buildThoughtAccumulationMap(
+  allEvents: AssistantEventData[]
+): Map<string, string> {
+  const thoughtMap = new Map<string, string>();
+  let lastUserMsgIndex = 0;
+  const thoughtBuffers = new Map<number, string>(); // iteration -> accumulated text
+
+  for (let i = 0; i < allEvents.length; i++) {
+    const e = allEvents[i];
+
+    // Track user message boundaries to reset thought buffers
+    if (e.type === "message" && (e as MessageEvent).role === "user") {
+      lastUserMsgIndex = i;
+      thoughtBuffers.clear();
+    }
+
+    if (e.type === "thought") {
+      const thought = e as ThoughtEvent;
+      const iter = thought.iteration;
+
+      // Update buffer for this iteration
+      const currentBuffer = thoughtBuffers.get(iter) ?? "";
+      thoughtBuffers.set(iter, currentBuffer + (thought.delta ?? ""));
+
+      // Store the accumulated result keyed by this event's ID
+      thoughtMap.set(e.id, thoughtBuffers.get(iter) ?? "");
+    }
+  }
+
+  return thoughtMap;
 }

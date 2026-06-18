@@ -883,7 +883,7 @@ class PaperChunk(Base):
         CheckConstraint(
             "content_type IS NULL OR content_type IN ("
             "'abstract', 'narrative', 'method', 'results', 'limitation', "
-            "'table', 'figure_caption', 'reference'"
+            "'equation', 'table', 'figure_caption', 'reference'"
             ")",
             name="ck_paper_chunks_content_type",
         ),
@@ -982,7 +982,7 @@ class AssistantEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('message', 'title', 'plan', 'step', 'tool', 'done', 'error', 'wait')",
+            "event_type IN ('message', 'title', 'iteration', 'thought', 'plan', 'step', 'tool', 'done', 'error', 'wait')",
             name="ck_assistant_events_type",
         ),
         # Composite index for fast history replay ordered by time.

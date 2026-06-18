@@ -179,7 +179,7 @@ class ReviewOutput(BaseModel):
 
 
 class StepOutput(BaseModel):
-    """One step in a plan produced by the PlannerAgent."""
+    """One step in a structured plan."""
 
     id: str = Field(description="Unique step identifier (e.g., 'step_1', 'step_2').")
     description: str = Field(
@@ -199,7 +199,7 @@ class StepOutput(BaseModel):
 
 
 class PlanOutput(BaseModel):
-    """Output of the PlannerAgent - a structured plan with steps."""
+    """A structured plan with steps."""
 
     title: str = Field(
         description="Short, descriptive title for the plan (max 10 words)."

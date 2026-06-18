@@ -34,8 +34,6 @@ from app.db.session import get_db
 from app.schemas.assistant import (
     ChatRequest,
     ErrorResponse,
-    PlanData,
-    PlanStepData,
     SessionCreate,
     SessionDetail,
     SessionEvent,
@@ -224,6 +222,8 @@ async def get_session(
         )
 
     # Build event list
+    from app.services.assistant.session_service import sort_session_events
+    sorted_events = sort_session_events(session.events)
     events = [
         SessionEvent(
             id=e.id,
@@ -231,30 +231,8 @@ async def get_session(
             payload=e.payload,
             created_at=e.created_at,
         )
-        for e in session.events
+        for e in sorted_events
     ]
-
-    # Build plan if exists
-    plan_data = None
-    if session.plan:
-        plan_data = PlanData(
-            id=session.plan.id,
-            title=session.plan.title,
-            language=session.plan.language,
-            steps=[
-                PlanStepData(
-                    id=step.get("id", ""),
-                    description=step.get("description", ""),
-                    expected_tool=step.get("expected_tool", ""),
-                    status=step.get("status", "pending"),
-                )
-                for step in session.plan.steps
-            ],
-            current_step_index=session.plan.current_step_index,
-            status=session.plan.status,
-            created_at=session.plan.created_at,
-            updated_at=session.plan.updated_at,
-        )
 
     # Get project title
     project_title = None
@@ -270,7 +248,6 @@ async def get_session(
         created_at=session.created_at,
         updated_at=session.updated_at,
         events=events,
-        plan=plan_data,
     )
 
 
@@ -507,6 +484,12 @@ async def chat(
     return EventSourceResponse(
         stream_with_replay(),
         media_type="text/event-stream",
+        headers={
+            # Disable Nginx buffering so tokens stream to the client immediately
+            "X-Accel-Buffering": "no",
+            # Prevent proxies from caching the stream
+            "Cache-Control": "no-cache, no-transform",
+        },
     )
 
 

@@ -1,10 +1,10 @@
 /**
- * Zustand store for the Assistant (Plan-Act Chat).
+ * Zustand store for the Assistant (ReAct Chat).
  * 
  * Manages:
  * - Session list and selection
  * - SSE event stream handling
- * - Plan state
+ * - ReAct iteration state
  * - Tool artifact previews
  * - Streaming state
  */
@@ -23,12 +23,12 @@ import type {
   ToolArtifact,
   MessageEvent,
   TitleEvent,
-  PlanEvent,
-  StepEvent,
   ToolEvent,
   DoneEvent,
   ErrorEvent,
   WaitEvent,
+  ThoughtEvent,
+  IterationEvent,
   ChatResult,
 } from "@/lib/types/assistant";
 
@@ -39,6 +39,12 @@ interface ExtendedAssistantState extends AssistantState {
   _applyEventToSession: (sessionId: string, event: AssistantEventData) => void;
   /** Internal: extract tool artifact from result */
   _extractToolArtifact: (event: ToolEvent) => void;
+  /** Internal: current ReAct iteration info */
+  _currentIteration: number;
+  _maxIterations: number;
+  _currentPhase: "reasoning" | "acting" | null;
+  _thoughtBuffers: Map<number, string>;
+  _lastToolUsed: string | null;
 }
 
 function normalizePersistedEvent(
@@ -51,7 +57,7 @@ function normalizePersistedEvent(
     ...payload,
     type: payload.type ?? eventType,
     id,
-    timestamp,
+    timestamp: (payload.timestamp as string) ?? timestamp,
   } as AssistantEventData;
 }
 
@@ -65,9 +71,14 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
   loadingSession: false,
   events: new Map(),
   isStreaming: false,
-  currentPlan: null,
   currentToolArtifact: null,
   error: null,
+  // ReAct iteration state
+  _currentIteration: 0,
+  _maxIterations: 15,
+  _currentPhase: null,
+  _thoughtBuffers: new Map(),
+  _lastToolUsed: null,
 
   // ── Session Actions ─────────────────────────────────────────────────────────
 
@@ -194,12 +205,13 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
           event.created_at
         )
       );
+      // Sort session events chronologically by high-precision timestamp
+      sessionEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       eventsMap.set(id, sessionEvents);
 
       set({
         currentSession: detail,
         events: eventsMap,
-        currentPlan: detail.plan,
         loadingSession: false,
       });
     } catch (err) {
@@ -280,12 +292,6 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
           ),
         }));
       },
-      onPlan: (event: PlanEvent) => {
-        get()._applyEventToSession(sessionId, event);
-      },
-      onStep: (event: StepEvent) => {
-        get()._applyEventToSession(sessionId, event);
-      },
       onTool: (event: ToolEvent) => {
         get()._applyEventToSession(sessionId, event);
         // Extract tool artifact for preview
@@ -304,6 +310,33 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       onWait: (event: WaitEvent) => {
         get()._applyEventToSession(sessionId, event);
         set({ isStreaming: false });
+      },
+      onThought: (event: ThoughtEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Accumulate thought tokens into buffer for this iteration
+        set((state) => {
+          const buffers = new Map(state._thoughtBuffers);
+          const currentBuffer = buffers.get(event.iteration) || "";
+          buffers.set(event.iteration, currentBuffer + event.delta);
+          return { _thoughtBuffers: buffers };
+        });
+      },
+      onIteration: (event: IterationEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Reset thought buffer for new iteration if not final
+        set((state) => {
+          const buffers = new Map(state._thoughtBuffers);
+          // Clear thought buffer for new iterations
+          if (!buffers.has(event.n)) {
+            buffers.set(event.n, "");
+          }
+          return {
+            _currentIteration: event.n,
+            _maxIterations: event.max,
+            _currentPhase: event.phase,
+            _thoughtBuffers: buffers,
+          };
+        });
       },
     });
 
@@ -361,59 +394,56 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
 
   _applyEventToSession(sessionId: string, event: AssistantEventData) {
     set((state) => {
+      // Fast path: avoid creating new Map/arrays when possible
+      // Only update if this event is new (not a duplicate by ID)
+      const existingEvents = state.events.get(sessionId);
+      if (existingEvents && existingEvents.some((e) => e.id === event.id)) {
+        // Duplicate event, skip processing but still return state to trigger re-render if needed
+        return state;
+      }
+
+      // Efficiently append the new event to the existing array
       const eventsMap = new Map(state.events);
-      const sessionEvents = [...(eventsMap.get(sessionId) ?? [])];
-      
-      // Avoid duplicates by ID
-      if (!sessionEvents.some((e) => e.id === event.id)) {
-        sessionEvents.push(event);
-        eventsMap.set(sessionId, sessionEvents);
+      const sessionEvents = existingEvents ? [...existingEvents, event] : [event];
+      eventsMap.set(sessionId, sessionEvents);
+
+      // Track last tool used for IterationPanel
+      let lastToolUsed = state._lastToolUsed;
+      if (event.type === "tool") {
+        const toolEvent = event as ToolEvent;
+        if (toolEvent.status === "called") {
+          lastToolUsed = toolEvent.function;
+        }
       }
 
-      // Update plan if this is a plan event
-      let currentPlan = state.currentPlan;
-      if (event.type === "plan") {
-        const planEvent = event as PlanEvent;
-        currentPlan = {
-          id: planEvent.plan_id,
-          title: planEvent.title,
-          language: planEvent.language,
-          steps: planEvent.steps,
-          current_step_index: 0,
-          status: "in_progress",
-          created_at: planEvent.timestamp,
-          updated_at: planEvent.timestamp,
-        };
-      } else if (event.type === "step" && currentPlan) {
-        // Update step status in plan
-        const stepEvent = event as StepEvent;
-        currentPlan = {
-          ...currentPlan,
-          steps: currentPlan.steps.map((step) =>
-            step.id === stepEvent.step_id
-              ? { ...step, status: stepEvent.status }
-              : step
-          ),
-          current_step_index:
-            stepEvent.status === "completed"
-              ? currentPlan.current_step_index + 1
-              : currentPlan.current_step_index,
-        };
-      }
-
-      // Update session status in list
+      // Initialize sessions from state
       let sessions = state.sessions;
-      if (event.type === "done" || event.type === "error") {
-        const newStatus = event.type === "done" ? "completed" : "failed";
+
+      // Update session status in list for done/error events
+      const eventType = event.type;
+      if (eventType === "done" || eventType === "error") {
+        const newStatus = eventType === "done" ? "completed" : "failed";
         sessions = state.sessions.map((s) =>
           s.id === sessionId ? { ...s, status: newStatus as SessionSummary["status"] } : s
         );
       }
 
+      // Reset iteration state when done or waiting
+      if (eventType === "done" || eventType === "wait") {
+        return {
+          events: eventsMap,
+          sessions,
+          _currentIteration: 0,
+          _currentPhase: null,
+          _thoughtBuffers: new Map(),
+          _lastToolUsed: null,
+        };
+      }
+
       return {
         events: eventsMap,
-        currentPlan,
         sessions,
+        _lastToolUsed: lastToolUsed,
       };
     });
   },
@@ -507,10 +537,14 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       loadingSession: false,
       events: new Map(),
       isStreaming: false,
-      currentPlan: null,
       currentToolArtifact: null,
       error: null,
       _chatResult: undefined,
+      _currentIteration: 0,
+      _maxIterations: 15,
+      _currentPhase: null,
+      _thoughtBuffers: new Map(),
+      _lastToolUsed: null,
     });
   },
 }));
@@ -526,13 +560,6 @@ export function useAssistantEvents(): AssistantEventData[] {
   
   if (!sessionId) return [];
   return eventsMap.get(sessionId) ?? [];
-}
-
-/**
- * Hook to get the current plan.
- */
-export function useCurrentPlan() {
-  return useAssistantStore((s) => s.currentPlan);
 }
 
 /**
@@ -554,4 +581,41 @@ export function useIsStreaming(): boolean {
  */
 export function useAssistantSessions(): SessionSummary[] {
   return useAssistantStore((s) => s.sessions);
+}
+
+/**
+ * Hook to get the current iteration info for ReAct agent.
+ */
+export function useCurrentIteration(): {
+  iteration: number;
+  max: number;
+  phase: "reasoning" | "acting" | null;
+} {
+  const iteration = useAssistantStore((s) => s._currentIteration);
+  const max = useAssistantStore((s) => s._maxIterations);
+  const phase = useAssistantStore((s) => s._currentPhase);
+  return { iteration, max, phase };
+}
+
+/**
+ * Hook to get the current thought buffer for streaming display.
+ */
+export function useCurrentThought(): string {
+  const iteration = useAssistantStore((s) => s._currentIteration);
+  const buffers = useAssistantStore((s) => s._thoughtBuffers);
+  return buffers.get(iteration) ?? "";
+}
+
+/**
+ * Hook to get all thought buffers (for displaying previous iterations).
+ */
+export function useThoughtBuffers(): Map<number, string> {
+  return useAssistantStore((s) => s._thoughtBuffers);
+}
+
+/**
+ * Hook to get the last tool used.
+ */
+export function useLastToolUsed(): string | null {
+  return useAssistantStore((s) => s._lastToolUsed);
 }

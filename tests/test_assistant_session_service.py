@@ -19,8 +19,6 @@ from app.agents.assistant.events import (
     DoneEvent,
     ErrorEvent,
     MessageEvent,
-    PlanEvent,
-    PlanStep,
     TitleEvent,
 )
 
@@ -270,13 +268,13 @@ class TestChat:
         
         service = AssistantSessionService(db=mock_db)
         
-        # Run chat with mocked flow
-        with patch("app.services.assistant.session_service.PlanActFlow") as MockFlow:
-            mock_flow = MagicMock()
-            mock_flow.run = AsyncMock(return_value=iter([
+        # Run chat with mocked ReActAgent
+        with patch("app.services.assistant.session_service.ReActAgent") as MockAgent:
+            mock_agent = MagicMock()
+            mock_agent.run = AsyncMock(return_value=iter([
                 DoneEvent(summary="Done"),
             ]))
-            MockFlow.return_value = mock_flow
+            MockAgent.return_value = mock_agent
             
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
                 with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
@@ -298,17 +296,15 @@ class TestChat:
     async def test_chat_concurrent_blocked(self):
         """Test that concurrent chat is blocked."""
         from app.services.assistant.session_service import (
-            _cancellation_flags,
-            _get_cancellation_event,
+            _active_chat_flags,
             AssistantSessionService,
         )
 
         session_id = uuid.uuid4()
         session_id_str = str(session_id)
 
-        # Set cancellation flag to simulate running chat
-        cancel_event = _get_cancellation_event(session_id_str)
-        cancel_event.set()
+        # Set active chat flag to simulate running chat
+        _active_chat_flags[session_id_str] = True
 
         try:
             mock_db = MagicMock()
@@ -328,7 +324,7 @@ class TestChat:
             assert received_events[0].code == "SESSION_BUSY"
         finally:
             # Clean up
-            cancel_event.clear()
+            _active_chat_flags.pop(session_id_str, None)
 
 
 class TestStopSession:
@@ -351,7 +347,7 @@ class TestStopSession:
     async def test_stop_session_running(self):
         """Test stopping a running session."""
         from app.services.assistant.session_service import (
-            _cancellation_flags,
+            _active_chat_flags,
             _get_cancellation_event,
             AssistantSessionService,
         )
@@ -359,9 +355,8 @@ class TestStopSession:
         session_id = uuid.uuid4()
         session_id_str = str(session_id)
         
-        # Set cancellation flag
-        event = _get_cancellation_event(session_id_str)
-        event.set()
+        # Set active chat flag to simulate running chat
+        _active_chat_flags[session_id_str] = True
         
         try:
             mock_db = MagicMock()
@@ -370,8 +365,11 @@ class TestStopSession:
             stopped = await service.stop_session(session_id)
             
             assert stopped is True
+            # Cancellation event should now be set
+            cancel_event = _get_cancellation_event(session_id_str)
+            assert cancel_event.is_set()
         finally:
-            event.clear()
+            _active_chat_flags.pop(session_id_str, None)
 
 
 class TestPersistEvent:
@@ -412,44 +410,42 @@ class TestPersistEvent:
         assert event.payload["content"] == "Hello"
 
 
-class TestUpsertPlan:
-    """Test plan upsert."""
+class TestRestoreScratchpad:
+    """Test scratchpad restoration for resume."""
     
-    @pytest.mark.asyncio
-    async def test_upsert_plan_creates_new(self):
-        """Test creating a new plan."""
-        from app.services.assistant.session_service import AssistantSessionService
+    def test_restore_scratchpad_from_events(self):
+        """Test restoring scratchpad from persisted events."""
+        from app.agents.assistant.react.memory import Scratchpad
+        from app.services.assistant.session_service import _restore_scratchpad_from_events
         
-        session_id = uuid.uuid4()
+        # Create mock events
+        mock_events = []
         
-        mock_db = MockSession()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # No existing plan
-        mock_db.execute = AsyncMock(return_value=mock_result)
+        # Add a tool event
+        tool_event = MagicMock()
+        tool_event.event_type = "tool"
+        tool_event.payload = {
+            "function": "search_papers",
+            "args": {"query": "LLM"},
+            "result": {"data": ["paper1", "paper2"]},
+        }
+        mock_events.append(tool_event)
         
-        service = AssistantSessionService(db=mock_db)
+        # Add a thought event
+        thought_event = MagicMock()
+        thought_event.event_type = "thought"
+        thought_event.payload = {
+            "delta": "I should search for papers",
+            "iteration": 0,
+        }
+        mock_events.append(thought_event)
         
-        plan_event = PlanEvent(
-            plan_id=str(uuid.uuid4()),
-            title="Test Plan",
-            language="en",
-            steps=[
-                PlanStep(
-                    id="step_1",
-                    description="Do something",
-                    expected_tool="some_tool",
-                    status="pending",
-                ),
-            ],
-        )
+        # Create scratchpad and restore
+        scratchpad = Scratchpad()
+        _restore_scratchpad_from_events(scratchpad, mock_events)
         
-        await service._upsert_plan(
-            session_id=session_id,
-            plan_event=plan_event,
-        )
-        
-        # Should have added a plan
-        assert len(mock_db._added) >= 1
+        # Verify observation was restored
+        assert len(scratchpad.trace) >= 1
 
 
 class TestGetPersistedEvents:
@@ -619,34 +615,18 @@ class TestChatWithMockFlow:
         ]
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        # Create mock events to yield
-        mock_flow_events = [
-            MessageEvent(
-                role="assistant",
-                content="I'll help you find papers on RAG.",
-            ),
-            PlanEvent(
-                plan_id=str(uuid.uuid4()),
-                title="Find RAG Papers",
-                language="en",
-                steps=[
-                    PlanStep(
-                        id="step_1",
-                        description="Search for RAG papers",
-                        expected_tool="search_papers",
-                        status="pending",
-                    ),
-                ],
-            ),
-            DoneEvent(summary="Task completed successfully"),
-        ]
-
         service = AssistantSessionService(db=mock_db)
 
-        with patch("app.services.assistant.session_service.PlanActFlow") as MockFlow:
-            mock_flow_instance = MagicMock()
-            mock_flow_instance.run = AsyncMock(return_value=iter(mock_flow_events))
-            MockFlow.return_value = mock_flow_instance
+        with patch("app.services.assistant.session_service.ReActAgent") as MockAgent:
+            mock_agent_instance = MagicMock()
+            mock_agent_instance.run = AsyncMock(return_value=iter([
+                MessageEvent(
+                    role="assistant",
+                    content="I'll help you find papers on RAG.",
+                ),
+                DoneEvent(summary="Task completed successfully"),
+            ]))
+            MockAgent.return_value = mock_agent_instance
 
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
                 with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
@@ -695,9 +675,13 @@ class TestResumeSession:
         mock_session.user_id = user_id
         mock_session.project_id = None
         mock_session.project = None
-        mock_session.events = []
-        mock_session.plan = mock_plan
         mock_session.status = "active"
+
+        # Mock events including a wait event to trigger resume
+        wait_event = MagicMock()
+        wait_event.event_type = "wait"
+        wait_event.payload = {"question": "What would you like to do?"}
+        mock_session.events = [wait_event]
 
         mock_user = MockUser(id=user_id)
 
@@ -717,16 +701,17 @@ class TestResumeSession:
         # Track if resume was called
         resume_called = False
 
-        async def mock_async_gen(message, resume=False):
+        async def mock_async_gen(message, resume=False, cancel_event=None):
             nonlocal resume_called
             resume_called = resume
             yield DoneEvent(summary="Done")
 
-        with patch("app.services.assistant.session_service.PlanActFlow") as MockFlow:
-            mock_flow_instance = MagicMock()
+        with patch("app.services.assistant.session_service.ReActAgent") as MockAgent:
+            mock_agent_instance = MagicMock()
             # Make run return an async generator
-            mock_flow_instance.run = mock_async_gen
-            MockFlow.return_value = mock_flow_instance
+            mock_agent_instance.run = mock_async_gen
+            mock_agent_instance.scratchpad = MagicMock()
+            MockAgent.return_value = mock_agent_instance
 
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
                 with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
@@ -741,5 +726,5 @@ class TestResumeSession:
                         ):
                             received_events.append(evt)
 
-        # Verify resume was called
+        # Verify resume was called (resume=True when session has wait event)
         assert resume_called is True

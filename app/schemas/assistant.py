@@ -75,32 +75,8 @@ class SessionEvent(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PlanStepData(BaseModel):
-    """A plan step (serialized from DB)."""
-
-    id: str
-    description: str
-    expected_tool: str
-    status: str = "pending"
-
-
-class PlanData(BaseModel):
-    """The plan attached to a session (serialized from DB)."""
-
-    id: UUID
-    title: str | None = None
-    language: str | None = None
-    steps: list[PlanStepData] = Field(default_factory=list)
-    current_step_index: int = 0
-    status: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 class SessionDetail(BaseModel):
-    """Full session detail with events and plan."""
+    """Full session detail with events."""
 
     id: UUID
     title: str | None = None
@@ -110,7 +86,6 @@ class SessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     events: list[SessionEvent] = Field(default_factory=list)
-    plan: PlanData | None = None
 
     model_config = {"from_attributes": True}
 
@@ -146,7 +121,6 @@ class ChatResponse(BaseModel):
 
     message: str = Field(..., description="Assistant's response message.")
     session_id: UUID
-    plan_id: str | None = None
 
     model_config = {"from_attributes": True}
 

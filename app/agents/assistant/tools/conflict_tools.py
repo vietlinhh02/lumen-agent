@@ -280,7 +280,7 @@ async def _list_conflicts_impl(
 
 
 @tool
-def detect_conflicts(
+async def detect_conflicts(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -300,23 +300,11 @@ def detect_conflicts(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _detect_conflicts_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_detect_conflicts_impl(project_id, uid, user))
+    return await _detect_conflicts_impl(project_id, uid, user)
 
 
 @tool
-def list_conflicts(
+async def list_conflicts(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -333,16 +321,18 @@ def list_conflicts(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _list_conflicts_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_list_conflicts_impl(project_id, uid, user))
+    return await _list_conflicts_impl(project_id, uid, user)
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class ConflictToolkit(BaseToolkit):
+    """Toolkit for conflict detection."""
+
+    def get_tools(self):
+        return [detect_conflicts, list_conflicts]

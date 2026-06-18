@@ -1,21 +1,18 @@
 """
 Assistant agent package.
 
-Contains the PlanActFlow, PlannerAgent, and ExecutionAgent that drive
-the Plan-Act workflow for the Lumen Assistant.
+Contains the ReActAgent that implements the ReAct (Reasoning + Acting)
+loop for the Lumen Assistant.
 
 Usage:
-    from app.agents.assistant import PlanActFlow, PlannerAgent, ExecutionAgent
+    from app.agents.assistant import ReActAgent
 """
 
 from __future__ import annotations
 
-from app.agents.assistant.flow import BaseFlow, PlanActFlow
-from app.agents.assistant.agents import ExecutionAgent, PlannerAgent
+from app.agents.assistant.react.agent import ReActAgent, ProjectContext
 
 __all__ = [
-    "PlanActFlow",
-    "BaseFlow",
-    "PlannerAgent",
-    "ExecutionAgent",
+    "ReActAgent",
+    "ProjectContext",
 ]

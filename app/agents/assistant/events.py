@@ -1,8 +1,7 @@
 """
 Event schemas for the Assistant SSE stream.
 
-Defines the full event model used by the SSE stream, adapted from ai-manus
-but tailored to Lumen's needs (no sandbox, no shell, no VNC).
+Defines the full event model used by the SSE stream for the ReAct agent.
 
 Each event carries:
 - id: unique event identifier
@@ -67,49 +66,6 @@ class TitleEvent(BaseEvent):
     title: str = Field(..., description="Session title")
 
 
-class PlanEvent(BaseEvent):
-    """A plan event containing the current plan steps."""
-
-    type: Literal["plan"] = "plan"
-    plan_id: str = Field(..., description="Unique plan identifier")
-    title: str = Field(..., description="Plan title")
-    language: str = Field(default="en", description="Plan language code")
-    steps: List["PlanStep"] = Field(default_factory=list, description="Plan steps")
-
-    @classmethod
-    def from_steps(
-        cls,
-        plan_id: str,
-        title: str,
-        language: str,
-        steps: List["PlanStep"],
-    ) -> "PlanEvent":
-        """Create a PlanEvent from steps."""
-        return cls(plan_id=plan_id, title=title, language=language, steps=steps)
-
-
-class PlanStep(BaseModel):
-    """A single step within a plan."""
-
-    id: str = Field(..., description="Unique step identifier")
-    description: str = Field(..., description="Human-readable step description")
-    expected_tool: str = Field(..., description="Tool name this step expects to call")
-    status: Literal["pending", "running", "completed", "failed"] = Field(
-        default="pending", description="Step execution status"
-    )
-
-
-class StepEvent(BaseEvent):
-    """A step status change event."""
-
-    type: Literal["step"] = "step"
-    step_id: str = Field(..., description="Step identifier")
-    description: str = Field(..., description="Step description")
-    status: Literal["pending", "running", "completed", "failed"] = Field(
-        ..., description="Step execution status"
-    )
-
-
 class ToolEvent(BaseEvent):
     """A tool call event (both calling and result)."""
 
@@ -162,6 +118,65 @@ class WaitEvent(BaseEvent):
     )
 
 
+class ThoughtEvent(BaseEvent):
+    """A streaming chunk of the agent's chain-of-thought (ReAct).
+
+    The frontend should accumulate ``delta`` into a per-iteration buffer
+    so the user sees the reasoning tokens stream in real time.
+    """
+
+    type: Literal["thought"] = "thought"
+    delta: str = Field(..., description="Incremental token chunk")
+    iteration: int = Field(..., ge=0, description="ReAct iteration index (0-indexed)")
+    is_final: bool = Field(
+        default=False,
+        description="True for the last token of the current Thought",
+    )
+
+
+class IterationEvent(BaseEvent):
+    """Marks the start of a new ReAct iteration and its current phase.
+
+    Emitted by the agent loop right before reasoning (streaming Thought
+    tokens) and again right before acting (executing tool calls).
+    """
+
+    type: Literal["iteration"] = "iteration"
+    n: int = Field(..., ge=0, description="Current iteration number (0-indexed)")
+    max: int = Field(..., ge=1, description="Max iterations cap (e.g., 15)")
+    phase: Literal["reasoning", "acting"] = Field(
+        ..., description="Current phase within the iteration"
+    )
+
+
+class ProgressEvent(BaseEvent):
+    """Marks progress in a multi-stage pipeline.
+
+    Emitted by pipeline orchestrators (e.g., ResearchPipeline) so the UI
+    can render a real-time progress bar without having to parse tool
+    events. Distinct from ToolEvent: ToolEvent signals a single tool
+    invocation; ProgressEvent signals a stage in a higher-level workflow.
+
+    Frontend should:
+    - group events by stage
+    - render the latest progress per stage as a status line
+    - show the message verbatim as human-readable status text
+    """
+
+    type: Literal["progress"] = "progress"
+    stage: str = Field(..., description="Pipeline stage name (e.g., 'search', 'matrix')")
+    progress: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Progress fraction within the pipeline (0.0 - 1.0)",
+    )
+    message: str = Field(..., description="Human-readable status message")
+    data: Optional[Dict[str, Any]] = Field(
+        default=None, description="Optional structured data (counts, IDs, links)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Union type for all events
 # ---------------------------------------------------------------------------
@@ -169,22 +184,24 @@ class WaitEvent(BaseEvent):
 AssistantEvent = Union[
     MessageEvent,
     TitleEvent,
-    PlanEvent,
-    StepEvent,
     ToolEvent,
     DoneEvent,
     ErrorEvent,
     WaitEvent,
+    ThoughtEvent,
+    IterationEvent,
+    ProgressEvent,
 ]
 
 # Type alias for event type literals
 EventType = Literal[
     "message",
     "title",
-    "plan",
-    "step",
     "tool",
     "done",
     "error",
     "wait",
+    "thought",
+    "iteration",
+    "progress",
 ]

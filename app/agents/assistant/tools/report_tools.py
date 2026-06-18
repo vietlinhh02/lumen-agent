@@ -411,7 +411,7 @@ async def _export_report_markdown_impl(
 
 
 @tool
-def generate_report(
+async def generate_report(
     project_id: str,
     title: Optional[str] = None,
     include_gap_section: bool = True,
@@ -438,27 +438,13 @@ def generate_report(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _generate_report_impl(
-                    project_id, title, include_gap_section, selected_gap_ids, uid, user
-                )
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_generate_report_impl(
-            project_id, title, include_gap_section, selected_gap_ids, uid, user
-        ))
+    return await _generate_report_impl(
+        project_id, title, include_gap_section, selected_gap_ids, uid, user
+    )
 
 
 @tool
-def list_reports(
+async def list_reports(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -475,23 +461,11 @@ def list_reports(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _list_reports_impl(project_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_list_reports_impl(project_id, uid, user))
+    return await _list_reports_impl(project_id, uid, user)
 
 
 @tool
-def get_report(
+async def get_report(
     project_id: str,
     report_id: str,
 ) -> Dict[str, Any]:
@@ -510,23 +484,11 @@ def get_report(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _get_report_impl(project_id, report_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_get_report_impl(project_id, report_id, uid, user))
+    return await _get_report_impl(project_id, report_id, uid, user)
 
 
 @tool
-def export_report_markdown(
+async def export_report_markdown(
     project_id: str,
     report_id: str,
 ) -> Dict[str, Any]:
@@ -544,16 +506,18 @@ def export_report_markdown(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _export_report_markdown_impl(project_id, report_id, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_export_report_markdown_impl(project_id, report_id, uid, user))
+    return await _export_report_markdown_impl(project_id, report_id, uid, user)
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class ReportToolkit(BaseToolkit):
+    """Toolkit for report generation."""
+
+    def get_tools(self):
+        return [generate_report, list_reports, get_report, export_report_markdown]

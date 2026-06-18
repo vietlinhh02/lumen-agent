@@ -127,7 +127,7 @@ async def _retrieve_evidence_impl(
 
 
 @tool
-def retrieve_evidence(
+async def retrieve_evidence(
     project_id: str,
     query: str,
     k: int = 8,
@@ -157,16 +157,18 @@ def retrieve_evidence(
     """
     user = get_user()
     uid = get_user_id()
-    
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(
-                asyncio.run,
-                _retrieve_evidence_impl(project_id, query, k, content_types, uid, user)
-            )
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_retrieve_evidence_impl(project_id, query, k, content_types, uid, user))
+    return await _retrieve_evidence_impl(project_id, query, k, content_types, uid, user)
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class EvidenceToolkit(BaseToolkit):
+    """Toolkit for evidence retrieval."""
+
+    def get_tools(self):
+        return [retrieve_evidence]

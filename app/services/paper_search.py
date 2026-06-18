@@ -411,7 +411,7 @@ async def _search_sources_parallel(
                     timeout=30,  # Reduced from 45s
                 )
             elif src_name in ("arxiv", "openalex"):
-                source = PaperHubSource()
+                source = PaperHubSource(provider_names=(src_name,))
             elif src_name == "exa":
                 source = ExaSource()
             else:

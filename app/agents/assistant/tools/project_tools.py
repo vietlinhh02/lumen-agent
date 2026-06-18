@@ -195,7 +195,7 @@ async def _create_project_impl(
 
 
 @tool
-def list_projects(
+async def list_projects(
     user_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -209,27 +209,13 @@ def list_projects(
     Args:
         user_id: (Optional) The user ID. If not provided, retrieved from context.
     """
-    # Note: This is a sync wrapper. The actual implementation is async.
-    # In the execution agent, we use asyncio.run() or call the async version directly.
     user = get_user()
     uid = user_id or get_user_id()
-
-    # Run sync for LangChain compatibility
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        # If we're already in an async context, create a task
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, _list_projects_impl(uid, user))
-            return future.result()
-    except RuntimeError:
-        # No running event loop
-        return asyncio.run(_list_projects_impl(uid, user))
+    return await _list_projects_impl(uid, user)
 
 
 @tool
-def get_project(
+async def get_project(
     project_id: str,
 ) -> Dict[str, Any]:
     """
@@ -246,20 +232,11 @@ def get_project(
     """
     user = get_user()
     uid = get_user_id()
-
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, _get_project_impl(project_id, uid, user))
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_get_project_impl(project_id, uid, user))
+    return await _get_project_impl(project_id, uid, user)
 
 
 @tool
-def create_project(
+async def create_project(
     name: str,
     topic: str,
     research_question: Optional[str] = None,
@@ -280,16 +257,7 @@ def create_project(
     """
     user = get_user()
     uid = get_user_id()
-
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(asyncio.run, _create_project_impl(name, topic, research_question, uid, user))
-            return future.result()
-    except RuntimeError:
-        return asyncio.run(_create_project_impl(name, topic, research_question, uid, user))
+    return await _create_project_impl(name, topic, research_question, uid, user)
 
 
 @tool
@@ -323,3 +291,21 @@ def ask_user_clarification(
         "options": options,
         "message": "Waiting for user response",
     }
+
+
+# ── Toolkit Registration ─────────────────────────────────────────────────────
+
+from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
+
+
+@register_toolkit
+class ProjectToolkit(BaseToolkit):
+    """Toolkit for project-related operations."""
+
+    def get_tools(self) -> List[BaseTool]:
+        return [
+            list_projects,
+            get_project,
+            create_project,
+            ask_user_clarification,
+        ]

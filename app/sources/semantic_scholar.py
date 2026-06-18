@@ -11,7 +11,10 @@ tokens instead of offset-based pagination.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import time
+from typing import Optional
 
 import httpx
 
@@ -28,6 +31,18 @@ _SEARCH_FIELDS = (
 _BATCH_SIZE = 100  # API max per page
 
 _HEADERS = {"User-Agent": "LitReviewBot/0.1 (academic research tool)"}
+
+# Rate limiting: allow max 1 concurrent request, with 1s cooldown between requests
+_rate_limit_semaphore: Optional[asyncio.Semaphore] = None
+_rate_limit_cooldown: float = 1.0
+_last_request_time: float = 0.0
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _rate_limit_semaphore
+    if _rate_limit_semaphore is None:
+        _rate_limit_semaphore = asyncio.Semaphore(1)
+    return _rate_limit_semaphore
 
 
 def _build_headers(api_key: str | None = None) -> dict[str, str]:
@@ -46,6 +61,8 @@ class SemanticScholarSource(PaperSource):
     def __init__(self, api_key: str | None = None, timeout: float = 30.0) -> None:
         self._api_key = api_key
         self._timeout = timeout
+        self._cache: dict[str, tuple[list[RawPaper], float]] = {}
+        self._cache_ttl = 300.0  # 5 min cache
 
     async def search(
         self,
@@ -57,8 +74,18 @@ class SemanticScholarSource(PaperSource):
         """Fetch up to *limit* papers via the /paper/search/bulk endpoint.
 
         Uses continuation-token pagination to collect results across
-        multiple pages.
+        multiple pages. Results are cached for 5 minutes to avoid
+        redundant API calls during ReAct loop iterations.
         """
+        # Check cache first
+        cache_key = self._make_cache_key(query, limit, year_from, year_to)
+        now = time.monotonic()
+        if cache_key in self._cache:
+            cached_papers, cached_at = self._cache[cache_key]
+            if now - cached_at < self._cache_ttl:
+                logger.debug("Semantic Scholar cache hit for query: %s", query[:50])
+                return cached_papers[:limit]
+
         papers: list[RawPaper] = []
         collected = 0
         token: str | None = None
@@ -75,7 +102,21 @@ class SemanticScholarSource(PaperSource):
             if not token or len(batch) < batch_size:
                 break
 
-        return papers[:limit]
+        result = papers[:limit]
+        # Cache the result
+        self._cache[cache_key] = (result, now)
+        return result
+
+    def _make_cache_key(
+        self,
+        query: str,
+        limit: int,
+        year_from: int | None,
+        year_to: int | None,
+    ) -> str:
+        """Create a cache key for this search query."""
+        key_parts = f"{query}:{limit}:{year_from}:{year_to}"
+        return hashlib.md5(key_parts.encode()).hexdigest()
 
     # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,29 +143,46 @@ class SemanticScholarSource(PaperSource):
 
         url = f"{_BASE}/paper/search/bulk"
 
-        async with httpx.AsyncClient(
-            timeout=self._timeout,
-            headers=_build_headers(self._api_key),
-        ) as client:
-            for attempt in range(3):
-                try:
-                    resp = await client.get(url, params=params)
-                    resp.raise_for_status()
-                    body = resp.json()
-                    hits = [self._parse_hit(h) for h in body.get("data", [])]
-                    next_token = body.get("token")
-                    return hits, next_token
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 429:
-                        wait = 2**attempt
-                        logger.warning("Semantic Scholar 429 – retrying in %ss", wait)
-                        await asyncio.sleep(wait)
-                        continue
-                    logger.error("Semantic Scholar HTTP %s: %s", exc.response.status_code, exc)
-                    return [], None
-                except httpx.RequestError as exc:
-                    logger.error("Semantic Scholar request error: %s", exc)
-                    return [], None
+        # Use rate limiting semaphore to prevent 429 from concurrent requests
+        semaphore = _get_semaphore()
+
+        async with semaphore:
+            # Enforce cooldown between requests
+            global _last_request_time
+            now = time.monotonic()
+            wait_time = _rate_limit_cooldown - (now - _last_request_time)
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+            _last_request_time = time.monotonic()
+
+            async with httpx.AsyncClient(
+                timeout=self._timeout,
+                headers=_build_headers(self._api_key),
+            ) as client:
+                for attempt in range(6):
+                    try:
+                        resp = await client.get(url, params=params)
+                        resp.raise_for_status()
+                        body = resp.json()
+                        hits = [self._parse_hit(h) for h in body.get("data", [])]
+                        next_token = body.get("token")
+                        return hits, next_token
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code == 429:
+                            import random
+                            wait = (2 ** (attempt + 1)) + random.uniform(0.1, 1.0)
+                            logger.warning(
+                                "Semantic Scholar 429 (Too Many Requests) – retrying attempt %d/6 in %.2fs",
+                                attempt + 1,
+                                wait,
+                            )
+                            await asyncio.sleep(wait)
+                            continue
+                        logger.error("Semantic Scholar HTTP %s: %s", exc.response.status_code, exc)
+                        return [], None
+                    except httpx.RequestError as exc:
+                        logger.error("Semantic Scholar request error: %s", exc)
+                        return [], None
 
         return [], None
 
