@@ -164,10 +164,10 @@ export function FullTextPanel({
                 : showAsLlmNormalized
                   ? `${markdownSections.length} sections · LLM-normalized`
                   : showAsIndexed
-                    ? `${groupedChunks.length} sections · ${data.total_chunks} chunks · pdf-oxide`
+                    ? `${groupChunks(data.chunks).length} sections · ${data.total_chunks} chunks`
                     : hasDisplayMarkdown
                       ? `${markdownSections.length} sections`
-                      : `${groupedChunks.length} sections · ${data.total_chunks} chunks`}
+                      : `${groupChunks(data.chunks).length} sections · ${data.total_chunks} chunks`}
               {" · "}{data.total_chars.toLocaleString()} chars
             </p>
           </div>

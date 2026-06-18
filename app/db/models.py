@@ -1041,7 +1041,7 @@ class AssistantEvent(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('title', 'tool', 'progress', 'done', 'error', 'wait', 'message_ack')",
+            "event_type IN ('title', 'tool', 'progress', 'done', 'error', 'wait', 'message_ack', 'message', 'thought', 'iteration', 'step', 'plan')",
             name="ck_assistant_events_type",
         ),
         # Composite index for fast audit event retrieval ordered by time.

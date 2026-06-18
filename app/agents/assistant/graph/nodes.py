@@ -657,9 +657,28 @@ async def research_pipeline_node(
         emit(DoneEvent(summary="Research pipeline aborted."))
         return {"pending_events": []}
 
+    # ── Generate academic search query via LLM ──────────────────────────────
+    project_context = getattr(state, "project_context", None) or {}
+    project_topic = project_context.get("topic") or project_context.get("description") or ""
+    project_name = project_context.get("project_name") or ""
+
+    emit(ProgressEvent(
+        stage="think",
+        progress=0.0,
+        message="Đang phân tích yêu cầu và xây dựng search query...",
+    ))
+
+    academic_query = await _generate_search_query(query, project_name, project_topic)
+
+    emit(ProgressEvent(
+        stage="think",
+        progress=0.05,
+        message=f"Query: {academic_query}",
+    ))
+
     config = ResearchPipelineConfig(
         project_id=project_id,
-        query=query,
+        query=academic_query,
         max_papers_to_save=10,
         relevance_threshold="medium",
         include_gap_section=True,
@@ -963,3 +982,59 @@ def _get_tool_definitions(state: AssistantGraphState) -> List[Dict[str, Any]]:
 
     caller = ToolCaller()
     return caller.convert_to_openai_format(tools)
+
+
+async def _generate_search_query(
+    user_message: str,
+    project_name: str,
+    project_topic: str,
+) -> str:
+    """Use LLM to generate a concise academic search query from user's request + project context.
+
+    Falls back to a cleaned-up version of the user message if LLM call fails.
+    """
+    from app.ai.provider import get_provider
+
+    provider = get_provider()
+
+    context_parts = []
+    if project_name:
+        context_parts.append(f"Project: {project_name}")
+    if project_topic:
+        context_parts.append(f"Topic: {project_topic}")
+    context_str = "\n".join(context_parts) if context_parts else "(no project context)"
+
+    system = (
+        "You are a research assistant helping formulate academic search queries. "
+        "Given the user's request and project context, output a single concise academic search query "
+        "suitable for Semantic Scholar / Google Scholar. "
+        "The query should be in English, 5-15 words, using academic terminology. "
+        "Output ONLY the query string, no explanation, no quotes, no punctuation at the end."
+    )
+
+    prompt = (
+        f"Project context:\n{context_str}\n\n"
+        f"User request: {user_message}\n\n"
+        "Generate the academic search query:"
+    )
+
+    try:
+        result = ""
+        async for token in provider.stream(
+            messages=[{"role": "user", "content": prompt}],
+            system=system,
+            max_tokens=80,
+        ):
+            result += token
+        query = result.strip().strip('"').strip("'").strip()
+        if query and len(query) >= 3:
+            return query[:500]
+    except Exception as exc:
+        logger.warning("Query generation LLM call failed: %s", exc)
+
+    # Fallback: strip conversational phrases and use first 500 chars
+    fallback = user_message.strip()
+    for phrase in ["tìm các paper", "tìm paper", "tóm tắt cho tôi", "liên quan", "tìm hiểu", "giúp tôi", "hãy", "please", "can you", "find papers about"]:
+        fallback = fallback.replace(phrase, "").strip()
+    fallback = " ".join(fallback.split())[:500] or user_message[:500]
+    return fallback

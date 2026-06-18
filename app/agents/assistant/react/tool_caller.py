@@ -191,8 +191,24 @@ class ToolCaller:
             return {"_wait": True, "question": question, "options": args.get("options")}, True
 
         try:
+            # Coerce JSON-encoded strings to proper types (LLMs sometimes send
+            # '["a", "b"]' instead of an actual list, etc.)
+            coerced_args: Dict[str, Any] = {}
+            for k, v in args.items():
+                if isinstance(v, str):
+                    stripped = v.strip()
+                    if (stripped.startswith("[") and stripped.endswith("]")) or (
+                        stripped.startswith("{") and stripped.endswith("}")
+                    ):
+                        try:
+                            coerced_args[k] = json.loads(stripped)
+                            continue
+                        except json.JSONDecodeError:
+                            pass
+                coerced_args[k] = v
+
             # Execute tool (async or sync)
-            result = await self._invoke_tool(tool, args)
+            result = await self._invoke_tool(tool, coerced_args)
             return result, False
         except Exception as exc:
             logger.error("Tool %s failed: %s", tool_name, exc)
