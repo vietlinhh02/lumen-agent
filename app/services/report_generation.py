@@ -58,7 +58,7 @@ _REPORT_ANGLE_QUERIES = [
     "{topic} gap underexplored missing comparison",
 ]
 _MAX_CHUNKS_PER_ANGLE = 15
-_MAX_SECTION_CHUNK_BUDGET = 8000  # chars per section
+_MAX_SECTION_CHUNK_BUDGET = 30000  # chars per section
 _MAX_SECTION_TOKENS = 3000
 _REPORT_SECTION_CONCURRENCY = 4  # Parallel section generation
 _MIN_SECTIONS_FOR_PLANNING = 5
@@ -209,6 +209,7 @@ async def _plan_sections(
     safe_rows: list[dict],
     safe_gaps: list[dict],
     safe_conflicts: list[dict],
+    paper_catalog_str: str,
     provider,
 ) -> list[dict]:
     """Plan literature review sections using LLM.
@@ -219,6 +220,9 @@ async def _plan_sections(
 
 Topic: {topic}
 Research Question: {research_question or 'Not specified'}
+Available Papers (ID to Title):
+{paper_catalog_str}
+
 Matrix Rows (first 10): {json.dumps(safe_rows[:10], indent=2)}
 Gaps: {json.dumps(safe_gaps, indent=2) if safe_gaps else 'None'}
 Conflicts: {json.dumps(safe_conflicts, indent=2) if safe_conflicts else 'None'}
@@ -230,6 +234,7 @@ Plan a literature review with 5-8 sections. Each section should cover a distinct
 - If gaps exist, at least one section addressing research gaps
 - If conflicts exist, at least one section on conflicting findings
 - Include a section on applications and future directions
+- IMPORTANT: Ensure your planned sections collectively try to cover as many of the provided matrix rows as possible.
 
 Return a JSON object with a "sections" array, each section having:
 - "heading": section name
@@ -280,7 +285,7 @@ Example format:
 async def _generate_section(
     section_plan: dict,
     chunks_by_paper: dict[UUID, list[RetrievedChunk]],
-    paper_ids_json: str,
+    paper_catalog_str: str,
     topic: str,
     provider,
 ) -> dict | None:
@@ -298,13 +303,18 @@ async def _generate_section(
         except (ValueError, TypeError):
             pass
 
+    # Fallback: if LLM gave wrong/hallucinated UUIDs and no chunks matched,
+    # use all available chunks ranked by score so the section always has evidence.
+    if not focus_chunks:
+        focus_chunks = [c for chunks in chunks_by_paper.values() for c in chunks]
+
     # Sort by score and limit chunk budget
     focus_chunks.sort(key=lambda c: c.score, reverse=True)
 
     chunk_parts: list[str] = []
     total = 0
     included_pids = set()
-    for c in focus_chunks[:8]:
+    for c in focus_chunks[:30]:
         label = c.section_label or c.content_type or "section"
         block = f"---{label} (Paper ID: {c.project_paper_id})---\n{c.chunk_text}"
         if total + len(block) > _MAX_SECTION_CHUNK_BUDGET:
@@ -322,7 +332,8 @@ Topic: {topic}
 Section: {section_plan.get('heading', 'Untitled')}
 Theme: {section_plan.get('theme', '')}
 
-Available paper IDs: {local_paper_ids_json}
+Available Papers (ID to Title):
+{paper_catalog_str}
 
 Full-text evidence:
 {chunk_context}
@@ -358,6 +369,7 @@ async def _aggregate_sections(
     sections: list[dict],
     safe_conflicts: list[dict],
     safe_gaps: list[dict],
+    paper_catalog_str: str,
     provider,
 ) -> list[dict]:
     """Final pass: weave in conflicts + gaps, ensure smooth transitions.
@@ -375,6 +387,9 @@ Please review and improve them:
 3. If conflicts exist but not addressed, add a paragraph on conflicting findings
 4. If gaps exist but not addressed, add a paragraph on research gaps
 5. Ensure consistent citation style throughout
+6. IMPORTANT: You MUST ONLY use the valid paper IDs provided below for citations. Do not invent IDs.
+Available Papers (ID to Title):
+{paper_catalog_str}
 
 Existing sections:
 {json.dumps(sections, indent=2)}
@@ -422,15 +437,20 @@ async def generate_report(
     if not matrix_rows:
         return {"error": "No matrix rows. Generate a literature matrix first.", "status": "failed"}
 
-    # 2. Load saved project_paper IDs
-    pp_stmt = select(ProjectPaper).where(
+    # 2. Load saved project_paper IDs with Titles
+    pp_stmt = select(ProjectPaper, Paper.title).join(Paper, ProjectPaper.paper_id == Paper.id).where(
         ProjectPaper.project_id == project_id,
         ProjectPaper.status == "saved",
     )
-    project_papers = list((await db.execute(pp_stmt)).scalars().all())
-    if not project_papers:
+    pp_results = list((await db.execute(pp_stmt)).all())
+    if not pp_results:
         return {"error": "No saved papers in project.", "status": "failed"}
+        
+    project_papers = [row[0] for row in pp_results]
     valid_pp_ids = {pp.id for pp in project_papers}
+    
+    paper_catalog_dict = {str(row[0].id): row[1] for row in pp_results}
+    paper_catalog_str = json.dumps(paper_catalog_dict, indent=2)
 
     # 3. Load gaps (optional)
     gaps: list[ResearchGap] = []
@@ -487,7 +507,6 @@ async def generate_report(
             for c in conflicts
         ]
     )
-    paper_ids_json = json.dumps([str(pp.id) for pp in project_papers])
 
     report_title = title or f"Literature Review: {topic}"
 
@@ -513,11 +532,10 @@ async def generate_report(
 
     # 8b. Section planning
     sections_plan = await _plan_sections(
-        topic, research_question, safe_rows, safe_gaps, safe_conflicts, provider
+        topic, research_question, safe_rows, safe_gaps, safe_conflicts, paper_catalog_str, provider
     )
     logger.info("Section planning: %d sections planned", len(sections_plan))
     chunk_context: str | None = None
-    local_paper_ids_json: str | None = None
 
     # 8c. Per-section generation (parallel)
     if sections_plan:
@@ -526,7 +544,7 @@ async def generate_report(
         async def _generate_with_semaphore(plan: dict) -> dict | None:
             async with sem:
                 return await _generate_section(
-                    plan, chunks_by_paper, paper_ids_json, topic, provider
+                    plan, chunks_by_paper, paper_catalog_str, topic, provider
                 )
 
         section_tasks = [_generate_with_semaphore(plan) for plan in sections_plan]
@@ -546,7 +564,7 @@ async def generate_report(
     # 8d. Aggregate + weave conflicts/gaps
     if generated_sections:
         sections = await _aggregate_sections(
-            generated_sections, safe_conflicts, safe_gaps, provider
+            generated_sections, safe_conflicts, safe_gaps, paper_catalog_str, provider
         )
     else:
         # Ultimate fallback: use single-pass generation with original retrieval
@@ -573,7 +591,7 @@ async def generate_report(
             project_id,
             topic,
             research_question,
-            local_paper_ids_json,
+            paper_catalog_str,
             safe_rows,
             safe_gaps,
             safe_conflicts,
@@ -596,7 +614,7 @@ async def generate_report(
                 project_id,
                 topic,
                 research_question,
-                local_paper_ids_json,
+                paper_catalog_str,
                 safe_rows,
                 safe_gaps,
                 safe_conflicts,
@@ -650,7 +668,7 @@ async def _generate_and_validate(
     project_id: UUID,
     topic: str,
     research_question: str | None,
-    paper_ids_json: str,
+    paper_catalog_str: str,
     safe_rows: list[dict],
     safe_gaps: list[dict],
     safe_conflicts: list[dict],
@@ -662,7 +680,7 @@ async def _generate_and_validate(
     user_msg = REVIEW_WRITER_CHUNK_USER.format(
         project_topic=topic,
         research_question=research_question or topic,
-        paper_ids_json=paper_ids_json,
+        paper_ids_json=paper_catalog_str,
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         gaps_json=json.dumps(safe_gaps, indent=2),
         conflicts_json=json.dumps(safe_conflicts, indent=2),
