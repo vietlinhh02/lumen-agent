@@ -351,9 +351,6 @@ class OpenAICompatibleAdapter(AIProvider):
             "max_tokens": max_tokens,
             "temperature": 0.0,
         }
-        if self._model.startswith(("deepseek", "mimo")):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         response = await self._client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
 
@@ -388,9 +385,6 @@ class OpenAICompatibleAdapter(AIProvider):
         }
         if tools:
             kwargs["tools"] = tools
-        if self._model.startswith(("deepseek", "mimo")):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
         try:
             stream = await self._client.chat.completions.create(**kwargs)
@@ -481,9 +475,6 @@ class OpenAICompatibleAdapter(AIProvider):
         if use_response_format:
             kwargs["response_format"] = {"type": "json_object"}
             
-        if self._model.startswith(("deepseek", "mimo")):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
         response = await self._client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
@@ -527,9 +518,6 @@ class OpenAICompatibleAdapter(AIProvider):
             "tools": [tool_def],
             "tool_choice": "auto" if self._model.startswith("mimo") else {"type": "function", "function": {"name": tool_name}},
         }
-        if self._model.startswith(("deepseek", "mimo")):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         response = await self._client.chat.completions.create(**kwargs)
         tool_calls = response.choices[0].message.tool_calls
         if not tool_calls:
@@ -565,9 +553,6 @@ class OpenAICompatibleAdapter(AIProvider):
         }
         if tools:
             kwargs["tools"] = tools
-        if self._model.startswith(("deepseek", "mimo")):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
         accumulated_text = ""
         tool_calls: dict[str, dict[str, Any]] = {}  # call_id -> {name, args_str}

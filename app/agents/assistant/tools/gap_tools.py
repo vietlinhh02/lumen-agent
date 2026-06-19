@@ -54,11 +54,11 @@ async def _poll_job(
     from app.db.session import async_session_factory
     
     elapsed = 0.0
-    async with async_session_factory() as db:
-        while elapsed < max_wait:
-            await asyncio.sleep(interval)
-            elapsed += interval
-            
+    while elapsed < max_wait:
+        await asyncio.sleep(interval)
+        elapsed += interval
+        
+        async with async_session_factory() as db:
             result = await db.execute(
                 select(BackgroundJob).where(BackgroundJob.id == job_id)
             )

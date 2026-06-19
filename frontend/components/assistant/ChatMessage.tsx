@@ -285,7 +285,15 @@ function MessageBubble({
               ) : (
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]} 
-                  rehypePlugins={[rehypeRaw, rehypeTwemojify]}
+                  rehypePlugins={[
+                    rehypeRaw, 
+                    [rehypeTwemojify, { 
+                      params: { 
+                        folder: "svg", 
+                        ext: ".svg" 
+                      } 
+                    }]
+                  ]}
                 >
                   {isUser ? event.content : parsed!.cleanContent}
                 </ReactMarkdown>
