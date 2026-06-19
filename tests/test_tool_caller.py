@@ -1,8 +1,8 @@
 """Tests for the ToolCaller module."""
 
-import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class MockPydanticModel:

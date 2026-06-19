@@ -75,7 +75,8 @@ async def get_stats(
 
 
 from fastapi import Query
-from sqlalchemy import or_, String, cast
+from sqlalchemy import String, cast, or_
+
 
 @router.get("/papers/all")
 async def list_all_papers(

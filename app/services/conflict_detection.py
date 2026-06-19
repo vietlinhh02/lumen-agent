@@ -43,9 +43,7 @@ def _dedup_conflicts(conflicts: list[dict]) -> list[dict]:
     for c in conflicts:
         key = (str(c["paper_a_id"]), str(c["paper_b_id"]))
         existing = seen.get(key)
-        if existing is None or c.get("confidence") == "high":
-            seen[key] = c
-        elif c.get("confidence") == "medium" and existing.get("confidence") == "low":
+        if existing is None or c.get("confidence") == "high" or c.get("confidence") == "medium" and existing.get("confidence") == "low":
             seen[key] = c
     return list(seen.values())
 

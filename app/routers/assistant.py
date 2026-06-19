@@ -28,6 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.agents.assistant.event_mapper import EventMapper
 from app.agents.assistant.events import BaseEvent
+from app.agents.assistant.graph.adapter import is_graph_enabled
 from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
@@ -38,15 +39,14 @@ from app.schemas.assistant import (
     SessionDetail,
     SessionEvent,
     SessionListResponse,
+    SessionProjectUpdate,
     SessionResponse,
     SessionSummary,
     SessionTitleUpdate,
-    SessionProjectUpdate,
 )
 from app.services.assistant.metrics import metrics
 from app.services.assistant.rate_limit import rate_limiter
 from app.services.assistant.session_service import AssistantSessionService
-from app.agents.assistant.graph.adapter import is_graph_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -375,8 +375,9 @@ async def update_session_project(
 
     # If setting to a new project, verify project exists and user owns it
     if body.project_id:
-        from app.db.models import Project
         from sqlalchemy import select
+
+        from app.db.models import Project
         result = await db.execute(
             select(Project).where(
                 Project.id == body.project_id,

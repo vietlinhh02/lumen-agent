@@ -14,7 +14,6 @@ import asyncio
 import hashlib
 import logging
 import time
-from typing import Optional
 
 import httpx
 
@@ -33,7 +32,7 @@ _BATCH_SIZE = 100  # API max per page
 _HEADERS = {"User-Agent": "LitReviewBot/0.1 (academic research tool)"}
 
 # Rate limiting: allow max 1 concurrent request, with 1s cooldown between requests
-_rate_limit_semaphore: Optional[asyncio.Semaphore] = None
+_rate_limit_semaphore: asyncio.Semaphore | None = None
 _rate_limit_cooldown: float = 1.0
 _last_request_time: float = 0.0
 

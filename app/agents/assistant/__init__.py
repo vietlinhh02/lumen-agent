@@ -10,7 +10,7 @@ Usage:
 
 from __future__ import annotations
 
-from app.agents.assistant.react.agent import ReActAgent, ProjectContext
+from app.agents.assistant.react.agent import ProjectContext, ReActAgent
 
 __all__ = [
     "ReActAgent",

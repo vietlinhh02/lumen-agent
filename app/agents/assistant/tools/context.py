@@ -20,19 +20,20 @@ Usage:
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
+
     from app.db.models import User
 
 # Context variables - these are process-global but values are request-scoped
 # Each asyncio task / thread gets its own copy of the context
 
-_user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
-_project_id_var: ContextVar[Optional[str]] = ContextVar("project_id", default=None)
-_user_var: ContextVar[Optional["User"]] = ContextVar("user", default=None)
-_tools_var: ContextVar[Optional[List["BaseTool"]]] = ContextVar("tools", default=None)
+_user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+_project_id_var: ContextVar[str | None] = ContextVar("project_id", default=None)
+_user_var: ContextVar[User | None] = ContextVar("user", default=None)
+_tools_var: ContextVar[list[BaseTool] | None] = ContextVar("tools", default=None)
 
 
 class UserContext:
@@ -47,9 +48,9 @@ class UserContext:
 
     def __init__(
         self,
-        user_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        user: Optional["User"] = None,
+        user_id: str | None = None,
+        project_id: str | None = None,
+        user: User | None = None,
     ) -> None:
         self.user_id = user_id
         self.project_id = project_id
@@ -60,10 +61,10 @@ class UserContext:
 
 
 def set_user_context(
-    user_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    user: Optional["User"] = None,
-    tools: Optional[List["BaseTool"]] = None,
+    user_id: str | None = None,
+    project_id: str | None = None,
+    user: User | None = None,
+    tools: list[BaseTool] | None = None,
 ) -> None:
     """
     Set user/project context for the current request.
@@ -84,7 +85,7 @@ def set_user_context(
         _tools_var.set(tools)
 
 
-def get_tools() -> Optional[List["BaseTool"]]:
+def get_tools() -> list[BaseTool] | None:
     """
     Get the current list of available tools.
 
@@ -108,7 +109,7 @@ def get_user_context() -> UserContext:
     )
 
 
-def get_user_id() -> Optional[str]:
+def get_user_id() -> str | None:
     """
     Get the current user ID from context.
 
@@ -118,7 +119,7 @@ def get_user_id() -> Optional[str]:
     return _user_id_var.get()
 
 
-def get_project_id() -> Optional[str]:
+def get_project_id() -> str | None:
     """
     Get the current project ID from context.
 
@@ -128,7 +129,7 @@ def get_project_id() -> Optional[str]:
     return _project_id_var.get()
 
 
-def get_user() -> Optional["User"]:
+def get_user() -> User | None:
     """
     Get the current User model instance from context.
 
@@ -167,16 +168,16 @@ class UserContextVar:
 
     def __init__(
         self,
-        user_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        user: Optional["User"] = None,
+        user_id: str | None = None,
+        project_id: str | None = None,
+        user: User | None = None,
     ) -> None:
         self.user_id = user_id
         self.project_id = project_id
         self.user = user
         self._tokens: tuple = ()
 
-    def __enter__(self) -> "UserContextVar":
+    def __enter__(self) -> UserContextVar:
         # Capture current values BEFORE overwriting - use current if None passed
         current_user_id = self.user_id if self.user_id is not None else _user_id_var.get()
         current_project_id = self.project_id if self.project_id is not None else _project_id_var.get()

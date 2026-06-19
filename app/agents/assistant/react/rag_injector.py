@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from uuid import UUID
+    pass
 
 from app.agents.assistant.react.memory import Scratchpad
 
@@ -170,8 +170,8 @@ def _build_query_for_tool(tool_name: str, tool_args: dict) -> str:
     # Specific queries based on tool
     if tool_name == "generate_matrix":
         # Get context about paper comparisons and evaluation metrics
-        project_id = tool_args.get("project_id", "")
-        return f"Compare papers in project: methods, datasets, results, evaluation metrics"
+        tool_args.get("project_id", "")
+        return "Compare papers in project: methods, datasets, results, evaluation metrics"
 
     if tool_name == "detect_research_gaps":
         return "Research gaps, limitations, future work, unresolved problems"

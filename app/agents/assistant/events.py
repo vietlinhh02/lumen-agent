@@ -12,8 +12,8 @@ Each event carries:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Union
+from datetime import UTC, datetime
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -25,7 +25,7 @@ def generate_event_id() -> str:
 
 def now() -> datetime:
     """Return current UTC datetime (timezone-aware)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ class MessageEvent(BaseEvent):
     type: Literal["message"] = "message"
     role: Literal["user", "assistant"] = Field(..., description="Message author role")
     content: str = Field(..., description="Message text content")
-    attachments: Optional[List[Dict[str, Any]]] = Field(
+    attachments: list[dict[str, Any]] | None = Field(
         default=None, description="Optional file attachments"
     )
 
@@ -84,11 +84,11 @@ class ToolEvent(BaseEvent):
         ..., description="Tool call status"
     )
     function: str = Field(..., description="Function/tool name being called")
-    args: Dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
-    result: Optional[Any] = Field(
+    args: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
+    result: Any | None = Field(
         default=None, description="Tool execution result (if completed)"
     )
-    error: Optional[str] = Field(
+    error: str | None = Field(
         default=None, description="Error message (if failed)"
     )
 
@@ -97,7 +97,7 @@ class DoneEvent(BaseEvent):
     """Signals that the session has completed."""
 
     type: Literal["done"] = "done"
-    summary: Optional[str] = Field(
+    summary: str | None = Field(
         default=None, description="Optional session summary"
     )
 
@@ -108,7 +108,7 @@ class ErrorEvent(BaseEvent):
     type: Literal["error"] = "error"
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Human-readable error message")
-    details: Optional[Dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         default=None, description="Additional error details"
     )
 
@@ -118,10 +118,10 @@ class WaitEvent(BaseEvent):
 
     type: Literal["wait"] = "wait"
     question: str = Field(..., description="Question to ask the user")
-    options: Optional[List[str]] = Field(
+    options: list[str] | None = Field(
         default=None, description="Optional multiple choice options"
     )
-    placeholder: Optional[str] = Field(
+    placeholder: str | None = Field(
         default=None, description="Input placeholder text"
     )
 
@@ -180,7 +180,7 @@ class ProgressEvent(BaseEvent):
         description="Progress fraction within the pipeline (0.0 - 1.0)",
     )
     message: str = Field(..., description="Human-readable status message")
-    data: Optional[Dict[str, Any]] = Field(
+    data: dict[str, Any] | None = Field(
         default=None, description="Optional structured data (counts, IDs, links)"
     )
 

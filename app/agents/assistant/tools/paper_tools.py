@@ -13,31 +13,18 @@ Use these when:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool, tool
 from pydantic import Field
 
-from app.agents.assistant.tools.context import get_project_id, get_user, get_user_id
-from app.agents.assistant.tools.schemas import (
-    ListProjectPapersInput,
-    ListProjectPapersOutput,
-    PaperSchema,
-    RemovePaperInput,
-    RemovePaperOutput,
-    RetrieveEvidenceOutput,
-    SavePaperInput,
-    SavePaperOutput,
-    SearchPapersInput,
-    SearchPapersOutput,
-    ToolResult,
-)
+from app.agents.assistant.tools.context import get_user, get_user_id
 
 if TYPE_CHECKING:
-    from uuid import UUID
+    pass
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -45,7 +32,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -58,11 +45,11 @@ def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any
 
 async def _search_papers_impl(
     query: str,
-    sources: List[str],
-    year_from: Optional[int],
-    year_to: Optional[int],
+    sources: list[str],
+    year_from: int | None,
+    year_to: int | None,
     limit: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Search for papers using the paper search service.
 
@@ -122,7 +109,7 @@ async def _search_papers_impl(
                 "source_diagnostics": source_diagnostics,
             }
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return _error_result("SEARCH_TIMEOUT", "Paper search timed out after 45 seconds")
     except Exception as exc:
         return _error_result("SEARCH_FAILED", str(exc))
@@ -133,10 +120,10 @@ async def _search_papers_impl(
 
 async def _save_paper_impl(
     project_id: str,
-    paper: Dict[str, Any],
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    paper: dict[str, Any],
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Save a paper to a project.
 
@@ -194,7 +181,7 @@ async def _save_paper_impl(
                 "duplicate": is_duplicate,
             }
         )
-    except ValueError as exc:
+    except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID: {project_id}")
     except Exception as exc:
         return _error_result("SAVE_PAPER_FAILED", str(exc))
@@ -203,9 +190,9 @@ async def _save_paper_impl(
 async def _remove_paper_impl(
     project_id: str,
     project_paper_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Remove a paper from a project.
 
@@ -246,9 +233,9 @@ async def _remove_paper_impl(
 async def _list_project_papers_impl(
     project_id: str,
     status: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     List papers in a project.
 
@@ -315,11 +302,11 @@ async def _list_project_papers_impl(
 @tool
 async def search_papers(
     query: str,
-    sources: List[str] = Field(default=["semantic_scholar"]),
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
+    sources: list[str] = Field(default=["semantic_scholar"]),
+    year_from: int | None = None,
+    year_to: int | None = None,
     limit: int = 20,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Search for academic papers from multiple sources.
 
@@ -348,7 +335,7 @@ async def search_papers(
 async def save_paper_to_project(
     project_id: str,
     paper_json: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Save a paper to a specific project.
 
@@ -377,7 +364,7 @@ async def save_paper_to_project(
 async def remove_paper_from_project(
     project_id: str,
     project_paper_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Remove a paper from a project.
 
@@ -399,7 +386,7 @@ async def remove_paper_from_project(
 async def list_project_papers(
     project_id: str,
     status: str = "saved",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     List all papers in a project.
 
@@ -430,7 +417,7 @@ from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
 class PaperToolkit(BaseToolkit):
     """Toolkit for paper-related operations."""
 
-    def get_tools(self) -> List[BaseTool]:
+    def get_tools(self) -> list[BaseTool]:
         return [
             search_papers,
             save_paper_to_project,

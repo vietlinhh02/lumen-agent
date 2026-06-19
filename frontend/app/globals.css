@@ -279,44 +279,43 @@ body {
   transform: scale(0.95);
 }
 
-/* ── Gear timeline scrollbar ── */
-html {
-  scrollbar-width: thin;
-  scrollbar-color: var(--charcoal) transparent;
+/* ── Global Custom Scrollbar ── */
+/* Firefox only */
+@supports (-moz-appearance:none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #c8c8c8 transparent;
+  }
 }
 
-html::-webkit-scrollbar {
-  width: 6px;
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
 }
 
-html::-webkit-scrollbar-track {
-  background: transparent;
+::-webkit-scrollbar-track {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
-html::-webkit-scrollbar-thumb {
-  background:
-    repeating-linear-gradient(
-      180deg,
-      var(--charcoal) 0px,
-      var(--charcoal) 1px,
-      transparent 1px,
-      transparent 4px
-    ),
-    var(--hairline);
-  border-radius: 9999px;
-  transition: background 0.2s ease;
+::-webkit-scrollbar-thumb {
+  background: #a3a3a3;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
-html::-webkit-scrollbar-thumb:hover {
-  background:
-    repeating-linear-gradient(
-      180deg,
-      var(--ink) 0px,
-      var(--ink) 1px,
-      transparent 1px,
-      transparent 4px
-    ),
-    var(--charcoal);
+::-webkit-scrollbar-thumb:hover {
+  background: #525252;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #facc15; 
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 @layer base {

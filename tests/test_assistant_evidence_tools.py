@@ -1,8 +1,9 @@
 """Tests for assistant evidence tools."""
 
-import pytest
 from unittest.mock import MagicMock
 from uuid import uuid4
+
+import pytest
 
 
 class TestEvidenceToolsSchemas:
@@ -33,8 +34,9 @@ class TestEvidenceToolsSchemas:
 
     def test_retrieve_evidence_input_validation(self):
         """Test that query must be non-empty."""
-        from app.agents.assistant.tools.schemas import RetrieveEvidenceInput
         from pydantic import ValidationError
+
+        from app.agents.assistant.tools.schemas import RetrieveEvidenceInput
         
         with pytest.raises(ValidationError):
             RetrieveEvidenceInput(
@@ -44,8 +46,9 @@ class TestEvidenceToolsSchemas:
 
     def test_retrieve_evidence_input_k_bounds(self):
         """Test k parameter bounds."""
-        from app.agents.assistant.tools.schemas import RetrieveEvidenceInput
         from pydantic import ValidationError
+
+        from app.agents.assistant.tools.schemas import RetrieveEvidenceInput
         
         # Valid bounds
         inp = RetrieveEvidenceInput(
@@ -93,7 +96,7 @@ class TestEvidenceToolsSchemas:
 
     def test_retrieve_evidence_output_schema(self):
         """Test RetrieveEvidenceOutput schema."""
-        from app.agents.assistant.tools.schemas import RetrieveEvidenceOutput, EvidenceChunk
+        from app.agents.assistant.tools.schemas import EvidenceChunk, RetrieveEvidenceOutput
         
         chunk = EvidenceChunk(
             chunk_id="123e4567-e89b-12d3-a456-426614174000",

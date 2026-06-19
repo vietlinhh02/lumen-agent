@@ -11,7 +11,7 @@ so downstream code does not need to re-parse from free-form text.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -45,15 +45,15 @@ class IntentOutput(BaseModel):
     )
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence score.")
     reasoning: str = Field(max_length=300, description="One-sentence explanation.")
-    query: Optional[str] = Field(
+    query: str | None = Field(
         default=None,
         description="Research topic or query extracted from the message.",
     )
-    project_id: Optional[str] = Field(
+    project_id: str | None = Field(
         default=None,
         description="Project ID if explicitly mentioned in the message.",
     )
-    topic_hint: Optional[str] = Field(
+    topic_hint: str | None = Field(
         default=None,
         description="Refined search query derived from the message.",
     )
@@ -157,13 +157,13 @@ class IntentClassifier:
     # Timeout for the classification call (seconds)
     TIMEOUT_SECONDS = 5.0
 
-    def __init__(self, provider: "AIProvider") -> None:
+    def __init__(self, provider: AIProvider) -> None:
         self._provider = provider
 
     async def classify(
         self,
         message: str,
-        project_context: Optional[dict[str, Any]] = None,
+        project_context: dict[str, Any] | None = None,
     ) -> IntentOutput:
         """Classify user intent with structured output.
 
@@ -187,7 +187,7 @@ class IntentClassifier:
                 timeout=self.TIMEOUT_SECONDS,
             )
             return self._parse_result(result)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Intent classification timed out after %ds", self.TIMEOUT_SECONDS)
         except Exception as exc:
             logger.warning("Intent classification failed: %s", exc)
@@ -218,7 +218,7 @@ class IntentClassifier:
     def _build_user_message(
         self,
         message: str,
-        project_context: Optional[dict[str, Any]],
+        project_context: dict[str, Any] | None,
     ) -> str:
         """Build the user message passed to the classifier."""
         parts = []

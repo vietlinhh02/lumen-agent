@@ -13,23 +13,25 @@ Usage:
 
 from __future__ import annotations
 
+# Import all tool modules to trigger toolkit registration
+# These imports must happen AFTER BaseToolkit is defined
+from app.agents.assistant.tools import (
+    conflict_tools,  # noqa: F401
+    evidence_tools,  # noqa: F401
+    gap_tools,  # noqa: F401
+    matrix_tools,  # noqa: F401
+    paper_tools,  # noqa: F401
+    project_tools,  # noqa: F401
+    report_tools,  # noqa: F401
+)
+
 # Import everything from base module
 from app.agents.assistant.tools.base import (
     BaseToolkit,
-    get_all_tools,
     get_all_toolkits,
+    get_all_tools,
     register_toolkit,
 )
-
-# Import all tool modules to trigger toolkit registration
-# These imports must happen AFTER BaseToolkit is defined
-from app.agents.assistant.tools import project_tools  # noqa: F401
-from app.agents.assistant.tools import paper_tools  # noqa: F401
-from app.agents.assistant.tools import gap_tools  # noqa: F401
-from app.agents.assistant.tools import conflict_tools  # noqa: F401
-from app.agents.assistant.tools import matrix_tools  # noqa: F401
-from app.agents.assistant.tools import report_tools  # noqa: F401
-from app.agents.assistant.tools import evidence_tools  # noqa: F401
 
 __all__ = [
     "BaseToolkit",

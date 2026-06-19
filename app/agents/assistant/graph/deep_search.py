@@ -1,28 +1,28 @@
 import asyncio
-import json
+import contextlib
 import logging
-from typing import Any, Dict
+from typing import Any
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.agents.assistant.events import (
+    AssistantDeltaEvent,
     BaseEvent,
     DoneEvent,
     ErrorEvent,
     MessageEvent,
     ProgressEvent,
-    AssistantDeltaEvent,
 )
 from app.agents.assistant.graph.state import AssistantGraphState, get_last_user_message
 from app.agents.assistant.tools.context import get_project_id
-from app.db.models import ProjectPaper, Paper, PaperChunk
-from app.db.session import async_session_factory
-from app.services.search_session import start_search_job, auto_save_high_papers
 from app.ai.provider import get_provider
-from uuid import UUID
+from app.db.session import async_session_factory
+from app.services.search_session import auto_save_high_papers, start_search_job
 
 logger = logging.getLogger(__name__)
 
-async def deep_search_node(state: AssistantGraphState) -> Dict[str, Any]:
+async def deep_search_node(state: AssistantGraphState) -> dict[str, Any]:
     from langgraph.config import get_stream_writer
     writer = get_stream_writer()
     
@@ -31,10 +31,8 @@ async def deep_search_node(state: AssistantGraphState) -> Dict[str, Any]:
         nonlocal streamed_done
         if isinstance(event, DoneEvent):
             streamed_done = True
-        try:
+        with contextlib.suppress(Exception):
             writer(event.model_dump(mode="json"))
-        except Exception:
-            pass
 
     query = get_last_user_message(state) or ""
     project_id = get_project_id()
@@ -108,8 +106,7 @@ async def deep_search_node(state: AssistantGraphState) -> Dict[str, Any]:
         
         # Let's just generate a response
         emit(ProgressEvent(stage="report", progress=0.9, message="Đang tổng hợp dữ liệu..."))
-        provider = get_provider()
-        streamed_text = ""
+        get_provider()
         emit(AssistantDeltaEvent(delta="Đã hoàn tất! Anh có thể xem chi tiết trong phiên tìm kiếm hoặc tại tab Papers của project.", is_final=True))
 
     except Exception as exc:

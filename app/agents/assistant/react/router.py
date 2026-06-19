@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import re
 from enum import Enum
-from typing import Optional
 
 from app.agents.assistant.react.prompts import ROUTER_PROMPT
 from app.ai.provider import OpenAICompatibleAdapter, get_settings
@@ -68,7 +67,7 @@ _COMPLEX_PATTERNS = re.compile(
 )
 
 
-def _regex_classify(message: str) -> Optional[Intent]:
+def _regex_classify(message: str) -> Intent | None:
     """Fast regex-based pre-classification. Returns None if no pattern matches."""
     msg = message.strip()
 
@@ -156,7 +155,7 @@ class FastRouter:
                 self._llm_classify(message, has_project),
                 timeout=_ROUTER_TIMEOUT_SECONDS,
             )
-        except (asyncio.TimeoutError, Exception):
+        except (TimeoutError, Exception):
             # Any failure → fall back to COMPLEX so the full ReAct loop handles it
             return Intent.COMPLEX
 

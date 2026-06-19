@@ -7,11 +7,9 @@ Provides:
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, List, Optional
-
 import hashlib
-
+import json
+from typing import Any
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -23,7 +21,7 @@ _ESTIMATED_TOKENS_PER_CHAR = 4  # Conservative estimate for truncation
 # ── Tool Cache ─────────────────────────────────────────────────────────────────
 
 
-def _stable_hash(args: Dict[str, Any]) -> str:
+def _stable_hash(args: dict[str, Any]) -> str:
     """Create a stable hash of a dict for cache keys.
     
     Sorts keys recursively to ensure same args always produce same hash.
@@ -40,23 +38,23 @@ class ToolCache:
     """
 
     def __init__(self) -> None:
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
 
-    def make_key(self, tool_name: str, args: Dict[str, Any]) -> str:
+    def make_key(self, tool_name: str, args: dict[str, Any]) -> str:
         """Generate a cache key for a tool call."""
         return f"{tool_name}:{_stable_hash(args)}"
 
-    def get(self, tool_name: str, args: Dict[str, Any]) -> Optional[Any]:
+    def get(self, tool_name: str, args: dict[str, Any]) -> Any | None:
         """Get cached result, or None if not cached."""
         key = self.make_key(tool_name, args)
         return self._cache.get(key)
 
-    def set(self, tool_name: str, args: Dict[str, Any], result: Any) -> None:
+    def set(self, tool_name: str, args: dict[str, Any], result: Any) -> None:
         """Store a tool result in the cache."""
         key = self.make_key(tool_name, args)
         self._cache[key] = result
 
-    def has(self, tool_name: str, args: Dict[str, Any]) -> bool:
+    def has(self, tool_name: str, args: dict[str, Any]) -> bool:
         """Check if a tool call is cached."""
         key = self.make_key(tool_name, args)
         return key in self._cache
@@ -89,13 +87,13 @@ class Scratchpad:
 
     def __init__(self) -> None:
         self._cache = ToolCache()
-        self._rag_chunks: List[str] = []
-        self._trace: List[Dict[str, Any]] = []
+        self._rag_chunks: list[str] = []
+        self._trace: list[dict[str, Any]] = []
         self._total_tokens = 0
 
     # ── Cache operations ─────────────────────────────────────────────────────
 
-    def get_cached(self, tool_name: str, args: Dict[str, Any]) -> Optional[Any]:
+    def get_cached(self, tool_name: str, args: dict[str, Any]) -> Any | None:
         """Get cached tool result if available.
         
         Returns:
@@ -103,13 +101,13 @@ class Scratchpad:
         """
         return self._cache.get(tool_name, args)
 
-    def add_to_cache(self, tool_name: str, args: Dict[str, Any], result: Any) -> None:
+    def add_to_cache(self, tool_name: str, args: dict[str, Any], result: Any) -> None:
         """Cache a tool result for future reuse."""
         self._cache.set(tool_name, args, result)
 
     # ── RAG context ──────────────────────────────────────────────────────────
 
-    def add_context(self, chunks: List[str]) -> None:
+    def add_context(self, chunks: list[str]) -> None:
         """Store auto-RAG output chunks.
         
         Args:
@@ -118,7 +116,7 @@ class Scratchpad:
         self._rag_chunks = list(chunks)
 
     @property
-    def rag_chunks(self) -> List[str]:
+    def rag_chunks(self) -> list[str]:
         """Get the stored RAG context chunks."""
         return list(self._rag_chunks)
 
@@ -127,7 +125,7 @@ class Scratchpad:
     def add_observation(
         self,
         tool_name: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         result: Any,
     ) -> None:
         """Record a tool execution as an observation.
@@ -168,19 +166,19 @@ class Scratchpad:
         self._total_tokens += self._estimate_tokens(thought)
 
     @property
-    def trace(self) -> List[Dict[str, Any]]:
+    def trace(self) -> list[dict[str, Any]]:
         """Get the full execution trace."""
         return list(self._trace)
 
     # ── Message rendering ───────────────────────────────────────────────────────
 
-    def to_messages(self) -> List[Dict[str, Any]]:
+    def to_messages(self) -> list[dict[str, Any]]:
         """Render the scratchpad as ChatML messages for the LLM.
         
         Returns:
             List of message dicts in ChatML format.
         """
-        messages: List[Dict[str, Any]] = []
+        messages: list[dict[str, Any]] = []
 
         # RAG context
         if self._rag_chunks:
@@ -232,10 +230,7 @@ class Scratchpad:
         """Estimate token count from a value."""
         if value is None:
             return 0
-        if isinstance(value, (dict, list)):
-            text = json.dumps(value, default=str)
-        else:
-            text = str(value)
+        text = json.dumps(value, default=str) if isinstance(value, (dict, list)) else str(value)
         return len(text) // _ESTIMATED_TOKENS_PER_CHAR
 
     @staticmethod
@@ -264,9 +259,9 @@ class Scratchpad:
 
     def _truncate_messages(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         max_tokens: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Truncate messages list to fit within token budget.
         
         Truncates from the end (oldest messages) if needed.

@@ -9,10 +9,7 @@ Verifies:
 """
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-
-import pytest
 
 from app.agents.assistant.tools.context import (
     UserContext,

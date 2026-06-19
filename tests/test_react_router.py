@@ -3,15 +3,15 @@
 Tests both regex pre-filter (fast path, no LLM) and LLM fallback.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.agents.assistant.react.router import (
     FastRouter,
     Intent,
     _regex_classify,
 )
-
 
 # =============================================================================
 # Test cases from spec
@@ -189,9 +189,8 @@ class TestFastRouter:
     @pytest.mark.asyncio
     async def test_timeout_falls_back_to_complex(self, router: FastRouter, mock_client: MagicMock) -> None:
         """On timeout, fall back to COMPLEX."""
-        import asyncio
 
-        mock_client.complete = AsyncMock(side_effect=asyncio.TimeoutError("timeout"))
+        mock_client.complete = AsyncMock(side_effect=TimeoutError("timeout"))
         result = await router.classify("Tell me about transformers")
         assert result == Intent.COMPLEX
 

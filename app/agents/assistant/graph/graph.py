@@ -7,7 +7,9 @@ The graph replaces the custom ReAct loop in react/agent.py.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, AsyncGenerator, Dict, List, Literal, Optional, TYPE_CHECKING
+from collections.abc import AsyncGenerator
+from datetime import UTC
+from typing import Any, Literal
 from uuid import UUID
 
 from langgraph.graph import END, StateGraph
@@ -16,18 +18,16 @@ from app.agents.assistant.events import BaseEvent
 from app.agents.assistant.graph.config import (
     AssistantGraphConfig,
     get_checkpointer,
-    DEFAULT_MAX_ITERATIONS,
-    DEFAULT_MAX_WALL_TIME_SECONDS,
 )
 from app.agents.assistant.graph.deep_search import deep_search_node
 from app.agents.assistant.graph.nodes import (
     classification_node,
-    simple_chat_node,
     direct_tool_node,
+    final_answer_node,
     react_loop_node,
     research_pipeline_node,
-    final_answer_node,
     should_continue_react,
+    simple_chat_node,
 )
 from app.agents.assistant.graph.state import AssistantGraphState
 
@@ -206,7 +206,7 @@ class AssistantGraph:
         user_id: UUID,
         message: str,
         resume: bool = False,
-    ) -> AsyncGenerator[BaseEvent, None]:
+    ) -> AsyncGenerator[BaseEvent]:
         """Run the assistant graph for a user message.
 
         This method:
@@ -229,7 +229,7 @@ class AssistantGraph:
         from app.agents.assistant.graph.state import AssistantGraphState
 
         # Build checkpoint config
-        checkpoint_config: Dict[str, Any] = {
+        checkpoint_config: dict[str, Any] = {
             "configurable": {
                 "thread_id": str(session_id),
                 "checkpoint_ns": "main",
@@ -288,12 +288,11 @@ class AssistantGraph:
                     mode, payload = chunk
                     if mode == "custom":
                         yield payload
-                    elif mode == "updates":
-                        if isinstance(payload, dict):
-                            for node_name, node_output in payload.items():
-                                if isinstance(node_output, dict) and "pending_events" in node_output:
-                                    for event in node_output["pending_events"]:
-                                        yield event
+                    elif mode == "updates" and isinstance(payload, dict):
+                        for _node_name, node_output in payload.items():
+                            if isinstance(node_output, dict) and "pending_events" in node_output:
+                                for event in node_output["pending_events"]:
+                                    yield event
 
         except asyncio.CancelledError:
             logger.info("Graph run cancelled")
@@ -302,7 +301,7 @@ class AssistantGraph:
 
         except Exception as exc:
             logger.exception("Graph run failed: %s", exc)
-            from app.agents.assistant.events import ErrorEvent, DoneEvent
+            from app.agents.assistant.events import DoneEvent, ErrorEvent
 
             yield ErrorEvent(code="GRAPH_ERROR", message=f"Graph failed: {exc}")
             yield DoneEvent()
@@ -323,7 +322,7 @@ class AssistantGraph:
         Returns:
             A new AssistantGraphState instance.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         return AssistantGraphState(
             session_id=session_id,
@@ -331,7 +330,7 @@ class AssistantGraph:
             messages=[{"role": "user", "content": message}],
             max_iterations=self.config.max_iterations,
             max_wall_time_seconds=self.config.max_wall_time_seconds,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
         )
 
 
@@ -359,7 +358,7 @@ async def run_with_checkpointing(
     message: str,
     config: AssistantGraphConfig | None = None,
     resume: bool = False,
-) -> AsyncGenerator[BaseEvent, None]:
+) -> AsyncGenerator[BaseEvent]:
     """Convenience function to run the assistant with checkpointing.
 
     Args:

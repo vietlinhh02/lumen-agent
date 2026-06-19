@@ -387,9 +387,7 @@ def _can_download_from_dict(paper_dict: dict) -> bool:
     if paper_dict.get("arxiv_id"):
         return True
     source_specific = paper_dict.get("source_specific") or {}
-    if source_specific.get("pdf_url"):
-        return True
-    return False
+    return bool(source_specific.get("pdf_url"))
 
 
 def annotate_can_download(papers: list[dict]) -> None:

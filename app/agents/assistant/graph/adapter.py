@@ -28,7 +28,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional, TYPE_CHECKING
+from collections.abc import AsyncGenerator
+from datetime import UTC
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.agents.assistant.events import (
@@ -42,17 +44,14 @@ from app.agents.assistant.events import (
     ToolEvent,
     WaitEvent,
 )
-from app.agents.assistant.graph.config import AssistantGraphConfig, get_checkpointer
-from app.agents.assistant.graph.graph import get_assistant_graph, AssistantGraph
-from app.agents.assistant.graph.nodes import (
-    _get_tool_definitions,
-    _message_to_dict,
-)
+from app.agents.assistant.graph.config import AssistantGraphConfig
+from app.agents.assistant.graph.graph import get_assistant_graph
 from app.agents.assistant.graph.state import AssistantGraphState
 
 if TYPE_CHECKING:
-    from app.ai.provider import AIProvider
     from langchain_core.tools import BaseTool
+
+    from app.ai.provider import AIProvider
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +90,9 @@ class GraphRunner:
         self,
         session_id: UUID,
         user_id: UUID,
-        project_context: Dict[str, Any] | None,
-        tools: List["BaseTool"],
-        provider: "AIProvider",
+        project_context: dict[str, Any] | None,
+        tools: list[BaseTool],
+        provider: AIProvider,
         config: AssistantGraphConfig | None = None,
     ) -> None:
         self.session_id = session_id
@@ -107,7 +106,7 @@ class GraphRunner:
         self._graph = get_assistant_graph(self.config, force_rebuild=USE_LANGGRAPH)
 
         # Build checkpoint config
-        self.checkpoint_config: Dict[str, Any] = {
+        self.checkpoint_config: dict[str, Any] = {
             "configurable": {
                 "thread_id": str(session_id),
                 "checkpoint_ns": "main",
@@ -119,7 +118,7 @@ class GraphRunner:
         message: str,
         resume: bool = False,
         cancel_event: asyncio.Event | None = None,
-    ) -> AsyncGenerator[BaseEvent, None]:
+    ) -> AsyncGenerator[BaseEvent]:
         """Run the assistant graph for a user message.
 
         This method:
@@ -137,7 +136,6 @@ class GraphRunner:
             BaseEvent subclasses from events.py.
         """
         import asyncio
-        import json
 
         # Check for cancellation
         if cancel_event and cancel_event.is_set():
@@ -149,7 +147,6 @@ class GraphRunner:
         initial_state = self._create_initial_state(message)
 
         # Track cancellation in a task-safe way
-        cancelled = False
 
         try:
             # Use both "updates" (node outputs) and "custom" (get_stream_writer)
@@ -163,7 +160,6 @@ class GraphRunner:
             ):
                 # Check for cancellation periodically
                 if cancel_event and cancel_event.is_set():
-                    cancelled = True
                     break
 
                 # With multiple stream modes, astream yields (mode, data) tuples
@@ -207,7 +203,7 @@ class GraphRunner:
         Returns:
             A new AssistantGraphState instance.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         return AssistantGraphState(
             session_id=self.session_id,
@@ -216,10 +212,10 @@ class GraphRunner:
             messages=[{"role": "user", "content": message}],
             max_iterations=self.config.max_iterations,
             max_wall_time_seconds=self.config.max_wall_time_seconds,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
         )
 
-    def _extract_events(self, chunk: Any) -> List[BaseEvent]:
+    def _extract_events(self, chunk: Any) -> list[BaseEvent]:
         """Extract SSE-compatible events from graph output chunk.
 
         Args:
@@ -228,7 +224,7 @@ class GraphRunner:
         Returns:
             List of BaseEvent objects.
         """
-        events: List[BaseEvent] = []
+        events: list[BaseEvent] = []
 
         # Handle different chunk formats from LangGraph astream
         # Format 1: {'node_name': {'pending_events': [...], ...}}
@@ -247,24 +243,13 @@ class GraphRunner:
 
         return events
 
-    def _extract_from_dict(self, data: Dict[str, Any], events: List[BaseEvent]) -> None:
+    def _extract_from_dict(self, data: dict[str, Any], events: list[BaseEvent]) -> None:
         """Extract events from a node output dict.
 
         Args:
             data: Node output dict.
             events: List to append events to.
         """
-        from app.agents.assistant.events import (
-            AssistantDeltaEvent,
-            DoneEvent,
-            ErrorEvent,
-            IterationEvent,
-            MessageEvent,
-            ThoughtEvent,
-            TitleEvent,
-            ToolEvent,
-            WaitEvent,
-        )
 
         if "pending_events" not in data:
             return
@@ -305,7 +290,7 @@ class GraphRunner:
             return None
         return self._dict_to_event(data)
 
-    def _dict_to_event(self, data: Dict[str, Any]) -> BaseEvent | None:
+    def _dict_to_event(self, data: dict[str, Any]) -> BaseEvent | None:
         """Convert a dict to the appropriate BaseEvent subclass.
 
         Args:
@@ -315,16 +300,10 @@ class GraphRunner:
             A BaseEvent subclass instance, or None if conversion fails.
         """
         from app.agents.assistant.events import (
-            AssistantDeltaEvent,
             DoneEvent,
             ErrorEvent,
-            IterationEvent,
-            MessageEvent,
             ProgressEvent,
-            ThoughtEvent,
             TitleEvent,
-            ToolEvent,
-            WaitEvent,
         )
 
         event_type = data.get("type", "")
@@ -364,9 +343,9 @@ class GraphRunner:
 def create_graph_runner(
     session_id: UUID,
     user_id: UUID,
-    project_context: Dict[str, Any] | None,
-    tools: List["BaseTool"],
-    provider: "AIProvider",
+    project_context: dict[str, Any] | None,
+    tools: list[BaseTool],
+    provider: AIProvider,
     config: AssistantGraphConfig | None = None,
 ) -> GraphRunner:
     """Create a GraphRunner instance for the assistant.

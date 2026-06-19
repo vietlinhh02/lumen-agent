@@ -10,20 +10,21 @@ Verifies:
 - Implementation functions with mocked services
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from app.agents.assistant.tools.project_tools import (
-    _error_result,
-    _ok_result,
-    list_projects,
-    get_project,
-    create_project,
-    ask_user_clarification,
-    _list_projects_impl,
-    _get_project_impl,
     _create_project_impl,
+    _error_result,
+    _get_project_impl,
+    _list_projects_impl,
+    _ok_result,
+    ask_user_clarification,
+    create_project,
+    get_project,
+    list_projects,
 )
 
 

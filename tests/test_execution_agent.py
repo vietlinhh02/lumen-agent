@@ -11,18 +11,15 @@ Uses mock provider + 1 real tool to test:
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, Dict, List, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
+from app.agents.assistant.agents.execution import MAX_TOOL_CALLS_PER_STEP, ExecutionAgent
 from langchain_core.tools import BaseTool, tool
 
-from app.agents.assistant.agents.execution import ExecutionAgent, MAX_TOOL_CALLS_PER_STEP
 from app.agents.assistant.events import (
-    BaseEvent,
-    DoneEvent,
     ErrorEvent,
     MessageEvent,
     PlanEvent,
@@ -32,12 +29,11 @@ from app.agents.assistant.events import (
     WaitEvent,
 )
 
-
 # ── Mock Tools ────────────────────────────────────────────────────────────────
 
 
 @tool
-def mock_search_papers(query: str, limit: int = 10) -> Dict[str, Any]:
+def mock_search_papers(query: str, limit: int = 10) -> dict[str, Any]:
     """
     Mock search papers tool for testing.
 
@@ -56,7 +52,7 @@ def mock_search_papers(query: str, limit: int = 10) -> Dict[str, Any]:
 
 
 @tool
-def mock_get_project(project_id: str) -> Dict[str, Any]:
+def mock_get_project(project_id: str) -> dict[str, Any]:
     """
     Mock get project tool for testing.
     """
@@ -68,7 +64,7 @@ def mock_get_project(project_id: str) -> Dict[str, Any]:
 
 
 @tool
-def mock_ask_user_clarification(question: str, options: Optional[List[str]] = None) -> Dict[str, Any]:
+def mock_ask_user_clarification(question: str, options: list[str] | None = None) -> dict[str, Any]:
     """
     Mock ask user clarification tool for testing.
     """
@@ -87,7 +83,7 @@ def mock_ask_user_clarification(question: str, options: Optional[List[str]] = No
 class MockToolCall:
     """Mock tool call object."""
 
-    def __init__(self, name: str, arguments: Dict[str, Any], id: str = "call_1"):
+    def __init__(self, name: str, arguments: dict[str, Any], id: str = "call_1"):
         self.function = type("obj", (object,), {"name": name, "arguments": json.dumps(arguments) if isinstance(arguments, dict) else arguments})()
         self.id = id
 
@@ -95,7 +91,7 @@ class MockToolCall:
 class MockMessage:
     """Mock LLM message response."""
 
-    def __init__(self, content: str = "", tool_calls: Optional[List[MockToolCall]] = None):
+    def __init__(self, content: str = "", tool_calls: list[MockToolCall] | None = None):
         self.content = content
         self.tool_calls = tool_calls or []
 
@@ -103,14 +99,14 @@ class MockMessage:
 class MockProvider:
     """Mock LLM provider for testing."""
 
-    def __init__(self, responses: List[MockMessage]):
+    def __init__(self, responses: list[MockMessage]):
         self.responses = responses
         self.call_count = 0
 
     async def complete(
         self,
         messages: list,
-        system: Optional[str] = None,
+        system: str | None = None,
         max_tokens: int = 2048,
     ) -> str:
         response = self.responses[self.call_count] if self.call_count < len(self.responses) else MockMessage("Done")
@@ -120,7 +116,7 @@ class MockProvider:
 
 def create_mock_llm_response(
     content: str = "",
-    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_calls: list[dict[str, Any]] | None = None
 ) -> MockMessage:
     """Helper to create mock LLM responses."""
     calls = []
@@ -144,7 +140,7 @@ def mock_provider() -> MockProvider:
 
 
 @pytest.fixture
-def tools() -> List[BaseTool]:
+def tools() -> list[BaseTool]:
     """Create a list of mock tools for testing."""
     return [mock_search_papers, mock_get_project, mock_ask_user_clarification]
 
@@ -346,7 +342,7 @@ async def test_ask_user_clarification_yields_wait_event(tools, sample_plan):
     """Test that ask_user_clarification tool yields WaitEvent."""
     # Create a tool with the exact name "ask_user_clarification"
     @tool
-    def ask_user_clarification(question: str, options: Optional[List[str]] = None) -> Dict[str, Any]:
+    def ask_user_clarification(question: str, options: list[str] | None = None) -> dict[str, Any]:
         """Ask user clarification tool."""
         return {
             "ok": True,
@@ -439,7 +435,7 @@ async def test_tool_results_appended_exactly_once(tools, sample_plan):
     
     # Create a mock tool that logs calls
     @tool
-    def logged_tool(query: str) -> Dict[str, Any]:
+    def logged_tool(query: str) -> dict[str, Any]:
         """Log tool call for testing."""
         call_log.append({"name": "logged_tool", "query": query})
         return {"ok": True, "message": f"Logged: {query}"}
@@ -521,12 +517,12 @@ async def test_convert_langchain_tools_to_openai_format(tools):
     openai_tools = agent._convert_langchain_tools_to_openai_format()
     
     assert len(openai_tools) == 3
-    for tool in openai_tools:
-        assert tool["type"] == "function"
-        assert "function" in tool
-        assert "name" in tool["function"]
-        assert "description" in tool["function"]
-        assert "parameters" in tool["function"]
+    for opt in openai_tools:
+        assert opt["type"] == "function"
+        assert "function" in opt
+        assert "name" in opt["function"]
+        assert "description" in opt["function"]
+        assert "parameters" in opt["function"]
 
 
 @pytest.mark.asyncio
@@ -617,7 +613,7 @@ async def test_tool_execution_error_handling(tools, sample_plan):
     """Test handling of tool execution errors."""
     # Create a tool that raises an error
     @tool
-    def error_tool() -> Dict[str, Any]:
+    def error_tool() -> dict[str, Any]:
         """Tool that always fails."""
         raise ValueError("Tool execution failed")
     

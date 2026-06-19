@@ -24,12 +24,13 @@ Legacy features:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
 import time
-import uuid
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, TYPE_CHECKING
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, Any
 
 from app.agents.assistant.events import (
     AssistantDeltaEvent,
@@ -44,15 +45,14 @@ from app.agents.assistant.events import (
     WaitEvent,
 )
 from app.agents.assistant.pipelines import ResearchPipeline, ResearchPipelineConfig
-from app.agents.assistant.react.intent_classifier import IntentClassifier, IntentOutput
+from app.agents.assistant.react.intent_classifier import IntentClassifier
 from app.agents.assistant.react.memory import Scratchpad
 from app.agents.assistant.react.prompts import (
     CLARIFY_TOPIC_PROMPT,
     REACT_SYSTEM_PROMPT,
 )
 from app.agents.assistant.react.rag_injector import inject as rag_inject
-from app.agents.assistant.react.router import FastRouter, Intent
-from app.agents.assistant.react.tool_caller import ToolCaller, ToolCall
+from app.agents.assistant.react.tool_caller import ToolCall, ToolCaller
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -74,11 +74,11 @@ class ProjectContext:
 
     def __init__(
         self,
-        project_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        project_name: Optional[str] = None,
-        topic: Optional[str] = None,
-        research_question: Optional[str] = None,
+        project_id: str | None = None,
+        user_id: str | None = None,
+        project_name: str | None = None,
+        topic: str | None = None,
+        research_question: str | None = None,
     ) -> None:
         self.project_id = project_id
         self.user_id = user_id
@@ -109,9 +109,9 @@ class ReActAgent:
 
     def __init__(
         self,
-        provider: "AIProvider",
-        tools: List["BaseTool"],
-        project_context: Optional[ProjectContext] = None,
+        provider: AIProvider,
+        tools: list[BaseTool],
+        project_context: ProjectContext | None = None,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
         max_wall_time: int = DEFAULT_MAX_WALL_TIME_SECONDS,
     ) -> None:
@@ -127,7 +127,7 @@ class ReActAgent:
         self._scratchpad = Scratchpad()
 
         # Build tool map for quick lookup
-        self._tool_map: Dict[str, "BaseTool"] = {}
+        self._tool_map: dict[str, BaseTool] = {}
         for tool in tools:
             name = getattr(tool, "name", None)
             if name:
@@ -142,8 +142,8 @@ class ReActAgent:
         self,
         message: str,
         resume: bool = False,
-        cancel_event: Optional[asyncio.Event] = None,
-    ) -> AsyncGenerator[BaseEvent, None]:
+        cancel_event: asyncio.Event | None = None,
+    ) -> AsyncGenerator[BaseEvent]:
         """Run the agent for a user message.
 
         Args:
@@ -355,7 +355,7 @@ class ReActAgent:
 
     # ── Direct list handling ─────────────────────────────────────────────────
 
-    async def _handle_direct_list(self, message: str) -> AsyncGenerator[BaseEvent, None]:
+    async def _handle_direct_list(self, message: str) -> AsyncGenerator[BaseEvent]:
         """Handle DIRECT_LIST intents by calling tools directly.
 
         Yields ToolEvent and MessageEvent without LLM calls.
@@ -428,7 +428,7 @@ class ReActAgent:
                 content="Tôi không thể xử lý yêu cầu này một cách trực tiếp. Bạn có thể mô tả cụ thể hơn không?",
             )
 
-    def _infer_direct_tool(self, message: str) -> Optional[str]:
+    def _infer_direct_tool(self, message: str) -> str | None:
         """Infer which tool to call for a direct list request."""
         msg = message.lower()
 
@@ -451,8 +451,8 @@ class ReActAgent:
         self,
         query: str,
         project_id: str,
-        cancel_event: Optional[asyncio.Event] = None,
-    ) -> AsyncGenerator[BaseEvent, None]:
+        cancel_event: asyncio.Event | None = None,
+    ) -> AsyncGenerator[BaseEvent]:
         """Run the deterministic research pipeline orchestrator."""
         config = ResearchPipelineConfig(
             project_id=project_id,
@@ -470,9 +470,9 @@ class ReActAgent:
     async def _run_single_tool(
         self,
         tool_name: str,
-        args: Dict[str, Any],
-        cancel_event: Optional[asyncio.Event] = None,
-    ) -> AsyncGenerator[BaseEvent, None]:
+        args: dict[str, Any],
+        cancel_event: asyncio.Event | None = None,
+    ) -> AsyncGenerator[BaseEvent]:
         """Execute a single tool and return its result as a message."""
         tool = self._tool_map.get(tool_name)
         if tool is None:
@@ -542,7 +542,7 @@ class ReActAgent:
             )
             yield DoneEvent()
 
-    async def _run_simple_chat(self, message: str) -> AsyncGenerator[BaseEvent, None]:
+    async def _run_simple_chat(self, message: str) -> AsyncGenerator[BaseEvent]:
         """Respond to chitchat / greetings with a direct LLM call (no tools).
         
         Streams the visible assistant response as AssistantDeltaEvent tokens
@@ -576,8 +576,9 @@ class ReActAgent:
             return []
 
         try:
-            from app.db.models import User
             from sqlalchemy import select
+
+            from app.db.models import User
 
             async with async_session_factory() as db:
                 result = await db.execute(select(User).where(User.id == user))
@@ -596,8 +597,8 @@ class ReActAgent:
         self,
         message: str,
         start_time: float,
-        cancel_event: Optional[asyncio.Event],
-    ) -> AsyncGenerator[BaseEvent, None]:
+        cancel_event: asyncio.Event | None,
+    ) -> AsyncGenerator[BaseEvent]:
         """Run the main ReAct reasoning loop with native structured tool calls.
 
         Task 8: Replaces fragile Action: text parsing with native AIMessage.tool_calls.
@@ -617,7 +618,7 @@ class ReActAgent:
             IterationEvent, ThoughtEvent, ToolEvent, MessageEvent, WaitEvent.
         """
         iteration = 0
-        conversation_messages: List[Dict[str, Any]] = []  # ToolMessage format
+        conversation_messages: list[dict[str, Any]] = []  # ToolMessage format
 
         while iteration < self.max_iterations:
             # ── Limit checks ──────────────────────────────────────────────
@@ -643,8 +644,8 @@ class ReActAgent:
 
             # ── Stream LLM response with native tool calls ─────────────────
             response_text = ""
-            tool_calls_found: List[ToolCall] = []
-            tool_call_args: Dict[str, Dict[str, Any]] = {}  # call_id -> {name, args}
+            tool_calls_found: list[ToolCall] = []
+            tool_call_args: dict[str, dict[str, Any]] = {}  # call_id -> {name, args}
             
             # Track last heartbeat time for timeout detection
             last_heartbeat = time.monotonic()
@@ -657,8 +658,11 @@ class ReActAgent:
                     tools=self._get_tool_definitions(),
                 ):
                     from app.ai.provider import (
-                        TextChunk, ToolCallStart, ToolCallArgsDelta, 
-                        ToolCallDone, StreamDone
+                        StreamDone,
+                        TextChunk,
+                        ToolCallArgsDelta,
+                        ToolCallDone,
+                        ToolCallStart,
                     )
                     
                     if isinstance(chunk, TextChunk):
@@ -754,7 +758,7 @@ class ReActAgent:
 
             # Track whether any tool asked for user clarification
             has_wait = False
-            tool_messages: List[Dict[str, Any]] = []  # For ToolMessage format
+            tool_messages: list[dict[str, Any]] = []  # For ToolMessage format
 
             for tool_call, result, is_wait in execution_results:
                 status = "failed"
@@ -824,9 +828,9 @@ class ReActAgent:
 
     async def _stream_llm(
         self,
-        messages: List[Dict[str, Any]],
-        cancel_event: Optional[asyncio.Event],
-    ) -> AsyncGenerator[str, None]:
+        messages: list[dict[str, Any]],
+        cancel_event: asyncio.Event | None,
+    ) -> AsyncGenerator[str]:
         """Stream LLM response tokens using REAL provider.stream().
 
         FIX: No more fake chunking! Uses the actual streaming API.
@@ -840,7 +844,7 @@ class ReActAgent:
         """
         # Extract system message
         system_msg = None
-        chat_messages: List[Dict[str, str]] = []
+        chat_messages: list[dict[str, str]] = []
         for msg in messages:
             if msg["role"] == "system":
                 system_msg = msg["content"]
@@ -866,8 +870,8 @@ class ReActAgent:
     def _build_react_messages(
         self,
         user_message: str,
-        conversation_messages: List[Dict[str, str]],
-    ) -> List[Dict[str, Any]]:
+        conversation_messages: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
         """Build messages for the ReAct loop.
 
         Args:
@@ -877,7 +881,7 @@ class ReActAgent:
         Returns:
             List of messages in ChatML format.
         """
-        messages: List[Dict[str, Any]] = []
+        messages: list[dict[str, Any]] = []
 
         # System prompt with tools
         tools_desc = self._format_tools_for_prompt()
@@ -924,7 +928,7 @@ class ReActAgent:
     def _format_observation_for_llm(
         self,
         tool_name: str,
-        args: Dict[str, Any],
+        args: dict[str, Any],
         result: Any,
     ) -> str:
         """Format a tool execution result for the LLM to consume in the next turn."""
@@ -940,7 +944,7 @@ class ReActAgent:
 
     # ── Native Tool Call Helpers (Task 8) ────────────────────────────────────
 
-    def _get_tool_definitions(self) -> List[Dict[str, Any]]:
+    def _get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get tool definitions for native tool calling (Task 8).
 
         Returns tool definitions in OpenAI function calling format
@@ -954,8 +958,8 @@ class ReActAgent:
     def _build_react_messages_with_tools(
         self,
         user_message: str,
-        conversation_messages: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        conversation_messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Build messages for the ReAct loop with native tool call support (Task 8).
 
         Uses ToolMessage format for tool results instead of text format.
@@ -967,7 +971,7 @@ class ReActAgent:
         Returns:
             List of messages in ChatML/ToolMessage format.
         """
-        messages: List[Dict[str, Any]] = []
+        messages: list[dict[str, Any]] = []
 
         # System prompt with tools
         tools_desc = self._format_tools_for_prompt()
@@ -1000,8 +1004,8 @@ class ReActAgent:
 
     async def _fallback_text_stream(
         self,
-        messages: List[Dict[str, Any]],
-        cancel_event: Optional[asyncio.Event],
+        messages: list[dict[str, Any]],
+        cancel_event: asyncio.Event | None,
     ) -> str:
         """Fallback to text-based streaming when stream_with_tools fails.
 
@@ -1022,7 +1026,7 @@ class ReActAgent:
             logger.error("Fallback text stream also failed: %s", exc)
         return response_text
 
-    def _parse_tool_calls_from_text(self, text: str) -> List[ToolCall]:
+    def _parse_tool_calls_from_text(self, text: str) -> list[ToolCall]:
         """Parse tool calls from LLM response text.
 
         Looks for Action: tool_name and Action Input: {...} patterns.
@@ -1050,10 +1054,8 @@ class ReActAgent:
                 if current_tool:
                     args = {}
                     if current_args_str:
-                        try:
+                        with contextlib.suppress(json.JSONDecodeError):
                             args = json.loads(current_args_str)
-                        except json.JSONDecodeError:
-                            pass
                     tool_calls.append(ToolCall(name=current_tool, arguments=args))
 
                 current_tool = line_str[7:].strip()
@@ -1074,10 +1076,8 @@ class ReActAgent:
         if current_tool:
             args = {}
             if current_args_str:
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     args = json.loads(current_args_str)
-                except json.JSONDecodeError:
-                    pass
             tool_calls.append(ToolCall(name=current_tool, arguments=args))
 
         return tool_calls

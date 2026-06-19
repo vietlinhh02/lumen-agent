@@ -9,14 +9,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Annotated, Any, List, Literal, Optional, TYPE_CHECKING, Union
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from langgraph.graph import add_messages
 
 if TYPE_CHECKING:
-    from app.agents.assistant.events import BaseEvent
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ScratchpadEntry:
     tool_name: str
     args: dict
     result: Any
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_message(self) -> dict[str, Any]:
         """Convert to a tool message for the LLM."""
@@ -126,7 +126,7 @@ class AssistantGraphState:
     # ── Limits ────────────────────────────────────────────────────────────
     max_iterations: int = 15
     max_wall_time_seconds: int = 600
-    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # ── Errors ────────────────────────────────────────────────────────────
     errors: list[str] = field(default_factory=list)
@@ -192,7 +192,7 @@ def check_limits(state: AssistantGraphState) -> str | None:
         return f"MAX_ITERATIONS: Exceeded {state.max_iterations} iterations"
 
     if state.start_time:
-        elapsed = (datetime.now(timezone.utc) - state.start_time).total_seconds()
+        elapsed = (datetime.now(UTC) - state.start_time).total_seconds()
         if elapsed >= state.max_wall_time_seconds:
             return f"MAX_WALL_TIME: Exceeded {state.max_wall_time_seconds}s"
 

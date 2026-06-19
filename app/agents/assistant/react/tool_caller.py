@@ -13,7 +13,7 @@ import concurrent.futures
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.core.config import get_settings
 
@@ -29,8 +29,8 @@ class ToolCall:
     def __init__(
         self,
         name: str,
-        arguments: Dict[str, Any],
-        call_id: Optional[str] = None,
+        arguments: dict[str, Any],
+        call_id: str | None = None,
     ) -> None:
         self.name = name
         self.arguments = arguments
@@ -54,8 +54,8 @@ class ToolCaller:
 
     def convert_to_openai_format(
         self,
-        tools: List[Any],
-    ) -> List[Dict[str, Any]]:
+        tools: list[Any],
+    ) -> list[dict[str, Any]]:
         """Convert LangChain tools to OpenAI function calling format.
 
         Args:
@@ -103,8 +103,8 @@ class ToolCaller:
 
     def convert_to_anthropic_format(
         self,
-        tools: List[Any],
-    ) -> List[Dict[str, Any]]:
+        tools: list[Any],
+    ) -> list[dict[str, Any]]:
         """Convert LangChain tools to Anthropic tool format.
 
         Args:
@@ -120,7 +120,7 @@ class ToolCaller:
             args_schema = getattr(tool, "args_schema", None)
 
             # Build input schema
-            input_schema: Dict[str, Any] = {
+            input_schema: dict[str, Any] = {
                 "type": "object",
                 "properties": {},
                 "required": [],
@@ -170,8 +170,8 @@ class ToolCaller:
     async def execute(
         self,
         tool: Any,
-        args: Dict[str, Any],
-    ) -> Tuple[Any, bool]:
+        args: dict[str, Any],
+    ) -> tuple[Any, bool]:
         """Execute a single tool.
 
         Detects ask_user_clarification and returns the wait sentinel.
@@ -193,7 +193,7 @@ class ToolCaller:
         try:
             # Coerce JSON-encoded strings to proper types (LLMs sometimes send
             # '["a", "b"]' instead of an actual list, etc.)
-            coerced_args: Dict[str, Any] = {}
+            coerced_args: dict[str, Any] = {}
             for k, v in args.items():
                 if isinstance(v, str):
                     stripped = v.strip()
@@ -216,9 +216,9 @@ class ToolCaller:
 
     async def execute_parallel(
         self,
-        tool_map: Dict[str, Any],
-        calls: List[ToolCall],
-    ) -> List[Tuple[ToolCall, Any, bool]]:
+        tool_map: dict[str, Any],
+        calls: list[ToolCall],
+    ) -> list[tuple[ToolCall, Any, bool]]:
         """Execute multiple tool calls in parallel.
 
         Args:
@@ -232,8 +232,8 @@ class ToolCaller:
             return []
 
         # Prepare call info and coroutines
-        call_infos: List[Tuple[ToolCall, Optional[Any], Optional[asyncio.Task]]] = []
-        coroutines: List[asyncio.Task] = []
+        call_infos: list[tuple[ToolCall, Any | None, asyncio.Task | None]] = []
+        coroutines: list[asyncio.Task] = []
 
         for call in calls:
             tool = tool_map.get(call.name)
@@ -273,14 +273,14 @@ class ToolCaller:
         self,
         tool: Any,
         call: ToolCall,
-    ) -> Tuple[Any, bool]:
+    ) -> tuple[Any, bool]:
         """Execute a tool and return (result, is_wait)."""
         return await self.execute(tool, call.arguments)
 
     async def _invoke_tool(
         self,
         tool: Any,
-        args: Dict[str, Any],
+        args: dict[str, Any],
     ) -> Any:
         """Invoke a LangChain tool (async or sync)."""
         # Async tool
@@ -301,7 +301,7 @@ class ToolCaller:
     # ── Response parsing ───────────────────────────────────────────────────────
 
     @staticmethod
-    def parse_tool_calls(response: Any) -> List[ToolCall]:
+    def parse_tool_calls(response: Any) -> list[ToolCall]:
         """Extract tool calls from LLM response.
 
         Handles OpenAI and Anthropic response formats.

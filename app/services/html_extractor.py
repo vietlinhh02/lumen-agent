@@ -1,4 +1,5 @@
 import logging
+
 import httpx
 from bs4 import BeautifulSoup
 

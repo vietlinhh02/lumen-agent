@@ -1,9 +1,6 @@
 """Tests for the ReActAgent."""
 
-import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from unittest.mock import MagicMock
 
 
 class MockProvider:
@@ -21,7 +18,7 @@ class TestReActAgentInit:
 
     def test_creates_with_defaults(self) -> None:
         """Agent creates with default values."""
-        from app.agents.assistant.react.agent import ReActAgent, ProjectContext
+        from app.agents.assistant.react.agent import ReActAgent
 
         provider = MockProvider()
         tools = []
@@ -35,7 +32,7 @@ class TestReActAgentInit:
 
     def test_creates_with_custom_values(self) -> None:
         """Agent creates with custom values."""
-        from app.agents.assistant.react.agent import ReActAgent, ProjectContext
+        from app.agents.assistant.react.agent import ProjectContext, ReActAgent
 
         provider = MockProvider()
         tools = []

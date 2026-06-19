@@ -1,8 +1,9 @@
 """Tests for the PlannerAgent."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+import pytest
 
 
 class TestPlanOutputSchema:
@@ -23,8 +24,9 @@ class TestPlanOutputSchema:
 
     def test_step_output_empty_tool_rejected(self):
         """Test that empty tool name is rejected."""
-        from app.ai.structured_outputs import StepOutput
         from pydantic import ValidationError
+
+        from app.ai.structured_outputs import StepOutput
 
         with pytest.raises(ValidationError):
             StepOutput(
@@ -59,8 +61,9 @@ class TestPlanOutputSchema:
 
     def test_plan_output_empty_steps_rejected(self):
         """Test that empty steps list is rejected."""
-        from app.ai.structured_outputs import PlanOutput
         from pydantic import ValidationError
+
+        from app.ai.structured_outputs import PlanOutput
 
         with pytest.raises(ValidationError):
             PlanOutput(
@@ -224,6 +227,7 @@ class TestPlannerAgentCreatePlan:
     async def test_create_plan_yields_reasoning_event(self):
         """Test that create_plan yields a reasoning MessageEvent first."""
         from app.agents.assistant.agents.planner import PlannerAgent
+
         from app.agents.assistant.events import MessageEvent
 
         mock_provider = MagicMock()
@@ -249,6 +253,7 @@ class TestPlannerAgentCreatePlan:
     async def test_create_plan_with_mock_llm(self):
         """Test create_plan with a mock LLM response."""
         from app.agents.assistant.agents.planner import PlannerAgent
+
         from app.agents.assistant.events import PlanEvent
         from app.ai.structured_outputs import PlanOutput, StepOutput
 
@@ -295,6 +300,7 @@ class TestPlannerAgentUpdatePlan:
     async def test_update_plan_already_complete(self):
         """Test that update_plan returns early if plan is complete."""
         from app.agents.assistant.agents.planner import PlannerAgent
+
         from app.agents.assistant.events import MessageEvent, PlanEvent, PlanStep
 
         mock_provider = MagicMock()
@@ -331,6 +337,7 @@ class TestPlannerAgentUpdatePlan:
     async def test_update_plan_step_success(self):
         """Test update_plan when step succeeds - marks step completed."""
         from app.agents.assistant.agents.planner import PlannerAgent
+
         from app.agents.assistant.events import MessageEvent, PlanEvent, PlanStep
 
         mock_provider = MagicMock()
@@ -374,6 +381,7 @@ class TestPlannerAgentUpdatePlan:
     async def test_update_plan_step_failed(self):
         """Test update_plan when step fails."""
         from app.agents.assistant.agents.planner import PlannerAgent
+
         from app.agents.assistant.events import MessageEvent, PlanEvent, PlanStep
 
         mock_provider = MagicMock()

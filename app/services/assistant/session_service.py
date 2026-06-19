@@ -36,8 +36,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, List, Optional, TYPE_CHECKING
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,10 +52,10 @@ from app.agents.assistant.events import (
     MessageEvent,
     TitleEvent,
 )
-from app.agents.assistant.react.agent import ReActAgent, ProjectContext
+from app.agents.assistant.react.agent import ProjectContext, ReActAgent
 from app.agents.assistant.react.memory import Scratchpad
-from app.agents.assistant.tools import get_all_tools, get_all_toolkits
-from app.agents.assistant.tools.context import set_user_context, clear_user_context
+from app.agents.assistant.tools import get_all_tools
+from app.agents.assistant.tools.context import clear_user_context, set_user_context
 
 # LangGraph integration (Task 9)
 try:
@@ -64,11 +65,10 @@ except ImportError:
     LANGGRAPH_AVAILABLE = False
     def is_graph_enabled() -> bool:
         return False
+from app.ai.provider import get_provider
 from app.db.models import AssistantEvent as DBAssistantEvent
 from app.db.models import AssistantSession as DBAssistantSession
-from app.db.models import Project
-from app.db.models import User
-from app.ai.provider import get_provider
+from app.db.models import Project, User
 
 if TYPE_CHECKING:
     from app.db.models import AssistantSession
@@ -79,8 +79,8 @@ logger = logging.getLogger(__name__)
 # In-memory maps for tracking.
 # Limitation: only works for a single backend instance.
 # For multi-instance deployment, move to Redis pub/sub in a follow-up.
-_cancellation_flags: Dict[str, asyncio.Event] = {}  # For external cancellation (stop button)
-_active_chat_flags: Dict[str, bool] = {}  # For tracking concurrent chats
+_cancellation_flags: dict[str, asyncio.Event] = {}  # For external cancellation (stop button)
+_active_chat_flags: dict[str, bool] = {}  # For tracking concurrent chats
 MAX_CONTEXT_MESSAGES = 8
 MAX_CONTEXT_CHARS_PER_MESSAGE = 1200
 
@@ -99,15 +99,15 @@ def sort_session_events(events: list[DBAssistantEvent]) -> list[DBAssistantEvent
                         ts_str = ts_str[:-1] + "+00:00"
                     dt = datetime.fromisoformat(ts_str)
                     if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.replace(tzinfo=UTC)
                     return dt
                 except ValueError:
                     pass
         created_at = event.created_at
         if created_at is None or not isinstance(created_at, datetime):
-            return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min.replace(tzinfo=UTC)
         if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
+            created_at = created_at.replace(tzinfo=UTC)
         return created_at
 
     return sorted(events, key=get_event_timestamp)
@@ -141,7 +141,7 @@ def _build_conversation_context(events: list[DBAssistantEvent]) -> str:
 
 def _restore_scratchpad_from_events(
     scratchpad: Scratchpad,
-    events: List["DBAssistantEvent"],
+    events: list[DBAssistantEvent],
 ) -> None:
     """Restore scratchpad from persisted events for resume.
 
@@ -201,9 +201,9 @@ class AssistantSessionSummary:
     def __init__(
         self,
         id: uuid.UUID,
-        title: Optional[str],
-        project_id: Optional[uuid.UUID],
-        project_title: Optional[str],
+        title: str | None,
+        project_id: uuid.UUID | None,
+        project_title: str | None,
         status: str,
         created_at: datetime,
         updated_at: datetime,
@@ -219,7 +219,7 @@ class AssistantSessionSummary:
         self.event_count = event_count
 
     @classmethod
-    def from_model(cls, session: "AssistantSession") -> "AssistantSessionSummary":
+    def from_model(cls, session: AssistantSession) -> AssistantSessionSummary:
         """Create a summary from a database model."""
         project_title = None
         if session.project:
@@ -262,9 +262,9 @@ class AssistantSessionService:
     async def create_session(
         self,
         user: User,
-        project_id: Optional[uuid.UUID] = None,
-        title: Optional[str] = None,
-    ) -> "AssistantSession":
+        project_id: uuid.UUID | None = None,
+        title: str | None = None,
+    ) -> AssistantSession:
         """
         Create a new assistant session.
 
@@ -313,7 +313,7 @@ class AssistantSessionService:
         user: User,
         session_id: uuid.UUID,
         include_events: bool = True,
-    ) -> Optional["AssistantSession"]:
+    ) -> AssistantSession | None:
         """
         Get a session by ID.
 
@@ -344,7 +344,7 @@ class AssistantSessionService:
         user: User,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[AssistantSessionSummary]:
+    ) -> list[AssistantSessionSummary]:
         """
         List sessions for a user.
 
@@ -427,7 +427,7 @@ class AssistantSessionService:
         session_id: uuid.UUID,
         user_id: uuid.UUID,
         message: str,
-    ) -> AsyncGenerator[BaseEvent, None]:
+    ) -> AsyncGenerator[BaseEvent]:
         """
         Run the chat flow for a session.
 
@@ -496,9 +496,8 @@ class AssistantSessionService:
 
         try:
             # Build project context
-            project_context: Dict[str, Any] = {}
             if session.project:
-                project_context = {
+                {
                     "project_id": str(session.project.id),
                     "project_name": session.project.title,
                     "topic": session.project.topic,
@@ -590,7 +589,7 @@ class AssistantSessionService:
                     "role": "user",
                     "content": message,
                     "id": str(uuid.uuid4()),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
 
@@ -680,7 +679,7 @@ class AssistantSessionService:
         user_id: uuid.UUID,
         message: str,
         client_message_id: str | None = None,
-    ) -> AsyncGenerator[BaseEvent, None]:
+    ) -> AsyncGenerator[BaseEvent]:
         """
         Run the chat flow using LangGraph-based AssistantGraph.
 
@@ -723,6 +722,7 @@ class AssistantSessionService:
 
         # Load session
         from sqlalchemy.orm import selectinload
+
         from app.db.models import AssistantMessage
 
         result = await self.db.execute(
@@ -752,7 +752,7 @@ class AssistantSessionService:
 
         try:
             # Build project context
-            project_context: Dict[str, Any] = {}
+            project_context: dict[str, Any] = {}
             if session.project:
                 project_context = {
                     "project_id": str(session.project.id),
@@ -809,7 +809,7 @@ class AssistantSessionService:
                 "research_pipeline", "search_only", "matrix_only",
                 "gap_only", "report_only", "qa", "create_project",
             }
-            auto_created_message: Optional[MessageEvent] = None
+            auto_created_message: MessageEvent | None = None
             if session.project_id is None:
                 # Classify intent first to avoid creating projects for greetings
                 from app.agents.assistant.react.intent_classifier import IntentClassifier
@@ -903,7 +903,7 @@ class AssistantSessionService:
                     "type": "message",
                     "role": "user",
                     "content": message,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "turn_id": turn_id,
                 },
                 turn_id=turn_id,
@@ -956,7 +956,7 @@ class AssistantSessionService:
                         "type": "message",
                         "role": "assistant",
                         "content": auto_created_message.content,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                         "turn_id": turn_id,
                     },
                     turn_id=turn_id,
@@ -1011,7 +1011,7 @@ class AssistantSessionService:
                                 "type": "message",
                                 "role": "assistant",
                                 "content": assistant_content,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                                 "turn_id": turn_id,
                             },
                             turn_id=turn_id,
@@ -1053,7 +1053,7 @@ class AssistantSessionService:
                             "type": "message",
                             "role": "assistant",
                             "content": event.content,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                             "turn_id": turn_id,
                         },
                         turn_id=turn_id,
@@ -1093,9 +1093,9 @@ class AssistantSessionService:
 
     async def _auto_create_project(
         self,
-        session: "DBAssistantSession",
+        session: DBAssistantSession,
         message: str,
-        user: "User",
+        user: User,
     ):
         """Auto-create a Project when a chat session has no project pinned.
 
@@ -1144,6 +1144,7 @@ class AssistantSessionService:
             be None if the LLM cannot infer one.
         """
         import asyncio
+
         from pydantic import BaseModel, Field
 
         class _ProjectMeta(BaseModel):
@@ -1207,8 +1208,8 @@ class AssistantSessionService:
         self,
         session_id: uuid.UUID,
         event_type: str,
-        payload: Dict[str, Any],
-        turn_id: Optional[str] = None,
+        payload: dict[str, Any],
+        turn_id: str | None = None,
     ) -> DBAssistantEvent:
         """
         Persist an event to the database.
@@ -1251,7 +1252,7 @@ class AssistantSessionService:
     async def get_persisted_events(
         self,
         session_id: uuid.UUID,
-    ) -> List[BaseEvent]:
+    ) -> list[BaseEvent]:
         """
         Get all persisted events for a session, replayed as BaseEvent objects.
 
@@ -1269,7 +1270,7 @@ class AssistantSessionService:
         events = result.scalars().all()
         sorted_events = sort_session_events(events)
 
-        parsed_events: List[BaseEvent] = []
+        parsed_events: list[BaseEvent] = []
         for event in sorted_events:
             try:
                 parsed = EventMapper.parse_event(event.event_type, event.payload)

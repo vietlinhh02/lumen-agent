@@ -16,9 +16,9 @@ import httpx
 from paperhub_cli.reader.fetcher import PaperReadError, fetch_paper_by_id
 
 from app.core.config import get_settings
+from app.services.html_extractor import fetch_arxiv_html, fetch_europepmc_xml
 from app.sources.base import RawPaper
 from app.sources.paperhub import _configure_paperhub_environment
-from app.services.html_extractor import fetch_arxiv_html, fetch_europepmc_xml
 
 logger = logging.getLogger(__name__)
 

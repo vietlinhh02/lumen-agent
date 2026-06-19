@@ -10,10 +10,9 @@ One module = one toolkit (filled in Tasks 4-5).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
 
 # =============================================================================
 # Common / Shared schemas
@@ -24,11 +23,11 @@ class ToolResult(BaseModel):
     """Standard tool result wrapper."""
 
     ok: bool = Field(..., description="Whether the tool succeeded")
-    error_code: Optional[str] = Field(
+    error_code: str | None = Field(
         default=None, description="Error code if failed"
     )
     message: str = Field(..., description="Result message or error details")
-    data: Optional[Dict[str, Any]] = Field(
+    data: dict[str, Any] | None = Field(
         default=None, description="Additional result data"
     )
 
@@ -38,13 +37,13 @@ class PaperSchema(BaseModel):
 
     paper_id: str = Field(..., description="Unique paper identifier")
     title: str = Field(..., description="Paper title")
-    authors: List[str] = Field(default_factory=list, description="Author names")
-    year: Optional[int] = Field(default=None, description="Publication year")
-    doi: Optional[str] = Field(default=None, description="DOI")
-    abstract: Optional[str] = Field(default=None, description="Abstract text")
+    authors: list[str] = Field(default_factory=list, description="Author names")
+    year: int | None = Field(default=None, description="Publication year")
+    doi: str | None = Field(default=None, description="DOI")
+    abstract: str | None = Field(default=None, description="Abstract text")
     source: str = Field(..., description="Paper source (e.g., semantic_scholar)")
-    url: Optional[str] = Field(default=None, description="Paper URL")
-    citation_count: Optional[int] = Field(
+    url: str | None = Field(default=None, description="Paper URL")
+    citation_count: int | None = Field(
         default=None, description="Number of citations"
     )
 
@@ -60,7 +59,7 @@ class ProjectSummary(BaseModel):
 class ProjectDetail(ProjectSummary):
     """Full project detail."""
 
-    research_question: Optional[str] = Field(
+    research_question: str | None = Field(
         default=None, description="Research question"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -82,7 +81,7 @@ class ListProjectsInput(BaseModel):
 class ListProjectsOutput(BaseModel):
     """Output from list_projects tool."""
 
-    projects: List[ProjectSummary] = Field(
+    projects: list[ProjectSummary] = Field(
         default_factory=list, description="List of projects"
     )
 
@@ -104,7 +103,7 @@ class CreateProjectInput(BaseModel):
 
     name: str = Field(..., description="Project name", min_length=1, max_length=200)
     topic: str = Field(..., description="Research topic", min_length=1, max_length=500)
-    research_question: Optional[str] = Field(
+    research_question: str | None = Field(
         default=None, description="Optional research question"
     )
 
@@ -121,7 +120,7 @@ class AskUserClarificationInput(BaseModel):
     """Input for ask_user_clarification tool."""
 
     question: str = Field(..., description="Question to ask the user")
-    options: Optional[List[str]] = Field(
+    options: list[str] | None = Field(
         default=None, description="Multiple choice options"
     )
 
@@ -144,14 +143,14 @@ class SearchPapersInput(BaseModel):
     """Input for search_papers tool."""
 
     query: str = Field(..., description="Search query", min_length=1)
-    sources: List[str] = Field(
+    sources: list[str] = Field(
         default=["semantic_scholar"],
         description="Sources to search: semantic_scholar, paperhub",
     )
-    year_from: Optional[int] = Field(
+    year_from: int | None = Field(
         default=None, description="Filter papers from this year"
     )
-    year_to: Optional[int] = Field(
+    year_to: int | None = Field(
         default=None, description="Filter papers until this year"
     )
     limit: int = Field(default=20, description="Max results per source", ge=1, le=100)
@@ -160,9 +159,9 @@ class SearchPapersInput(BaseModel):
 class SearchPapersOutput(BaseModel):
     """Output from search_papers tool."""
 
-    papers: List[PaperSchema] = Field(default_factory=list, description="Found papers")
+    papers: list[PaperSchema] = Field(default_factory=list, description="Found papers")
     total_count: int = Field(..., description="Total papers found")
-    source_diagnostics: Dict[str, str] = Field(
+    source_diagnostics: dict[str, str] = Field(
         default_factory=dict, description="Per-source status messages"
     )
 
@@ -208,7 +207,7 @@ class ListProjectPapersInput(BaseModel):
 class ListProjectPapersOutput(BaseModel):
     """Output from list_project_papers tool."""
 
-    papers: List[Dict[str, Any]] = Field(
+    papers: list[dict[str, Any]] = Field(
         default_factory=list,
         description="List of project papers with metadata",
     )
@@ -245,7 +244,7 @@ class MatrixRow(BaseModel):
     row_id: str = Field(..., description="Row ID")
     dimension: str = Field(..., description="Dimension/category")
     cell_content: str = Field(..., description="Cell text content")
-    source_paper_id: Optional[str] = Field(
+    source_paper_id: str | None = Field(
         default=None, description="Supporting paper"
     )
 
@@ -253,7 +252,7 @@ class MatrixRow(BaseModel):
 class ListMatrixRowsOutput(BaseModel):
     """Output from list_matrix_rows tool."""
 
-    rows: List[MatrixRow] = Field(default_factory=list, description="Matrix rows")
+    rows: list[MatrixRow] = Field(default_factory=list, description="Matrix rows")
 
 
 class UpdateMatrixRowInput(BaseModel):
@@ -268,7 +267,7 @@ class UpdateMatrixRowOutput(BaseModel):
     """Output from update_matrix_row tool."""
 
     success: bool = Field(..., description="Whether update succeeded")
-    row: Optional[MatrixRow] = Field(default=None, description="Updated row")
+    row: MatrixRow | None = Field(default=None, description="Updated row")
 
 
 # =============================================================================
@@ -295,7 +294,7 @@ class GapSchema(BaseModel):
     gap_id: str = Field(..., description="Gap ID")
     description: str = Field(..., description="Gap description")
     severity: str = Field(..., description="Severity: high, medium, low")
-    evidence: List[str] = Field(default_factory=list, description="Supporting evidence")
+    evidence: list[str] = Field(default_factory=list, description="Supporting evidence")
 
 
 class ListGapsInput(BaseModel):
@@ -307,7 +306,7 @@ class ListGapsInput(BaseModel):
 class ListGapsOutput(BaseModel):
     """Output from list_gaps tool."""
 
-    gaps: List[GapSchema] = Field(default_factory=list, description="Detected gaps")
+    gaps: list[GapSchema] = Field(default_factory=list, description="Detected gaps")
 
 
 class DeleteGapInput(BaseModel):
@@ -345,7 +344,7 @@ class ConflictSchema(BaseModel):
 
     conflict_id: str = Field(..., description="Conflict ID")
     description: str = Field(..., description="Conflict description")
-    paper_ids: List[str] = Field(
+    paper_ids: list[str] = Field(
         default_factory=list, description="Involved paper IDs"
     )
     severity: str = Field(..., description="Severity: high, medium, low")
@@ -360,7 +359,7 @@ class ListConflictsInput(BaseModel):
 class ListConflictsOutput(BaseModel):
     """Output from list_conflicts tool."""
 
-    conflicts: List[ConflictSchema] = Field(
+    conflicts: list[ConflictSchema] = Field(
         default_factory=list, description="Detected conflicts"
     )
 
@@ -374,13 +373,13 @@ class GenerateReportInput(BaseModel):
     """Input for generate_report tool."""
 
     project_id: str = Field(..., description="Project ID")
-    title: Optional[str] = Field(
+    title: str | None = Field(
         default=None, description="Report title (optional)"
     )
     include_gap_section: bool = Field(
         default=True, description="Include research gaps section"
     )
-    selected_gap_ids: Optional[List[str]] = Field(
+    selected_gap_ids: list[str] | None = Field(
         default=None, description="Specific gaps to include"
     )
 
@@ -414,7 +413,7 @@ class ReportSummary(BaseModel):
 class ListReportsOutput(BaseModel):
     """Output from list_reports tool."""
 
-    reports: List[ReportSummary] = Field(default_factory=list, description="Reports")
+    reports: list[ReportSummary] = Field(default_factory=list, description="Reports")
 
 
 class GetReportInput(BaseModel):
@@ -430,7 +429,7 @@ class GetReportOutput(BaseModel):
     report_id: str = Field(..., description="Report ID")
     title: str = Field(..., description="Report title")
     content: str = Field(..., description="Report markdown content")
-    references: List[Dict[str, Any]] = Field(
+    references: list[dict[str, Any]] = Field(
         default_factory=list, description="Reference list"
     )
 
@@ -459,7 +458,7 @@ class RetrieveEvidenceInput(BaseModel):
     project_id: str = Field(..., description="Project ID")
     query: str = Field(..., description="Evidence query", min_length=1)
     k: int = Field(default=8, description="Number of chunks to retrieve", ge=1, le=50)
-    content_types: Optional[List[str]] = Field(
+    content_types: list[str] | None = Field(
         default=None,
         description="Filter by content type: abstract, method, result, conclusion",
     )
@@ -472,13 +471,13 @@ class EvidenceChunk(BaseModel):
     content: str = Field(..., description="Chunk text content")
     project_paper_id: str = Field(..., description="Source project-paper ID")
     score: float = Field(..., description="Relevance score")
-    content_type: Optional[str] = Field(default=None, description="Content type")
+    content_type: str | None = Field(default=None, description="Content type")
 
 
 class RetrieveEvidenceOutput(BaseModel):
     """Output from retrieve_evidence tool."""
 
-    chunks: List[EvidenceChunk] = Field(
+    chunks: list[EvidenceChunk] = Field(
         default_factory=list, description="Retrieved evidence chunks"
     )
     query: str = Field(..., description="Original query")

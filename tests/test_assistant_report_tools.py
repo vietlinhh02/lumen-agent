@@ -1,8 +1,9 @@
 """Tests for assistant report tools."""
 
-import pytest
 from unittest.mock import MagicMock
 from uuid import uuid4
+
+import pytest
 
 
 class TestReportToolsSchemas:
@@ -52,6 +53,7 @@ class TestReportToolsSchemas:
     def test_report_summary_schema(self):
         """Test ReportSummary schema."""
         from datetime import datetime
+
         from app.agents.assistant.tools.schemas import ReportSummary
         
         summary = ReportSummary(

@@ -1,8 +1,9 @@
 """Tests for assistant matrix tools."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 
 class TestMatrixToolsSchemas:
@@ -452,7 +453,7 @@ class TestPollJobHelper:
             mock_factory.return_value = mock_db
             mock_db.execute = AsyncMock(return_value=mock_result)
 
-            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch("asyncio.sleep", new_callable=AsyncMock):
                 result = await _poll_job(job_id, max_wait=5.0, interval=0.1)
 
         assert result["status"] == "completed"
@@ -474,7 +475,7 @@ class TestPollJobHelper:
             mock_factory.return_value = mock_db
             mock_db.execute = AsyncMock(return_value=mock_result)
 
-            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch("asyncio.sleep", new_callable=AsyncMock):
                 result = await _poll_job(job_id, max_wait=0.1, interval=0.05)
 
         assert result["status"] == "failed"

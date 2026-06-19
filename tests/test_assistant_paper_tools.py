@@ -11,21 +11,22 @@ Verifies:
 - Implementation functions with mocked services
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from app.agents.assistant.tools.paper_tools import (
     _error_result,
-    _ok_result,
-    search_papers,
-    save_paper_to_project,
-    remove_paper_from_project,
-    list_project_papers,
-    _search_papers_impl,
-    _save_paper_impl,
-    _remove_paper_impl,
     _list_project_papers_impl,
+    _ok_result,
+    _remove_paper_impl,
+    _save_paper_impl,
+    _search_papers_impl,
+    list_project_papers,
+    remove_paper_from_project,
+    save_paper_to_project,
+    search_papers,
 )
 
 
@@ -193,10 +194,9 @@ class TestSearchPapersImplementation:
 
     async def test_search_papers_timeout(self):
         """_search_papers_impl handles timeout."""
-        import asyncio
 
         with patch("app.services.paper_search.search_and_download", new_callable=AsyncMock) as mock_search:
-            mock_search.side_effect = asyncio.TimeoutError()
+            mock_search.side_effect = TimeoutError()
 
             result = await _search_papers_impl(
                 query="test",

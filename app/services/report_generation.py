@@ -324,7 +324,7 @@ async def _generate_section(
         total += len(block)
 
     chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text available."
-    local_paper_ids_json = json.dumps(list(included_pids))
+    json.dumps(list(included_pids))
 
     section_prompt = f"""Write the following literature review section:
 
@@ -584,7 +584,7 @@ async def generate_report(
         chunk_context = (
             "\n\n".join(chunk_parts) if chunk_parts else "No full-text sections available."
         )
-        local_paper_ids_json = json.dumps(list(included_pids))
+        json.dumps(list(included_pids))
 
         sections, _, _ = await _generate_and_validate(
             db,

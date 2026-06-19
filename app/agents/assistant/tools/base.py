@@ -7,7 +7,7 @@ Contains BaseToolkit and the registry functions, separated to avoid circular imp
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any
 
 # LangChain imports - lazily loaded to avoid hard dependency issues
 try:
@@ -37,9 +37,9 @@ class BaseToolkit(ABC):
 
     def __init__(
         self,
-        user_id: Optional[str] = None,
-        project_id: Optional[str] = None,
-        user: Optional["User"] = None,
+        user_id: str | None = None,
+        project_id: str | None = None,
+        user: User | None = None,
     ) -> None:
         """
         Initialize the toolkit with user/project context.
@@ -54,7 +54,7 @@ class BaseToolkit(ABC):
         self.user = user
 
     @abstractmethod
-    def get_tools(self) -> List[BaseTool]:
+    def get_tools(self) -> list[BaseTool]:
         """
         Return the list of tools provided by this toolkit.
 
@@ -78,7 +78,7 @@ class BaseToolkit(ABC):
 
 
 # Global toolkit registry for lazy loading
-_TOOLKIT_REGISTRY: List[type[BaseToolkit]] = []
+_TOOLKIT_REGISTRY: list[type[BaseToolkit]] = []
 
 
 def register_toolkit(toolkit_class: type[BaseToolkit]) -> type[BaseToolkit]:
@@ -101,10 +101,10 @@ def register_toolkit(toolkit_class: type[BaseToolkit]) -> type[BaseToolkit]:
 
 
 def get_all_toolkits(
-    user_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    user: Optional["User"] = None,
-) -> List[BaseToolkit]:
+    user_id: str | None = None,
+    project_id: str | None = None,
+    user: User | None = None,
+) -> list[BaseToolkit]:
     """
     Factory function to get all registered toolkits with context.
 
@@ -128,10 +128,10 @@ def get_all_toolkits(
 
 
 def get_all_tools(
-    user_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-    user: Optional["User"] = None,
-) -> List[BaseTool]:
+    user_id: str | None = None,
+    project_id: str | None = None,
+    user: User | None = None,
+) -> list[BaseTool]:
     """
     Get all tools from all registered toolkits.
 
@@ -146,7 +146,7 @@ def get_all_tools(
     Returns:
         List of all LangChain BaseTool instances from all toolkits.
     """
-    all_tools: List[BaseTool] = []
+    all_tools: list[BaseTool] = []
     for toolkit in get_all_toolkits(user_id=user_id, project_id=project_id, user=user):
         all_tools.extend(toolkit.get_tools())
     return all_tools

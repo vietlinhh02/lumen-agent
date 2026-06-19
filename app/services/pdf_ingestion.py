@@ -219,10 +219,7 @@ def _has_section_keyword(text_lower: str) -> bool:
         if s == h.rstrip("s") or s + "s" == h or s.rstrip("s") == h:
             return True
     # Prefix-of-tokens match
-    for h in _SECTION_HEADERS:
-        if _is_at_start(h):
-            return True
-    return False
+    return any(_is_at_start(h) for h in _SECTION_HEADERS)
 
 
 @dataclass
@@ -762,9 +759,7 @@ def _detect_sections(text: str) -> list[Section]:
             line_text = lines[first_start] if first_start < len(lines) else ""
             stripped = line_text.strip()
             looks_like_front_matter = False
-            if _NON_SECTION_LINE_RE.match(stripped):
-                looks_like_front_matter = True
-            elif (
+            if _NON_SECTION_LINE_RE.match(stripped) or (
                 stripped.startswith("####")
                 or stripped.startswith("###")
                 or stripped.startswith("## ")

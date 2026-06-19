@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.agents.assistant.react.intent_classifier import (
+    VALID_INTENTS,
     IntentClassifier,
     IntentOutput,
-    VALID_INTENTS,
 )
 
 
@@ -181,7 +181,7 @@ class TestIntentOutputModel:
         assert output.confidence == 0.95
 
     def test_confidence_must_be_0_to_1(self) -> None:
-        with pytest.raises(Exception):  # Pydantic validation error
+        with pytest.raises(ValueError):  # Pydantic validation error
             IntentOutput(
                 intent="research_pipeline",
                 confidence=1.5,  # Invalid: > 1.0

@@ -11,21 +11,12 @@ Use these when:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import Field
 
-from app.agents.assistant.tools.context import get_project_id, get_user, get_user_id
+from app.agents.assistant.tools.context import get_user, get_user_id
 from app.agents.assistant.tools.schemas import (
-    AskUserClarificationInput,
-    AskUserClarificationOutput,
-    CreateProjectInput,
-    CreateProjectOutput,
-    GetProjectInput,
-    GetProjectOutput,
-    ListProjectsInput,
-    ListProjectsOutput,
     ProjectDetail,
     ProjectSummary,
     ToolResult,
@@ -34,10 +25,10 @@ from app.db.models import User
 from app.schemas.project import ProjectCreate
 
 if TYPE_CHECKING:
-    from uuid import UUID
+    pass
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict (not a Pydantic model, to avoid serialization issues)."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -45,7 +36,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -62,9 +53,9 @@ def _tool_error(error_code: str, message: str) -> ToolResult:
 
 
 async def _list_projects_impl(
-    user_id: Optional[str],
-    user: Optional[User],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: User | None,
+) -> dict[str, Any]:
     """
     List all projects for the current user.
 
@@ -100,9 +91,9 @@ async def _list_projects_impl(
 
 async def _get_project_impl(
     project_id: str,
-    user_id: Optional[str],
-    user: Optional[User],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: User | None,
+) -> dict[str, Any]:
     """
     Get full project details by ID.
 
@@ -148,10 +139,10 @@ async def _get_project_impl(
 async def _create_project_impl(
     name: str,
     topic: str,
-    research_question: Optional[str],
-    user_id: Optional[str],
-    user: Optional[User],
-) -> Dict[str, Any]:
+    research_question: str | None,
+    user_id: str | None,
+    user: User | None,
+) -> dict[str, Any]:
     """
     Create a new project.
 
@@ -196,8 +187,8 @@ async def _create_project_impl(
 
 @tool
 async def list_projects(
-    user_id: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    user_id: str | None = None,
+) -> list[dict[str, Any]]:
     """
     List all projects for the current user.
 
@@ -217,7 +208,7 @@ async def list_projects(
 @tool
 async def get_project(
     project_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get full project details by ID.
 
@@ -239,8 +230,8 @@ async def get_project(
 async def create_project(
     name: str,
     topic: str,
-    research_question: Optional[str] = None,
-) -> Dict[str, Any]:
+    research_question: str | None = None,
+) -> dict[str, Any]:
     """
     Create a new research project.
 
@@ -263,8 +254,8 @@ async def create_project(
 @tool
 def ask_user_clarification(
     question: str,
-    options: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    options: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Ask the user a clarification question and wait for their response.
 
@@ -302,7 +293,7 @@ from app.agents.assistant.tools.base import BaseToolkit, register_toolkit
 class ProjectToolkit(BaseToolkit):
     """Toolkit for project-related operations."""
 
-    def get_tools(self) -> List[BaseTool]:
+    def get_tools(self) -> list[BaseTool]:
         return [
             list_projects,
             get_project,

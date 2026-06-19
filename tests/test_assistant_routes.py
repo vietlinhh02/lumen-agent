@@ -464,8 +464,8 @@ class TestChatEndpoint:
         
         History loading is handled by GET /sessions/{id} only.
         """
-        from app.schemas.assistant import ChatRequest
         from app.agents.assistant.events import DoneEvent
+        from app.schemas.assistant import ChatRequest
 
         user = MockUser()
         session_id = uuid.uuid4()
@@ -586,7 +586,7 @@ class TestChatEndpoint:
         
         All events for a single user request share the same turn_id.
         """
-        from app.agents.assistant.events import BaseEvent, MessageEvent
+        from app.agents.assistant.events import MessageEvent
 
         # MessageEvent should accept turn_id
         msg = MessageEvent(

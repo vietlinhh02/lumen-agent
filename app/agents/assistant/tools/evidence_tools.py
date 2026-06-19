@@ -11,7 +11,7 @@ Use these when:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     pass
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -29,7 +29,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -44,10 +44,10 @@ async def _retrieve_evidence_impl(
     project_id: str,
     query: str,
     k: int,
-    content_types: Optional[List[str]],
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    content_types: list[str] | None,
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Retrieve relevant evidence chunks from saved papers.
     
@@ -67,10 +67,11 @@ async def _retrieve_evidence_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
+
         from app.db.models import Project
+        from app.db.session import async_session_factory
         from app.services.hybrid_retrieval import retrieve_project_evidence
         
         pid = PyUUID(project_id)
@@ -131,8 +132,8 @@ async def retrieve_evidence(
     project_id: str,
     query: str,
     k: int = 8,
-    content_types: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    content_types: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Retrieve relevant evidence chunks from saved papers for a query.
 

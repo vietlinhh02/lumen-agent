@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
 
 from app.agents.assistant.events import (
     BaseEvent,
@@ -24,10 +25,8 @@ from app.agents.assistant.events import (
     ErrorEvent,
     MessageEvent,
     ProgressEvent,
-    ToolEvent,
 )
 from app.agents.assistant.tools.context import get_user
-from app.db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class ResearchPipelineConfig:
     relevance_threshold: str = "medium"  # "high" | "medium" | "low"
     include_gap_section: bool = True
     auto_generate_report: bool = True
-    sources: Optional[list[str]] = None
+    sources: list[str] | None = None
 
 
 # ── Pipeline ───────────────────────────────────────────────────────────────────
@@ -62,12 +61,12 @@ class ResearchPipeline:
     def __init__(
         self,
         config: ResearchPipelineConfig,
-        cancel_event: Optional[asyncio.Event] = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> None:
         self.config = config
         self.cancel_event = cancel_event or asyncio.Event()
 
-    async def run(self) -> AsyncGenerator[BaseEvent, None]:
+    async def run(self) -> AsyncGenerator[BaseEvent]:
         """Run the full pipeline, yielding events.
 
         Yields:
@@ -225,7 +224,7 @@ class ResearchPipeline:
                 return
 
             # ── Stage 6: Generate report ───────────────────────────────────────
-            report_id: Optional[str] = None
+            report_id: str | None = None
             if self.config.auto_generate_report:
                 yield ProgressEvent(
                     stage="report",
@@ -487,7 +486,6 @@ class ResearchPipeline:
 
         from app.db.models import BackgroundJob
         from app.db.session import async_session_factory
-        from sqlalchemy import select
 
         user = get_user()
         if not user:
@@ -524,7 +522,6 @@ class ResearchPipeline:
 
         from app.db.models import BackgroundJob
         from app.db.session import async_session_factory
-        from sqlalchemy import select
 
         user = get_user()
         if not user:
@@ -561,7 +558,6 @@ class ResearchPipeline:
 
         from app.db.models import BackgroundJob
         from app.db.session import async_session_factory
-        from sqlalchemy import select
 
         user = get_user()
         if not user:
@@ -608,9 +604,10 @@ class ResearchPipeline:
         interval: float = 2.0,
     ) -> dict[str, Any]:
         """Poll a background job until completion or failure."""
+        from sqlalchemy import select
+
         from app.db.models import BackgroundJob
         from app.db.session import async_session_factory
-        from sqlalchemy import select
 
         elapsed = 0.0
 
@@ -654,14 +651,14 @@ class ResearchPipeline:
         papers_saved: int,
         matrix_rows: int,
         gaps: int,
-        report_id: Optional[str],
+        report_id: str | None,
     ) -> str:
         """Build the final summary message."""
         lines = [
             "## ✅ Research Pipeline Complete",
             "",
-            f"| | |",
-            f"|---|---|",
+            "| | |",
+            "|---|---|",
             f"| 📄 Papers found | **{papers_found}** |",
             f"| 💾 Papers saved to project | **{papers_saved}** |",
             f"| 🔬 Literature matrix rows | **{matrix_rows}** |",
@@ -672,7 +669,7 @@ class ResearchPipeline:
             report_url = f"/projects/{self.config.project_id}/report/{report_id}"
             lines += [
                 "",
-                f"---",
+                "---",
                 f"📋 **Report ready!** → [View Full Report]({report_url})",
             ]
 

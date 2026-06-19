@@ -1,8 +1,8 @@
 """Tests for the Auto-RAG injector."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID
+
+import pytest
 
 
 class TestInject:
@@ -64,7 +64,6 @@ class TestInject:
         """inject() stores chunks in scratchpad on success."""
         from app.agents.assistant.react.rag_injector import inject
         from app.services.hybrid_retrieval import RetrievedChunk
-        from unittest.mock import MagicMock
 
         # Create mock chunks
         mock_chunks = [
@@ -160,7 +159,6 @@ class TestInject:
     async def test_uses_k_parameter(self, scratchpad) -> None:
         """inject() respects the k parameter."""
         from app.agents.assistant.react.rag_injector import inject
-        from unittest.mock import MagicMock
 
         # Create 5 mock chunks
         mock_chunks = [
@@ -223,7 +221,6 @@ class TestInjectForTool:
     async def test_injects_for_generate_matrix(self, scratchpad) -> None:
         """inject_for_tool() generates correct query for generate_matrix."""
         from app.agents.assistant.react.rag_injector import inject_for_tool
-        from unittest.mock import MagicMock
 
         mock_chunks = [MagicMock(chunk_text="Chunk 1")]
         project_uuid = "550e8400-e29b-41d4-a716-446655440000"
@@ -257,7 +254,6 @@ class TestInjectForTool:
     async def test_injects_for_detect_research_gaps(self, scratchpad) -> None:
         """inject_for_tool() generates correct query for detect_research_gaps."""
         from app.agents.assistant.react.rag_injector import inject_for_tool
-        from unittest.mock import MagicMock
 
         mock_chunks = [MagicMock(chunk_text="Chunk 1")]
         project_uuid = "550e8400-e29b-41d4-a716-446655440000"
@@ -290,7 +286,6 @@ class TestInjectForTool:
     async def test_uses_explicit_query_for_generate_report(self, scratchpad) -> None:
         """inject_for_tool() uses explicit query for generate_report."""
         from app.agents.assistant.react.rag_injector import inject_for_tool
-        from unittest.mock import MagicMock
 
         mock_chunks = [MagicMock(chunk_text="Chunk 1")]
         project_uuid = "550e8400-e29b-41d4-a716-446655440000"

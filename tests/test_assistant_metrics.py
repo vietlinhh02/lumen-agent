@@ -6,8 +6,6 @@ import time
 from collections import Counter
 from uuid import uuid4
 
-import pytest
-
 from app.services.assistant.metrics import (
     AssistantMetrics,
     SessionMetrics,
@@ -80,7 +78,6 @@ class TestAssistantMetrics:
 
     def test_singleton_pattern(self):
         """Test that AssistantMetrics is a singleton."""
-        from app.services.assistant.metrics import AssistantMetrics
 
         m1 = AssistantMetrics()
         m2 = AssistantMetrics()
@@ -196,7 +193,7 @@ class TestAssistantMetrics:
         user_id = uuid4()
 
         # Create sessions and record metrics
-        for i in range(3):
+        for _i in range(3):
             metrics.record_session_created(uuid4(), user_id)
 
         metrics.record_tool_call("search_papers")

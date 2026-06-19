@@ -1,8 +1,9 @@
 """Tests for assistant conflict tools."""
 
-import pytest
 from unittest.mock import MagicMock
 from uuid import uuid4
+
+import pytest
 
 
 class TestConflictToolsSchemas:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -41,7 +44,7 @@ class AssistantGraphConfig:
     max_iterations: int = DEFAULT_MAX_ITERATIONS
     max_wall_time_seconds: int = DEFAULT_MAX_WALL_TIME_SECONDS
     heartbeat_seconds: int = DEFAULT_HEARTBEAT_SECONDS
-    checkpointer: "BaseCheckpointSaver | None" = None
+    checkpointer: BaseCheckpointSaver | None = None
     tools: list = field(default_factory=list)
 
 
@@ -50,7 +53,7 @@ class AssistantGraphConfig:
 
 def create_sqlite_checkpointer(
     db_path: str | None = None,
-) -> "BaseCheckpointSaver":
+) -> BaseCheckpointSaver:
     """Create a SQLite checkpointer for assistant state persistence.
 
     SQLite is suitable for:
@@ -74,12 +77,12 @@ def create_sqlite_checkpointer(
 
     try:
         from langgraph.checkpoint.sqlite import SqliteSaver
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "SQLite checkpointer requires `langgraph-checkpoint-sqlite` package. "
             "Install with: pip install langgraph-checkpoint-sqlite, "
             "or use USE_MEMORY_CHECKPOINTER=true for testing."
-        )
+        ) from err
 
     path = db_path or DEFAULT_CHECKPOINT_DB
 
@@ -91,7 +94,7 @@ def create_sqlite_checkpointer(
     return SqliteSaver.from_conn_string(f"sqlite+aiosqlite:///{path}")
 
 
-def create_memory_checkpointer() -> "BaseCheckpointSaver":
+def create_memory_checkpointer() -> BaseCheckpointSaver:
     """Create an in-memory checkpointer for testing.
 
     WARNING: State is NOT persisted across server restarts.
@@ -108,7 +111,7 @@ def create_memory_checkpointer() -> "BaseCheckpointSaver":
 def get_checkpointer(
     use_memory: bool = False,
     db_path: str | None = None,
-) -> "BaseCheckpointSaver":
+) -> BaseCheckpointSaver:
     """Get the checkpointer based on environment.
 
     Priority:

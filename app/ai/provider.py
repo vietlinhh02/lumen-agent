@@ -12,12 +12,13 @@ relying on text parsing of Action: patterns.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional, TypeVar, Union, cast
+from typing import Any, TypeVar, Union, cast
 
 import anthropic
 from openai import AsyncOpenAI
@@ -67,14 +68,14 @@ class ToolCallDone:
     """Marks a tool call as complete with final arguments."""
     call_id: str
     name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
 
 
 @dataclass
 class StreamDone:
     """Marks the end of the stream."""
     content: str = ""
-    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 StreamChunk = Union[TextChunk, ToolCallStart, ToolCallArgsDelta, ToolCallDone, StreamDone]
@@ -95,11 +96,11 @@ class AIProvider(ABC):
     @abstractmethod
     async def stream(
         self,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
+        messages: list[dict[str, str]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[str, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[str]:
         """Yield text tokens as they are produced by the model.
 
         Implementations MUST emit tokens incrementally so the consumer can
@@ -127,11 +128,11 @@ class AIProvider(ABC):
     @abstractmethod
     async def stream_with_tools(
         self,
-        messages: List[Dict[str, Any]],
-        system: Optional[str] = None,
+        messages: list[dict[str, Any]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[StreamChunk, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[StreamChunk]:
         """Stream response with structured tool call support (Task 8).
 
         Yields structured chunks instead of raw text:
@@ -187,11 +188,11 @@ class AnthropicAdapter(AIProvider):
 
     async def stream(
         self,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
+        messages: list[dict[str, str]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[str, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[str]:
         """Stream text tokens from Anthropic.
 
         Uses the Anthropic streaming API and yields incremental text
@@ -251,17 +252,16 @@ class AnthropicAdapter(AIProvider):
 
     async def stream_with_tools(
         self,
-        messages: List[Dict[str, Any]],
-        system: Optional[str] = None,
+        messages: list[dict[str, Any]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[StreamChunk, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[StreamChunk]:
         """Stream with structured tool calls for Anthropic (Task 8).
 
         Anthropic uses tool_use content blocks. We parse these to emit
         structured ToolCallStart/ToolCallDone events.
         """
-        import json
         
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -274,7 +274,7 @@ class AnthropicAdapter(AIProvider):
             kwargs["tools"] = tools
 
         accumulated_text = ""
-        tool_calls: Dict[str, Dict[str, Any]] = {}  # call_id -> {name, args_str}
+        tool_calls: dict[str, dict[str, Any]] = {}  # call_id -> {name, args_str}
 
         async with self._client.messages.stream(**kwargs) as stream:
             # Handle content blocks
@@ -366,11 +366,11 @@ class OpenAICompatibleAdapter(AIProvider):
 
     async def stream(
         self,
-        messages: List[Dict[str, str]],
-        system: Optional[str] = None,
+        messages: list[dict[str, str]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[str, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[str]:
         """Stream text tokens from any OpenAI-compatible endpoint.
 
         Uses the chat completions streaming API. When *tools* are provided
@@ -525,11 +525,11 @@ class OpenAICompatibleAdapter(AIProvider):
 
     async def stream_with_tools(
         self,
-        messages: List[Dict[str, Any]],
-        system: Optional[str] = None,
+        messages: list[dict[str, Any]],
+        system: str | None = None,
         max_tokens: int = 2048,
-        tools: Optional[List[Dict[str, Any]]] = None,
-    ) -> AsyncGenerator[StreamChunk, None]:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncGenerator[StreamChunk]:
         """Stream with structured tool calls for OpenAI-compatible endpoints (Task 8).
 
         OpenAI and compatible APIs emit tool_call chunks during streaming.
@@ -552,7 +552,7 @@ class OpenAICompatibleAdapter(AIProvider):
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
         accumulated_text = ""
-        tool_calls: Dict[str, Dict[str, Any]] = {}  # call_id -> {name, args_str}
+        tool_calls: dict[str, dict[str, Any]] = {}  # call_id -> {name, args_str}
 
         try:
             stream = await self._client.chat.completions.create(**kwargs)

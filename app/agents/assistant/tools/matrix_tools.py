@@ -12,26 +12,17 @@ Use these when:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
 from app.agents.assistant.tools.context import get_user, get_user_id
-from app.agents.assistant.tools.schemas import (
-    GenerateMatrixInput,
-    GenerateMatrixOutput,
-    ListMatrixRowsInput,
-    ListMatrixRowsOutput,
-    MatrixRow,
-    UpdateMatrixRowInput,
-    UpdateMatrixRowOutput,
-)
 
 if TYPE_CHECKING:
     from uuid import UUID
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -39,7 +30,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -51,10 +42,10 @@ def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any
 
 
 async def _poll_job(
-    job_id: "UUID",
+    job_id: UUID,
     max_wait: float = 120.0,
     interval: float = 2.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Poll a background job until completion or failure.
     
@@ -66,9 +57,10 @@ async def _poll_job(
     Returns:
         Dict with job status, result, and any error message.
     """
-    from app.db.session import async_session_factory
     from sqlalchemy import select
+
     from app.db.models import BackgroundJob
+    from app.db.session import async_session_factory
     
     elapsed = 0.0
     async with async_session_factory() as db:
@@ -98,9 +90,9 @@ async def _poll_job(
 
 async def _generate_matrix_impl(
     project_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Generate literature matrix for a project by enqueuing a background job.
     
@@ -117,10 +109,11 @@ async def _generate_matrix_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import func, select
+
         from app.db.models import BackgroundJob, Project, ProjectPaper
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -191,9 +184,9 @@ async def _generate_matrix_impl(
 async def _list_matrix_rows_impl(
     project_id: str,
     limit: int,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     List matrix rows for a project.
     
@@ -211,10 +204,11 @@ async def _list_matrix_rows_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
-        from app.db.models import Project, LiteratureMatrixRow
+
+        from app.db.models import LiteratureMatrixRow, Project
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -270,9 +264,9 @@ async def _update_matrix_row_impl(
     row_id: str,
     field: str,
     new_value: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Update a matrix row field.
     
@@ -302,10 +296,11 @@ async def _update_matrix_row_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
+
         from app.db.models import LiteratureMatrixRow, Project
+        from app.db.session import async_session_factory
         
         rid = PyUUID(row_id)
         
@@ -361,7 +356,7 @@ async def _update_matrix_row_impl(
 @tool
 async def generate_matrix(
     project_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate a literature matrix for a project by extracting information from saved papers.
 
@@ -386,7 +381,7 @@ async def generate_matrix(
 async def list_matrix_rows(
     project_id: str,
     limit: int = 200,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     List all literature matrix rows for a project.
 
@@ -410,7 +405,7 @@ async def update_matrix_row(
     row_id: str,
     field: str,
     new_value: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Update a specific field in a matrix row.
 

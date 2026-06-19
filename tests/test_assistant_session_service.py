@@ -7,21 +7,15 @@ Tests session service functionality using mocks for database and external servic
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.agents.assistant.events import (
-    AssistantEvent,
-    BaseEvent,
     DoneEvent,
-    ErrorEvent,
     MessageEvent,
-    TitleEvent,
 )
-
 
 # ── Mock Fixtures ─────────────────────────────────────────────────────────────
 
@@ -106,8 +100,8 @@ class TestAssistantSessionSummary:
         mock_session.title = "Test Session"
         mock_session.project_id = project_id
         mock_session.status = "active"
-        mock_session.created_at = datetime.now(timezone.utc)
-        mock_session.updated_at = datetime.now(timezone.utc)
+        mock_session.created_at = datetime.now(UTC)
+        mock_session.updated_at = datetime.now(UTC)
         mock_session.events = []
         mock_session.project = MagicMock()
         mock_session.project.title = "Test Project"
@@ -148,7 +142,7 @@ class TestCreateSession:
         
         with patch.object(service, 'db', mock_db):
             # Mock the commit behavior
-            created_session = await service.create_session(
+            await service.create_session(
                 user=mock_user,
                 project_id=None,
                 title="My Chat",
@@ -175,7 +169,7 @@ class TestCreateSession:
 
         service = AssistantSessionService(db=mock_db)
 
-        created_session = await service.create_session(
+        await service.create_session(
             user=mock_user,
             project_id=mock_project.id,
             title="Project Chat",
@@ -296,8 +290,8 @@ class TestChat:
     async def test_chat_concurrent_blocked(self):
         """Test that concurrent chat is blocked."""
         from app.services.assistant.session_service import (
-            _active_chat_flags,
             AssistantSessionService,
+            _active_chat_flags,
         )
 
         session_id = uuid.uuid4()
@@ -347,9 +341,9 @@ class TestStopSession:
     async def test_stop_session_running(self):
         """Test stopping a running session."""
         from app.services.assistant.session_service import (
+            AssistantSessionService,
             _active_chat_flags,
             _get_cancellation_event,
-            AssistantSessionService,
         )
         
         session_id = uuid.uuid4()
@@ -385,7 +379,7 @@ class TestPersistEvent:
         mock_db = MockSession()
         mock_session_result = MagicMock()
         mock_session = MagicMock()
-        mock_session.updated_at = datetime.now(timezone.utc)
+        mock_session.updated_at = datetime.now(UTC)
         mock_session_result.scalar_one_or_none.return_value = mock_session
         
         mock_db.execute = AsyncMock(return_value=mock_session_result)
@@ -396,7 +390,7 @@ class TestPersistEvent:
             "role": "user",
             "content": "Hello",
             "id": str(uuid.uuid4()),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         
         event = await service._persist_event(
@@ -454,7 +448,6 @@ class TestGetPersistedEvents:
     @pytest.mark.asyncio
     async def test_get_persisted_events(self):
         """Test replaying persisted events."""
-        from app.db.models import AssistantEvent
         from app.services.assistant.session_service import AssistantSessionService
         
         session_id = uuid.uuid4()
@@ -468,7 +461,7 @@ class TestGetPersistedEvents:
             event.event_type = "message"
             event.payload = {
                 "id": str(uuid.uuid4()),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "role": "assistant",
                 "content": f"Message {i}",
             }
@@ -548,7 +541,7 @@ class TestEventMapper:
         
         data = {
             "id": str(uuid.uuid4()),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "role": "user",
             "content": "Find papers",
         }

@@ -12,12 +12,10 @@ Nodes are designed to be:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, TYPE_CHECKING
-from uuid import UUID, uuid4
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.agents.assistant.events import (
     AssistantDeltaEvent,
@@ -27,25 +25,21 @@ from app.agents.assistant.events import (
     IterationEvent,
     MessageEvent,
     ProgressEvent,
-    ThoughtEvent,
     ToolEvent,
     WaitEvent,
 )
-from app.agents.assistant.react.intent_classifier import IntentClassifier
-from app.agents.assistant.react.router import FastRouter, Intent
-from app.agents.assistant.react.tool_caller import ToolCaller, ToolCall
 from app.agents.assistant.graph.state import (
     AssistantGraphState,
     ScratchpadEntry,
-    ToolCallPending,
-    scratchpad_to_llm_messages,
     check_limits,
-    get_scratchpad_context,
     get_last_user_message,
 )
+from app.agents.assistant.react.intent_classifier import IntentClassifier
+from app.agents.assistant.react.router import FastRouter, Intent
+from app.agents.assistant.react.tool_caller import ToolCall, ToolCaller
 
 if TYPE_CHECKING:
-    from app.ai.provider import AIProvider
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 async def classification_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Classify user intent using FastRouter + IntentClassifier.
 
     This is the entry point for every user message.
@@ -66,7 +60,6 @@ async def classification_node(
     Returns:
         Dict with current_intent and pending_events.
     """
-    from app.agents.assistant.react.rag_injector import inject as rag_inject
 
     last_message = ""
     for msg in reversed(state.messages):
@@ -155,7 +148,7 @@ async def classification_node(
 
 async def simple_chat_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle simple chat intents with a single LLM call.
 
     No tools, no ReAct loop. Just respond directly.
@@ -166,16 +159,15 @@ async def simple_chat_node(
     Returns:
         Dict with final assistant message and done event.
     """
-    from app.ai.provider import get_provider
     from langgraph.config import get_stream_writer
+
+    from app.ai.provider import get_provider
 
     writer = get_stream_writer()
 
     def emit(event: BaseEvent) -> None:
-        try:
+        with contextlib.suppress(Exception):
             writer(event)
-        except Exception as exc:
-            pass
 
     last_message = ""
     for msg in reversed(state.messages):
@@ -203,7 +195,6 @@ async def simple_chat_node(
         "Output only your actual reply to the user."
     )
 
-    events: list = []
     streamed_text = ""
 
     try:
@@ -234,7 +225,7 @@ async def simple_chat_node(
 
 async def direct_tool_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle direct tool calls without ReAct loop.
 
     For intents like list_projects, list_papers, etc.
@@ -245,17 +236,15 @@ async def direct_tool_node(
     Returns:
         Dict with tool result and done event.
     """
-    from app.ai.provider import get_provider
-    from app.agents.assistant.react.tool_caller import ToolCaller
     from langgraph.config import get_stream_writer
+
+    from app.ai.provider import get_provider
 
     writer = get_stream_writer()
 
     def emit(event: BaseEvent) -> None:
-        try:
+        with contextlib.suppress(Exception):
             writer(event)
-        except Exception as exc:
-            pass
 
     intent = state.current_intent or ""
     tool_name = None
@@ -358,7 +347,7 @@ async def direct_tool_node(
 
 async def react_loop_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Single ReAct iteration node.
 
     This node performs one iteration of the ReAct loop:
@@ -373,16 +362,22 @@ async def react_loop_node(
     Returns:
         Dict with updated iteration, scratchpad, pending_events.
     """
-    from app.ai.provider import get_provider, TextChunk, ToolCallStart, ToolCallArgsDelta, ToolCallDone, StreamDone
     from langgraph.config import get_stream_writer
+
+    from app.ai.provider import (
+        StreamDone,
+        TextChunk,
+        ToolCallArgsDelta,
+        ToolCallDone,
+        ToolCallStart,
+        get_provider,
+    )
 
     writer = get_stream_writer()
 
     def emit(event: BaseEvent) -> None:
-        try:
+        with contextlib.suppress(Exception):
             writer(event)
-        except Exception as exc:
-            pass
 
     # Check limits
     limit_error = check_limits(state)
@@ -395,7 +390,6 @@ async def react_loop_node(
             ],
         }
 
-    from app.agents.assistant.graph.config import DEFAULT_MAX_ITERATIONS
 
     iteration = state.iteration
 
@@ -409,8 +403,8 @@ async def react_loop_node(
 
     # Stream LLM response
     response_text = ""
-    tool_calls_found: List[ToolCall] = []
-    tool_call_args: Dict[str, Dict[str, Any]] = {}
+    tool_calls_found: list[ToolCall] = []
+    tool_call_args: dict[str, dict[str, Any]] = {}
 
     try:
         async for chunk in provider.stream_with_tools(
@@ -476,11 +470,10 @@ async def react_loop_node(
     emit(IterationEvent(n=iteration, max=state.max_iterations, phase="acting"))
 
     # Execute tools
-    from app.agents.assistant.react.tool_caller import ToolCaller
     from app.agents.assistant.tools.context import get_tools
 
     caller = ToolCaller()
-    scratchpad_updates: List[ScratchpadEntry] = list(state.scratchpad_entries)
+    scratchpad_updates: list[ScratchpadEntry] = list(state.scratchpad_entries)
     
     # Format tool calls for LangChain AIMessage
     formatted_tool_calls = [
@@ -492,7 +485,7 @@ async def react_loop_node(
         for tc in tool_calls_found
     ]
     
-    new_messages: List[dict] = [{
+    new_messages: list[dict] = [{
         "role": "assistant", 
         "content": response_text,
         "tool_calls": formatted_tool_calls,
@@ -570,7 +563,7 @@ async def react_loop_node(
 
 async def research_pipeline_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run the deterministic research pipeline.
 
     End-to-end flow: search → screen → save → matrix → gap → report. Each
@@ -733,7 +726,7 @@ def should_continue_react(state: AssistantGraphState) -> Literal["react_loop", "
 
 async def final_answer_node(
     state: AssistantGraphState,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Emit final answer and done event.
 
     This node is called when the ReAct loop is complete.
@@ -749,10 +742,8 @@ async def final_answer_node(
     writer = get_stream_writer()
 
     def emit(event: BaseEvent) -> None:
-        try:
+        with contextlib.suppress(Exception):
             writer(event)
-        except Exception as exc:
-            pass
 
     # Check if we have errors
     if state.errors:
@@ -780,7 +771,7 @@ async def final_answer_node(
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
 
-def _message_to_dict(msg: Any) -> Dict[str, Any]:
+def _message_to_dict(msg: Any) -> dict[str, Any]:
     """Convert a message to dict format (handles both dicts and LangChain objects).
 
     Faithfully preserves tool_calls and tool_call_id for OpenAI API compatibility.
@@ -874,7 +865,7 @@ def _message_to_dict(msg: Any) -> Dict[str, Any]:
         return {"role": "user", "content": str(msg)}
 
 
-def _build_react_messages(state: AssistantGraphState) -> List[Dict[str, Any]]:
+def _build_react_messages(state: AssistantGraphState) -> list[dict[str, Any]]:
     """Build messages for the ReAct LLM call.
 
     Includes:
@@ -887,7 +878,7 @@ def _build_react_messages(state: AssistantGraphState) -> List[Dict[str, Any]]:
     Returns:
         List of message dicts.
     """
-    messages: List[Dict[str, Any]] = []
+    messages: list[dict[str, Any]] = []
 
     # System prompt based on project context (Direction A vs Direction B)
     tools_desc = _format_tools_description(state)
@@ -960,7 +951,7 @@ def _format_tools_description(state: AssistantGraphState) -> str:
     return "\n".join(lines)
 
 
-def _get_tool_definitions(state: AssistantGraphState) -> List[Dict[str, Any]]:
+def _get_tool_definitions(state: AssistantGraphState) -> list[dict[str, Any]]:
     """Get tool definitions in OpenAI function calling format.
 
     Tools are stored in the request context (set via set_user_context).
@@ -972,7 +963,6 @@ def _get_tool_definitions(state: AssistantGraphState) -> List[Dict[str, Any]]:
     Returns:
         List of tool definitions.
     """
-    from app.agents.assistant.react.tool_caller import ToolCaller
     from app.agents.assistant.tools.context import get_tools
 
     tools = get_tools() or []

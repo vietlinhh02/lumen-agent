@@ -11,7 +11,7 @@ Use these when:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -29,7 +29,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -41,16 +41,17 @@ def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any
 
 
 async def _poll_job(
-    job_id: "UUID",
+    job_id: UUID,
     max_wait: float = 120.0,
     interval: float = 2.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Poll a background job until completion or failure.
     """
-    from app.db.session import async_session_factory
     from sqlalchemy import select
+
     from app.db.models import BackgroundJob
+    from app.db.session import async_session_factory
     
     elapsed = 0.0
     async with async_session_factory() as db:
@@ -80,9 +81,9 @@ async def _poll_job(
 
 async def _detect_gaps_impl(
     project_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Detect research gaps for a project by enqueuing a background job.
     
@@ -99,10 +100,11 @@ async def _detect_gaps_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import func, select
-        from app.db.models import BackgroundJob, Project, LiteratureMatrixRow
+
+        from app.db.models import BackgroundJob, LiteratureMatrixRow, Project
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -174,9 +176,9 @@ async def _detect_gaps_impl(
 
 async def _list_gaps_impl(
     project_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     List research gaps for a project.
     
@@ -193,10 +195,11 @@ async def _list_gaps_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
-        from app.db.models import Project, ResearchGap, GapEvidence, ProjectPaper, Paper
+
+        from app.db.models import Paper, Project, ProjectPaper, ResearchGap
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -266,9 +269,9 @@ async def _list_gaps_impl(
 
 async def _delete_gap_impl(
     gap_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Delete a research gap.
     
@@ -285,10 +288,11 @@ async def _delete_gap_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
-        from app.db.models import ResearchGap, Project
+
+        from app.db.models import Project, ResearchGap
+        from app.db.session import async_session_factory
         from app.services.gap_detection import delete_gap
         
         gid = PyUUID(gap_id)
@@ -332,7 +336,7 @@ async def _delete_gap_impl(
 @tool
 async def detect_research_gaps(
     project_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Detect research gaps in the literature for a project.
 
@@ -356,7 +360,7 @@ async def detect_research_gaps(
 @tool
 async def list_gaps(
     project_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     List all research gaps for a project.
 
@@ -377,7 +381,7 @@ async def list_gaps(
 @tool
 async def delete_gap(
     gap_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Delete a research gap.
 

@@ -12,7 +12,7 @@ Use these when:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
 
-def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _ok_result(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create a success result dict."""
     result = {"ok": True, "message": message}
     if data is not None:
@@ -30,7 +30,7 @@ def _ok_result(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str,
     return result
 
 
-def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _error_result(error_code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create an error result dict that the LLM can reason about."""
     result = {"ok": False, "error_code": error_code, "message": message}
     if details is not None:
@@ -42,16 +42,17 @@ def _error_result(error_code: str, message: str, details: Optional[Dict[str, Any
 
 
 async def _poll_job(
-    job_id: "UUID",
+    job_id: UUID,
     max_wait: float = 120.0,
     interval: float = 2.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Poll a background job until completion or failure.
     """
-    from app.db.session import async_session_factory
     from sqlalchemy import select
+
     from app.db.models import BackgroundJob
+    from app.db.session import async_session_factory
     
     elapsed = 0.0
     async with async_session_factory() as db:
@@ -81,12 +82,12 @@ async def _poll_job(
 
 async def _generate_report_impl(
     project_id: str,
-    title: Optional[str],
+    title: str | None,
     include_gap_section: bool,
-    selected_gap_ids: Optional[List[str]],
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    selected_gap_ids: list[str] | None,
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Generate a literature review report for a project.
     
@@ -106,10 +107,11 @@ async def _generate_report_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import func, select
-        from app.db.models import BackgroundJob, Project, LiteratureMatrixRow
+
+        from app.db.models import BackgroundJob, LiteratureMatrixRow, Project
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -193,10 +195,10 @@ async def _generate_report_impl(
         else:
             return _error_result(
                 "REPORT_TIMEOUT",
-                f"Report generation timed out. Report may still be processing."
+                "Report generation timed out. Report may still be processing."
             )
             
-    except ValueError as exc:
+    except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")
     except Exception as exc:
         return _error_result("GENERATE_REPORT_FAILED", str(exc))
@@ -204,9 +206,9 @@ async def _generate_report_impl(
 
 async def _list_reports_impl(
     project_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     List reports for a project.
     
@@ -223,10 +225,11 @@ async def _list_reports_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
+
         from app.db.models import Project, ReviewReport
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         
@@ -270,9 +273,9 @@ async def _list_reports_impl(
 async def _get_report_impl(
     project_id: str,
     report_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Get full report content with references.
     
@@ -290,10 +293,11 @@ async def _get_report_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
-        from app.db.models import Project, ReviewReport, ReportCitation
+
+        from app.db.models import Project, ReportCitation, ReviewReport
+        from app.db.session import async_session_factory
         from app.services.report_generation import _build_references
         
         pid = PyUUID(project_id)
@@ -346,9 +350,9 @@ async def _get_report_impl(
 async def _export_report_markdown_impl(
     project_id: str,
     report_id: str,
-    user_id: Optional[str],
-    user: Optional[Any],
-) -> Dict[str, Any]:
+    user_id: str | None,
+    user: Any | None,
+) -> dict[str, Any]:
     """
     Export a report as markdown.
     
@@ -366,10 +370,11 @@ async def _export_report_markdown_impl(
     
     try:
         from uuid import UUID as PyUUID
-        
-        from app.db.session import async_session_factory
+
         from sqlalchemy import select
+
         from app.db.models import Project, ReviewReport
+        from app.db.session import async_session_factory
         
         pid = PyUUID(project_id)
         rid = PyUUID(report_id)
@@ -394,7 +399,7 @@ async def _export_report_markdown_impl(
                 return _error_result("REPORT_NOT_FOUND", f"Report {report_id} not found")
         
         return _ok_result(
-            f"Exported report as markdown",
+            "Exported report as markdown",
             {
                 "markdown": report.content_markdown,
                 "title": report.title,
@@ -413,10 +418,10 @@ async def _export_report_markdown_impl(
 @tool
 async def generate_report(
     project_id: str,
-    title: Optional[str] = None,
+    title: str | None = None,
     include_gap_section: bool = True,
-    selected_gap_ids: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    selected_gap_ids: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Generate a literature review report for a project.
 
@@ -446,7 +451,7 @@ async def generate_report(
 @tool
 async def list_reports(
     project_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     List all reports for a project.
 
@@ -468,7 +473,7 @@ async def list_reports(
 async def get_report(
     project_id: str,
     report_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get the full content of a report with references.
 
@@ -491,7 +496,7 @@ async def get_report(
 async def export_report_markdown(
     project_id: str,
     report_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Export a report as a markdown string.
 
