@@ -107,6 +107,7 @@ class Project(Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="ck_projects_status"),
+        Index("ix_projects_owner_updated", "owner_id", "updated_at", postgresql_using="btree"),
     )
 
 
@@ -311,6 +312,7 @@ class ProjectPaper(Base):
             name="ck_project_papers_relevance",
         ),
         Index("ix_project_papers_project_status", "project_id", "status"),
+        Index("ix_project_papers_project_status_saved", "project_id", "status", "saved_at", postgresql_using="btree"),
     )
 
 
@@ -465,6 +467,7 @@ class LiteratureMatrixRow(Base):
             name="ck_matrix_rows_confidence",
         ),
         Index("ix_matrix_rows_project", "project_id"),
+        Index("ix_matrix_project_updated", "project_id", "updated_at", postgresql_using="btree"),
     )
 
 
