@@ -135,7 +135,8 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-body {
+html, body {
+  overflow-x: hidden;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif, "Noto Color Emoji";
@@ -327,6 +328,8 @@ body {
 
 /* ── Markdown body styles ── */
 .markdown-body {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif, "Noto Color Emoji";
   font-size: 13px;
   line-height: 1.7;

@@ -245,7 +245,7 @@ function MessageBubble({
         />
       </div>
 
-      <div className={`max-w-[calc(100%-48px)] sm:max-w-[85%] ${isUser ? "text-right" : ""}`}>
+      <div className={`max-w-[calc(100%-48px)] sm:max-w-[85%] min-w-0 break-words ${isUser ? "text-right" : ""}`}>
         <div className={`mb-1 px-1 flex items-center gap-2 ${isUser ? "justify-end" : ""}`}>
           <p className="font-ui text-xs italic text-charcoal">
             {displayName}
