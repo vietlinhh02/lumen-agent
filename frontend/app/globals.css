@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @plugin "@tailwindcss/typography";
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 
 :root {
   /* Surfaces */
@@ -137,7 +138,7 @@
 body {
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif, "Noto Color Emoji";
   -webkit-font-smoothing: antialiased;
 }
 
@@ -326,7 +327,7 @@ body {
 
 /* ── Markdown body styles ── */
 .markdown-body {
-  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif, "Noto Color Emoji";
   font-size: 13px;
   line-height: 1.7;
   color: var(--ink);
