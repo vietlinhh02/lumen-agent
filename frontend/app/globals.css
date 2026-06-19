@@ -332,6 +332,14 @@ body {
   line-height: 1.7;
   color: var(--ink);
 }
+.markdown-body img.emoji {
+  height: 1.2em;
+  width: 1.2em;
+  margin: 0 .05em 0 .1em;
+  vertical-align: -0.15em;
+  display: inline-block;
+  border-radius: 0;
+}
 .assistant-message-markdown {
   font-size: 15px;
   line-height: 1.75;
