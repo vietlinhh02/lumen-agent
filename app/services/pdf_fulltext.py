@@ -597,18 +597,20 @@ async def process_pdf(
     ``full_text_status`` value to set on the ``ProjectPaper`` row. The caller
     is responsible for updating that row.
     """
-    if pdf_path.suffix in ('.txt', '.md'):
-        text = pdf_path.read_text(encoding='utf-8')
-        engine = "html"
-    else:
-        text = extract_text(pdf_path)
-        engine = None
+    import asyncio
+
+    def _extract():
+        if pdf_path.suffix in ('.txt', '.md'):
+            return pdf_path.read_text(encoding='utf-8'), "html"
+        return extract_text(pdf_path), None
+
+    text, engine = await asyncio.to_thread(_extract)
 
     if text is None or len(text) < _MIN_TEXT_CHARS:
         logger.info("PDF appears image-only or empty: %s", pdf_path)
         return FulltextResult(status="ocr_required")
 
-    chunks = chunk_text(text, source_engine=engine)
+    chunks = await asyncio.to_thread(chunk_text, text, source_engine=engine)
     if not chunks:
         logger.warning("Chunker produced 0 chunks for %s", pdf_path)
         return FulltextResult(status="failed")

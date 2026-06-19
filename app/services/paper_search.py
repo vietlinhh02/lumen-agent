@@ -378,15 +378,17 @@ def _failure_reason(paper: RawPaper) -> str:
 
 
 def _can_download_from_dict(paper_dict: dict) -> bool:
-    """Return True if a paper dict has any metadata indicating a downloadable PDF.
+    """Return True if a paper dict has any metadata indicating a downloadable PDF or HTML.
 
     Uses only static metadata — no network calls. A paper is considered
-    downloadable if it has an ``arxiv_id`` (always available from arXiv CDN)
-    or a direct open-access PDF URL from Semantic Scholar.
+    downloadable if it has an ``arxiv_id`` (always available from arXiv CDN),
+    a ``pmc_id`` (available as HTML/XML), or a direct open-access PDF URL.
     """
     if paper_dict.get("arxiv_id"):
         return True
     source_specific = paper_dict.get("source_specific") or {}
+    if source_specific.get("pmc_id"):
+        return True
     return bool(source_specific.get("pdf_url"))
 
 

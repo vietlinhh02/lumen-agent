@@ -71,7 +71,7 @@ export default function SearchPage() {
     pdf_downloaded: (d.pdf_downloaded || false) as boolean,
     pdf_path: d.pdf_path as string,
     pdf_source: d.pdf_source as string,
-    can_download: (d.can_download ?? Boolean(d.arxiv_id || d.source_specific?.pdf_url)) as boolean,
+    can_download: (d.can_download ?? Boolean(d.arxiv_id || d.source_specific?.pdf_url || d.source_specific?.pmc_id)) as boolean,
   })) as PaperResult[];
 
   const totalPages = sessionData?.total_pages || 1;

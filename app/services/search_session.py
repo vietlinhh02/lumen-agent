@@ -310,7 +310,18 @@ async def auto_save_high_papers(
 
     scores = run.screening_scores or []
     results = run.results_json or []
-    high_count = sum(1 for s in scores if s == "high")
+    
+    # Calculate high_count based on both "high" score and "can_download"
+    high_count = 0
+    for i, paper_dict in enumerate(results):
+        score = scores[i] if i < len(scores) else "medium"
+        if score == "high":
+            can_download = paper_dict.get(
+                "can_download",
+                bool(paper_dict.get("arxiv_id") or paper_dict.get("source_specific", {}).get("pdf_url") or paper_dict.get("source_specific", {}).get("pmc_id"))
+            )
+            if can_download:
+                high_count += 1
 
     if not scores:
         return {"saved": 0, "skipped": len(results), "error": "No screening scores available"}
@@ -392,6 +403,14 @@ async def _run_auto_save_job(
             for i, paper_dict in enumerate(results):
                 score = scores[i] if i < len(scores) else "medium"
                 if score != "high":
+                    skipped += 1
+                    continue
+
+                can_download = paper_dict.get(
+                    "can_download",
+                    bool(paper_dict.get("arxiv_id") or paper_dict.get("source_specific", {}).get("pdf_url") or paper_dict.get("source_specific", {}).get("pmc_id"))
+                )
+                if not can_download:
                     skipped += 1
                     continue
 
