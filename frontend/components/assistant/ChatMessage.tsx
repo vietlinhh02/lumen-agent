@@ -14,11 +14,13 @@ import { useState } from "react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import type {
   AssistantEventData,
   MessageEvent,
 } from "@/lib/types/assistant";
 import { ThoughtBubble } from "./ThoughtBubble";
+import { IterationPanel } from "./IterationPanel";
 import { Brain, CaretDown, CaretUp } from "@phosphor-icons/react";
 
 interface ChatMessageProps {
@@ -27,12 +29,13 @@ interface ChatMessageProps {
   allEvents?: AssistantEventData[];
   /** Whether this message is currently streaming (for assistant messages) */
   isStreaming?: boolean;
+  isLastAssistantMessage?: boolean;
 }
 
-export function ChatMessage({ event, userName, allEvents, isStreaming }: ChatMessageProps) {
+export function ChatMessage({ event, userName, allEvents, isStreaming, isLastAssistantMessage }: ChatMessageProps) {
   // Handle message events
   if (event.type === "message") {
-    return <MessageBubble event={event as MessageEvent} userName={userName} isStreaming={isStreaming} />;
+    return <MessageBubble event={event as MessageEvent} userName={userName} isStreaming={isStreaming} isLastAssistantMessage={isLastAssistantMessage} />;
   }
   
   // Handle thought events - render ThoughtBubble with turn-specific text
@@ -210,10 +213,12 @@ function MessageBubble({
   event,
   userName,
   isStreaming = false,
+  isLastAssistantMessage = false,
 }: {
   event: MessageEvent;
   userName: string;
   isStreaming?: boolean;
+  isLastAssistantMessage?: boolean;
 }) {
   const isUser = event.role === "user";
   const displayName = isUser ? userName : "Lumen AI";
@@ -239,10 +244,15 @@ function MessageBubble({
         />
       </div>
 
-      <div className={`max-w-[min(78%,720px)] ${isUser ? "text-right" : ""}`}>
-        <p className="mb-1 px-1 font-ui text-xs italic text-charcoal">
-          {displayName}
-        </p>
+      <div className={`max-w-[calc(100%-48px)] sm:max-w-[85%] ${isUser ? "text-right" : ""}`}>
+        <div className={`mb-1 px-1 flex items-center gap-2 ${isUser ? "justify-end" : ""}`}>
+          <p className="font-ui text-xs italic text-charcoal">
+            {displayName}
+          </p>
+          {!isUser && isLastAssistantMessage && (
+            <IterationPanel title="" />
+          )}
+        </div>
 
         {parsed?.hasThoughtAction && (
           <CollapsibleThoughtAction
@@ -272,7 +282,10 @@ function MessageBubble({
                   <span className="h-2 w-2 animate-bounce rounded-full bg-charcoal/40" style={{ animationDelay: "300ms" }} />
                 </span>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]} 
+                  rehypePlugins={[rehypeRaw]}
+                >
                   {isUser ? event.content : parsed!.cleanContent}
                 </ReactMarkdown>
               )}

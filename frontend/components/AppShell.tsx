@@ -111,12 +111,14 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
         <List size={22} weight="bold" />
       </button>
 
-      <span
-        className="font-display text-[20px] font-semibold leading-[1.4] text-ink"
-        style={{ letterSpacing: "-0.3px" }}
-      >
-        Lumen
-      </span>
+      <div className="flex items-center gap-3">
+        <span
+          className="font-display text-[20px] font-semibold leading-[1.4] text-ink"
+          style={{ letterSpacing: "-0.3px" }}
+        >
+          Lumen
+        </span>
+      </div>
 
       <div className="flex-1" />
 

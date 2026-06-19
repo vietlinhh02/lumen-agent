@@ -20,7 +20,7 @@ import { useUIStore } from "@/lib/stores/ui-store";
 import { ChatMessage, GroupedThoughts } from "@/components/assistant";
 import { ChatBox } from "@/components/assistant/ChatBox";
 import { ToolPanel } from "@/components/assistant/ToolPanel";
-import { IterationPanel } from "@/components/assistant/IterationPanel";
+
 import { SessionList } from "@/components/assistant/SessionList";
 import { ProjectSelector } from "@/components/ProjectSelector";
 import { useProjectsStore } from "@/lib/stores/projects-store";
@@ -311,7 +311,9 @@ export default function AssistantSessionPage() {
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className="min-h-0 flex-1 overflow-y-auto px-3 py-4 pb-8 sm:px-4"
+          className={`min-h-0 flex-1 overflow-y-auto scroll-smooth px-3 py-4 pb-8 sm:px-4 ${
+            !toolPanelOpen ? "xl:pr-[256px]" : ""
+          }`}
         >
           <div className="relative">
             {/* Chat column - centered in the viewport, full width up to
@@ -363,8 +365,13 @@ export default function AssistantSessionPage() {
                 )}
 
                 {/* Messages */}
-                {chatItems.map((item) =>
-                  item.type === "grouped-thoughts" ? (
+                {chatItems.map((item, index) => {
+                  const isLastAssistantMessage = 
+                    item.type === "message" && 
+                    item.message.role === "assistant" && 
+                    item.id === chatItems.slice().reverse().find(i => i.type === "message" && i.message.role === "assistant")?.id;
+
+                  return item.type === "grouped-thoughts" ? (
                     <GroupedThoughts
                       key={item.id}
                       thoughts={item.thoughts}
@@ -377,9 +384,10 @@ export default function AssistantSessionPage() {
                       userName={userName}
                       allEvents={sessionEvents}
                       isStreaming={item.isStreaming}
+                      isLastAssistantMessage={isLastAssistantMessage}
                     />
-                  )
-                )}
+                  );
+                })}
 
                 {/* Streaming indicator */}
                 {isStreaming && (
@@ -392,24 +400,11 @@ export default function AssistantSessionPage() {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Activity panel - absolutely positioned in the right
-                whitespace (xl+), inline below on smaller viewports. */}
-            {(activityEvents.length > 0 || currentPhase !== null) && (
-              <>
-                <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-80 xl:block">
-                  <div className="sticky top-4 mr-4 pointer-events-auto">
-                    <IterationPanel title="Agent Progress" />
-                  </div>
-                </div>
-                <div className="mt-6 xl:hidden">
-                  <IterationPanel title="Agent Progress" />
-                </div>
-              </>
-            )}
+
 
             {/* Jump to latest button */}
             {jumpToLatest && (
-              <div className="sticky bottom-3 z-10 flex justify-center">
+              <div className="sticky bottom-3 z-10 flex justify-center animate-bounce">
                 <button
                   type="button"
                   onClick={() => {
@@ -431,7 +426,7 @@ export default function AssistantSessionPage() {
 
         {/* Chat Box */}
         <div
-          className="shrink-0 border-t bg-canvas"
+          className={`shrink-0 border-t bg-canvas ${!toolPanelOpen ? "xl:pr-[256px]" : ""}`}
           style={{ borderColor: "var(--hairline)" }}
         >
           <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4">

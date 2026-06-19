@@ -653,7 +653,7 @@ class ReActAgent:
                 async for chunk in self.provider.stream_with_tools(
                     messages=messages,
                     system=None,  # System prompt is in messages
-                    max_tokens=2048,
+                    max_tokens=8192,
                     tools=self._get_tool_definitions(),
                 ):
                     from app.ai.provider import (
@@ -851,7 +851,7 @@ class ReActAgent:
             async for token in self.provider.stream(
                 messages=chat_messages,
                 system=system_msg,
-                max_tokens=2048,
+                max_tokens=8192,
             ):
                 if cancel_event and cancel_event.is_set():
                     raise asyncio.CancelledError("Session cancelled")

@@ -198,7 +198,6 @@ async def simple_chat_node(
     system = (
         "You are a friendly research assistant. Keep your response brief and helpful. "
         "If the user greets you, greet them back and briefly mention what you can help with. "
-        "If the user asks to search for papers or anything else, gently redirect them to use the advanced '/search' page (mục Tìm kiếm chuyên sâu trên menu) for the best search experience. "
         "IMPORTANT: Respond directly to the user. Do NOT include any internal reasoning, "
         "thinking process, or meta-commentary about the user's message in your response. "
         "Output only your actual reply to the user."
@@ -211,7 +210,7 @@ async def simple_chat_node(
         async for token in provider.stream(
             messages=[{"role": "user", "content": last_message}],
             system=system,
-            max_tokens=512,
+            max_tokens=8192,
         ):
             streamed_text += token
             emit(AssistantDeltaEvent(delta=token, is_final=False))
