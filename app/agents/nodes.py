@@ -50,7 +50,7 @@ _MAX_CHUNK_CONTEXT_CHARS = 8000
 _MATRIX_CONCURRENCY = 8  # Bound by LLM rate limit (typical 10 concurrent)
 _MAX_CHUNKS_PER_PAPER = 5
 _MAX_PAPERS = 20
-_COLLABORATIVE_MATRIX_MAX_TOKENS = 2000
+_COLLABORATIVE_MATRIX_MAX_TOKENS = 32768
 _MATRIX_VERIFICATION_SYSTEM = """You verify literature-matrix extractions against paper evidence.
 
 Rules:
@@ -75,7 +75,7 @@ async def query_planner_node(state: ResearchState) -> dict:
             system=QUERY_PLANNER_SYSTEM,
             schema=QueryPlanOutput.model_json_schema(),
             tool_name="query_plan",
-            max_tokens=2000,
+            max_tokens=32768,
         )
         plan = QueryPlanOutput(**raw)
     except Exception as exc:
@@ -660,7 +660,7 @@ async def matrix_extraction_node(
                     system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
                     schema=MatrixRowOutput.model_json_schema(),
                     tool_name="matrix_row",
-                    max_tokens=2000,
+                    max_tokens=32768,
                 )
                 normalized = _normalize_matrix_extraction(primary_result)
                 if verifier_provider is not None:
@@ -855,7 +855,7 @@ async def _gap_map_chunk(
             system=GAP_ANALYSIS_CHUNK_SYSTEM,
             schema=GapListOutput.model_json_schema(),
             tool_name="gap_chunk_analysis",
-            max_tokens=3000,
+            max_tokens=32768,
         )
         return result.get("gaps", [])[:_MAX_GAPS_PER_CHUNK]
     except Exception as exc:
@@ -900,7 +900,7 @@ Candidate gaps:
             system=dedup_system,
             schema=GapListOutput.model_json_schema(),
             tool_name="gap_dedup",
-            max_tokens=3000,
+            max_tokens=32768,
         )
         return result.get("gaps", [])[:_MAX_FINAL_GAPS]
     except Exception as exc:
@@ -1237,7 +1237,7 @@ async def review_writer_node(state: ResearchState, db) -> dict:
             system=REVIEW_WRITER_CHUNK_SYSTEM,
             schema=ReviewOutput.model_json_schema(),
             tool_name="review_report",
-            max_tokens=8000,
+            max_tokens=32768,
         )
         sections = result.get("sections", [])
     except Exception as exc:
@@ -1267,7 +1267,7 @@ async def review_writer_node(state: ResearchState, db) -> dict:
                     system=REVIEW_WRITER_CHUNK_SYSTEM,
                     schema=ReviewOutput.model_json_schema(),
                     tool_name="review_report",
-                    max_tokens=8000,
+                    max_tokens=32768,
                 )
                 sections2 = result2.get("sections", [])
                 cleaned2, audit2 = await _validate_citations(db, state.project_id, sections2)

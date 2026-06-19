@@ -211,7 +211,7 @@ class IntentClassifier:
             schema=schema,
             tool_name="classify_intent",
             system=INTENT_SYSTEM_PROMPT,
-            max_tokens=400,
+            max_tokens=32768,
         )
         return result
 

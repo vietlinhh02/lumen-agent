@@ -352,7 +352,7 @@ class ResearchPipeline:
                 },
                 tool_name="screen_papers",
                 system=PAPER_SCREEN_SYSTEM,
-                max_tokens=500,
+                max_tokens=32768,
             )
         except Exception as exc:
             logger.warning("Paper screening failed: %s, accepting all", exc)

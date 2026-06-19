@@ -201,7 +201,7 @@ async def simple_chat_node(
         async for token in provider.stream(
             messages=[{"role": "user", "content": last_message}],
             system=system,
-            max_tokens=8192,
+            max_tokens=32768,
         ):
             streamed_text += token
             emit(AssistantDeltaEvent(delta=token, is_final=False))
@@ -410,7 +410,7 @@ async def react_loop_node(
         async for chunk in provider.stream_with_tools(
             messages=messages,
             system=None,
-            max_tokens=4096,  # Increased to allow for thinking + tool calls
+            max_tokens=32768,  # Increased to allow for thinking + tool calls
             tools=_get_tool_definitions(state),
         ):
             if isinstance(chunk, TextChunk):
@@ -1012,7 +1012,7 @@ async def _generate_search_query(
         async for token in provider.stream(
             messages=[{"role": "user", "content": prompt}],
             system=system,
-            max_tokens=80,
+            max_tokens=32768,
         ):
             result += token
         query = result.strip().strip('"').strip("'").strip()
