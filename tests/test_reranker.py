@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
@@ -60,10 +60,15 @@ async def test_rerank_no_api_key_returns_fallback():
 async def test_rerank_api_success():
     """Test successful API call with mocked _call_rerank_api."""
     mock_result = [(2, 0.99), (0, 0.85), (1, 0.12)]
-    with patch(
-        "app.services.reranker._call_rerank_api",
-        new_callable=AsyncMock,
-        return_value=mock_result,
+    mock_settings = MagicMock()
+    mock_settings.openrouter_api_key = "test-key"
+    with (
+        patch(
+            "app.services.reranker._call_rerank_api",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ),
+        patch("app.services.reranker.get_settings", return_value=mock_settings),
     ):
         result = await rerank("test query", ["doc a", "doc b", "doc c"])
 
@@ -77,10 +82,15 @@ async def test_rerank_api_success():
 async def test_rerank_api_success_with_top_k():
     """Test API with top_k filtering."""
     mock_result = [(2, 0.99), (0, 0.85)]
-    with patch(
-        "app.services.reranker._call_rerank_api",
-        new_callable=AsyncMock,
-        return_value=mock_result,
+    mock_settings = MagicMock()
+    mock_settings.openrouter_api_key = "test-key"
+    with (
+        patch(
+            "app.services.reranker._call_rerank_api",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ),
+        patch("app.services.reranker.get_settings", return_value=mock_settings),
     ):
         result = await rerank("test query", ["doc a", "doc b", "doc c"], top_k=2)
 
@@ -92,16 +102,17 @@ async def test_rerank_api_success_with_top_k():
 @pytest.mark.asyncio
 async def test_rerank_api_error_returns_fallback():
     """Test API error returns fallback scores."""
+    mock_settings = MagicMock()
+    mock_settings.openrouter_api_key = "test-key"
     with (
         patch(
             "app.services.reranker._call_rerank_api",
             new_callable=AsyncMock,
             return_value=None,
         ),
-        patch("app.services.reranker.get_settings") as mock_settings,
+        patch("app.services.reranker.get_settings", return_value=mock_settings),
     ):
-        mock_settings.return_value.openrouter_api_key = "test-key"
-        result = await rerank("query", ["doc a", "doc b", "doc c"])
+        result = await rerank("test query", ["doc a", "doc b", "doc c"])
 
     assert len(result) == 3
     scores = [s for _, s in result]
