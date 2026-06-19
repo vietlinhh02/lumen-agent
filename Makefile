@@ -4,7 +4,7 @@ SHELL := /usr/bin/env bash
 
 FRONTEND_DIR := frontend
 BACKEND_HOST ?= 0.0.0.0
-BACKEND_PORT ?= 8010
+BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 3000
 
 .PHONY: help setup dev backend frontend test lint format typecheck check

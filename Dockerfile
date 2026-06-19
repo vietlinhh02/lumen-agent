@@ -19,7 +19,7 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 # Expose backend port
-EXPOSE 8010
+EXPOSE 8000
 
-# Command to run the backend
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]
+# Default command uses uv run to execute uvicorn
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
