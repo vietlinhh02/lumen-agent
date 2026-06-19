@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "./auth-store";
+import { useProjectsStore } from "./projects-store";
 import type { PaperItem, SortKey } from "@/components/papers";
 
 interface PapersState {
@@ -13,12 +14,14 @@ interface PapersState {
   projectFilter: string;
   sortKey: SortKey;
   sortAsc: boolean;
+  page: number;
 
   // Actions
   fetchPapers: () => Promise<void>;
   setSearch: (s: string) => void;
   setProjectFilter: (id: string) => void;
   toggleSort: (key: SortKey) => void;
+  setPage: (p: number) => void;
   reset: () => void;
 }
 
@@ -29,14 +32,30 @@ export const usePapersStore = create<PapersState>()((set, get) => ({
   projectFilter: "",
   sortKey: "saved_at",
   sortAsc: false,
+  page: 1,
 
   async fetchPapers() {
+    const state = get();
     const token = useAuthStore.getState().token;
     if (!token) return;
     set({ loading: true });
+
+    const limit = 50;
+    const offset = (state.page - 1) * limit;
+
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+      sort_key: state.sortKey,
+      sort_asc: String(state.sortAsc),
+    });
+    
+    if (state.search.trim()) params.append("search", state.search.trim());
+    if (state.projectFilter) params.append("project_id", state.projectFilter);
+
     try {
       const data = await apiFetch<{ items: PaperItem[]; total: number }>(
-        "/papers/all",
+        `/papers/all?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       set({ papers: data.items || [] });
@@ -48,10 +67,15 @@ export const usePapersStore = create<PapersState>()((set, get) => ({
   },
 
   setSearch(s) {
-    set({ search: s });
+    set({ search: s, page: 1 });
+    // setTimeout acts as a simple debounce for typing
+    setTimeout(() => {
+      if (get().search === s) get().fetchPapers();
+    }, 300);
   },
   setProjectFilter(id) {
-    set({ projectFilter: id });
+    set({ projectFilter: id, page: 1 });
+    void get().fetchPapers();
   },
   toggleSort(key) {
     if (get().sortKey === key) {
@@ -59,6 +83,12 @@ export const usePapersStore = create<PapersState>()((set, get) => ({
     } else {
       set({ sortKey: key, sortAsc: false });
     }
+    set({ page: 1 });
+    void get().fetchPapers();
+  },
+  setPage(p) {
+    set({ page: p });
+    void get().fetchPapers();
   },
   reset() {
     set({
@@ -68,6 +98,7 @@ export const usePapersStore = create<PapersState>()((set, get) => ({
       projectFilter: "",
       sortKey: "saved_at",
       sortAsc: false,
+      page: 1,
     });
   },
 }));
@@ -75,48 +106,11 @@ export const usePapersStore = create<PapersState>()((set, get) => ({
 /** Derived selector: returns papers filtered + sorted according to current state */
 export function useFilteredPapers() {
   const papers = usePapersStore((s) => s.papers);
-  const search = usePapersStore((s) => s.search);
-  const projectFilter = usePapersStore((s) => s.projectFilter);
-  const sortKey = usePapersStore((s) => s.sortKey);
-  const sortAsc = usePapersStore((s) => s.sortAsc);
+  
+  // Use projects from useProjectsStore for the dropdown so it's not limited by pagination
+  const projects = useProjectsStore((s) => s.projects);
+  const projectList = projects.map(p => ({ id: p.id, title: p.title }));
 
-  const projects = new Map<string, string>();
-  for (const p of papers) projects.set(p.project_id, p.project_title);
-  const projectList = Array.from(projects, ([id, title]) => ({ id, title }));
-
-  let result = papers;
-  if (projectFilter) {
-    result = result.filter((p) => p.project_id === projectFilter);
-  }
-  if (search.trim()) {
-    const q = search.toLowerCase();
-    result = result.filter(
-      (p) =>
-        p.title.toLowerCase().includes(q) ||
-        p.authors.some((a) => a.toLowerCase().includes(q)) ||
-        (p.venue && p.venue.toLowerCase().includes(q)) ||
-        (p.abstract && p.abstract.toLowerCase().includes(q)),
-    );
-  }
-  result = [...result].sort((a, b) => {
-    let cmp = 0;
-    switch (sortKey) {
-      case "title":
-        cmp = a.title.localeCompare(b.title);
-        break;
-      case "year":
-        cmp = (a.year ?? 0) - (b.year ?? 0);
-        break;
-      case "citations":
-        cmp = (a.citation_count ?? 0) - (b.citation_count ?? 0);
-        break;
-      case "saved_at":
-        cmp =
-          new Date(a.saved_at).getTime() - new Date(b.saved_at).getTime();
-        break;
-    }
-    return sortAsc ? cmp : -cmp;
-  });
-
-  return { filtered: result, projectList };
+  // Backend does the filtering, so we just return the raw fetched papers
+  return { filtered: papers, projectList };
 }
