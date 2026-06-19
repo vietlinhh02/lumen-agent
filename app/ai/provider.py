@@ -432,14 +432,22 @@ class OpenAICompatibleAdapter(AIProvider):
         # Strategy 1: response_format json_object (DeepSeek‑compatible)
         try:
             return await self._structured_via_json_format(
-                messages, schema, schema_str, system, max_tokens
+                messages, schema, schema_str, system, max_tokens, use_response_format=True
             )
         except Exception:
             pass
 
         # Strategy 2: forced tool_choice (standard OpenAI‑compatible)
-        return await self._structured_via_tool_choice(
-            messages, schema, tool_name, system, max_tokens
+        try:
+            return await self._structured_via_tool_choice(
+                messages, schema, tool_name, system, max_tokens
+            )
+        except Exception:
+            pass
+            
+        # Strategy 3: raw text fallback (for reasoning models like mimo-v2.5-pro)
+        return await self._structured_via_json_format(
+            messages, schema, schema_str, system, max_tokens, use_response_format=False
         )
 
     async def _structured_via_json_format(
@@ -449,6 +457,7 @@ class OpenAICompatibleAdapter(AIProvider):
         schema_str: str,
         system: str | None,
         max_tokens: int,
+        use_response_format: bool = True,
     ) -> dict[str, Any]:
         import json
 
@@ -468,8 +477,10 @@ class OpenAICompatibleAdapter(AIProvider):
             "messages": cast(list[ChatCompletionMessageParam], msgs),
             "max_tokens": max_tokens,
             "temperature": 0.0,
-            "response_format": {"type": "json_object"},
         }
+        if use_response_format:
+            kwargs["response_format"] = {"type": "json_object"}
+            
         if self._model.startswith(("deepseek", "mimo")):
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
@@ -480,6 +491,13 @@ class OpenAICompatibleAdapter(AIProvider):
         content = content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("\n```", 1)[0]
+            
+        # Additional cleanup to find JSON block in case reasoning model rambled
+        start_idx = content.find("{")
+        end_idx = content.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
+            content = content[start_idx:end_idx+1]
+            
         return json.loads(content)
 
     async def _structured_via_tool_choice(
