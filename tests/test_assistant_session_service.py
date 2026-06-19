@@ -271,7 +271,7 @@ class TestChat:
             MockAgent.return_value = mock_agent
             
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
-                with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
+                if True:
                     with patch("app.services.assistant.session_service.get_provider") as mock_provider:
                         mock_provider.return_value = MagicMock()
                         
@@ -622,7 +622,7 @@ class TestChatWithMockFlow:
             MockAgent.return_value = mock_agent_instance
 
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
-                with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
+                if True:
                     with patch("app.services.assistant.session_service.get_provider") as mock_get_provider:
                         mock_get_provider.return_value = MagicMock()
 
@@ -688,6 +688,7 @@ class TestResumeSession:
         ]
         mock_db.execute = AsyncMock(return_value=mock_result)
         mock_db.commit = AsyncMock()  # Mock commit as well
+        mock_db.refresh = AsyncMock()
 
         service = AssistantSessionService(db=mock_db)
 
@@ -707,7 +708,7 @@ class TestResumeSession:
             MockAgent.return_value = mock_agent_instance
 
             with patch("app.services.assistant.session_service.get_all_tools", return_value=[]):
-                with patch("app.services.assistant.session_service.get_all_toolkits", return_value=[]):
+                if True:
                     with patch("app.services.assistant.session_service.get_provider") as mock_get_provider:
                         mock_get_provider.return_value = MagicMock()
 

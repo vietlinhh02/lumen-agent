@@ -43,3 +43,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Output deployment link
+        run: |
+          echo "### 🚀 Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "Your Docker images have been pushed to GHCR." >> $GITHUB_STEP_SUMMARY
+          echo "You can deploy using one of the following tags:" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

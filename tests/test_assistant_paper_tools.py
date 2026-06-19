@@ -102,7 +102,7 @@ class TestLangChainTools:
         # save_paper requires project_id and paper
         save_args = save_paper_to_project.args
         assert "project_id" in save_args
-        assert "paper" in save_args
+        assert "paper_json" in save_args
 
         # remove requires project_id and project_paper_id
         remove_args = remove_paper_from_project.args

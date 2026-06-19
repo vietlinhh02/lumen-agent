@@ -236,6 +236,7 @@ async def test_plan_sections_rejects_thin_plan():
         [{"project_paper_id": str(uuid4()), "method": "Graph RAG"}],
         [],
         [],
+        "",
         mock_provider,
     )
 

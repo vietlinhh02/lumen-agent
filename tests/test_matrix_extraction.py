@@ -192,7 +192,7 @@ async def test_matrix_extraction_with_chunks():
         mock_provider = AsyncMock()
         mock_provider.complete_structured.return_value = {
             "research_problem": "Medical QA accuracy",
-            "method": "Dense retrieval with BERT",
+            "method": "We used dense retrieval.",
             "dataset_or_context": "PubMedQA",
             "key_result": "Improved accuracy by 5%",
             "limitation": "English only",
@@ -201,13 +201,14 @@ async def test_matrix_extraction_with_chunks():
             "confidence": "high",
         }
 
-        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider), \
+             patch("app.agents.nodes.get_matrix_verifier_provider", return_value=None):
             result = await matrix_extraction_node(state, db)
 
     assert result["matrix_status"] == "completed"
     assert len(result["matrix_rows"]) == 1
     assert result["matrix_rows"][0]["project_paper_id"] == str(pp_id)
-    assert "Dense retrieval" in result["matrix_rows"][0]["method"]
+    assert "dense retrieval" in result["matrix_rows"][0]["method"].lower()
 
 
 @pytest.mark.asyncio
@@ -601,10 +602,11 @@ async def test_matrix_extraction_invalid_confidence_defaults_to_medium():
             "confidence": "very_high",  # invalid
         }
 
-        with patch("app.agents.nodes.get_provider", return_value=mock_provider):
+        with patch("app.agents.nodes.get_provider", return_value=mock_provider), \
+             patch("app.agents.nodes.get_matrix_verifier_provider", return_value=None):
             result = await matrix_extraction_node(state, db)
 
-    assert result["matrix_rows"][0]["extraction_confidence"] == "medium"
+        assert result["matrix_rows"][0]["extraction_confidence"] == "medium"
 
 
 @pytest.mark.asyncio
