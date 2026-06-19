@@ -48,6 +48,13 @@ _MIGRATIONS = [
     "ON paper_chunks (project_paper_id, content_type)",
     "CREATE INDEX IF NOT EXISTS ix_paper_chunks_project_section "
     "ON paper_chunks (project_paper_id, section_label)",
+    # 5. Performance composite indexes
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_projects_owner_updated "
+    "ON projects USING btree (owner_id, updated_at)",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_project_papers_project_status_saved "
+    "ON project_papers USING btree (project_id, status, saved_at)",
+    "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_matrix_project_updated "
+    "ON literature_matrix_rows USING btree (project_id, updated_at)",
 ]
 
 
