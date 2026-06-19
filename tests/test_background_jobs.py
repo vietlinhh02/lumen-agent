@@ -87,10 +87,14 @@ async def test_auto_save_creates_background_job():
     session_id = uuid4()
     user = cast(User, SimpleNamespace(id=uuid4()))
 
-    # Mock session with high-scoring papers
+    # Mock session with high-scoring papers (ensure they are downloadable by adding can_download)
     run = SimpleNamespace(
         screening_scores=["high", "medium", "high"],
-        results_json=[{"title": "A"}, {"title": "B"}, {"title": "C"}],
+        results_json=[
+            {"title": "A", "can_download": True},
+            {"title": "B"},
+            {"title": "C", "can_download": True},
+        ],
     )
 
     db = AsyncMock()
