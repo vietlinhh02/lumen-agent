@@ -62,7 +62,7 @@ export default function NewProjectPage() {
     setIsSubmitting(false);
     if (created) {
       toast.success("Project created");
-      router.push("/projects");
+      router.push(`/projects/${created.id}`);
     } else {
       toast.error("Failed to create project");
     }
