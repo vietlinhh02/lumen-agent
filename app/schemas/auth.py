@@ -19,5 +19,10 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    display_name: str | None = None
     role: str
     is_active: bool
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
