@@ -68,7 +68,15 @@ def test_existing_user_and_project_tables_untouched():
     project_cols = {c.name for c in _table(Project).c}
 
     # Sanity: a known existing column set is unchanged.
-    assert {"id", "email", "password_hash", "role", "is_active", "created_at"} <= user_cols
+    assert {
+        "id",
+        "email",
+        "display_name",
+        "password_hash",
+        "role",
+        "is_active",
+        "created_at",
+    } <= user_cols
     assert {
         "id",
         "owner_id",
