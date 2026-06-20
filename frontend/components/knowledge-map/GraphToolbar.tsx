@@ -47,66 +47,68 @@ export default function GraphToolbar({
   stats,
 }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="flex items-center rounded-full bg-surface-bone p-1">
-        {LAYOUT_OPTIONS.map((opt) => (
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 lg:gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex items-center rounded-full bg-surface-bone p-1">
+          {LAYOUT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onLayoutChange(opt.value)}
+              className={`rounded-full px-2.5 sm:px-3 py-1.5 font-ui text-[11px] sm:text-[12px] font-semibold transition-colors ${
+                layout === opt.value
+                  ? "bg-surface-card text-ink shadow-sm"
+                  : "text-charcoal hover:text-ink"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {NODE_TYPE_OPTIONS.map((opt) => (
           <button
             key={opt.value}
-            onClick={() => onLayoutChange(opt.value)}
-            className={`rounded-full px-3 py-1.5 font-ui text-[12px] font-semibold transition-colors ${
-              layout === opt.value
-                ? "bg-surface-card text-ink shadow-sm"
-                : "text-charcoal hover:text-ink"
-            }`}
+            onClick={() => onToggleType(opt.value)}
+            className="flex h-[30px] sm:h-[34px] items-center gap-1 sm:gap-1.5 rounded-full bg-surface-card px-2.5 sm:px-3 text-[11px] sm:text-[12px] font-semibold transition-all"
+            style={{
+              background: visibleTypes.has(opt.value) ? `${opt.color}15` : "transparent",
+              color: visibleTypes.has(opt.value) ? opt.color : "var(--ash)",
+              border: `1px solid ${visibleTypes.has(opt.value) ? `${opt.color}40` : "var(--hairline)"}`,
+            }}
           >
-            {opt.label}
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: opt.color }} />
+            <span className="hidden xs:inline sm:inline">{opt.label}</span>
+            <span className="text-[10px] opacity-60">
+              {opt.value === "paper" ? stats.paper_count : opt.value === "method" ? stats.method_count : opt.value === "dataset" ? stats.dataset_count : stats.limitation_count}
+            </span>
           </button>
         ))}
+
+        <div className="flex items-center rounded-full bg-surface-bone p-1">
+          {MIN_SUPPORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onMinConnectionsChange(opt.value)}
+              className={`rounded-full px-2.5 sm:px-3 py-1.5 font-ui text-[11px] sm:text-[12px] font-semibold transition-colors ${
+                minConnections === opt.value
+                  ? "bg-surface-card text-ink shadow-sm"
+                  : "text-charcoal hover:text-ink"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {NODE_TYPE_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onToggleType(opt.value)}
-          className="flex h-[34px] items-center gap-1.5 rounded-full bg-surface-card px-3 text-[12px] font-semibold transition-all"
-          style={{
-            background: visibleTypes.has(opt.value) ? `${opt.color}15` : "transparent",
-            color: visibleTypes.has(opt.value) ? opt.color : "var(--ash)",
-            border: `1px solid ${visibleTypes.has(opt.value) ? `${opt.color}40` : "var(--hairline)"}`,
-          }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: opt.color }} />
-          {opt.label}
-          <span className="text-[10px] opacity-60">
-            {opt.value === "paper" ? stats.paper_count : opt.value === "method" ? stats.method_count : opt.value === "dataset" ? stats.dataset_count : stats.limitation_count}
-          </span>
-        </button>
-      ))}
-
-      <div className="flex items-center rounded-full bg-surface-bone p-1">
-        {MIN_SUPPORT_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => onMinConnectionsChange(opt.value)}
-            className={`rounded-full px-3 py-1.5 font-ui text-[12px] font-semibold transition-colors ${
-              minConnections === opt.value
-                ? "bg-surface-card text-ink shadow-sm"
-                : "text-charcoal hover:text-ink"
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="relative ml-auto min-w-[200px]">
+      <div className="relative w-full sm:ml-auto sm:min-w-[200px] sm:w-auto sm:max-w-[260px]">
         <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ash" />
         <input
           type="text"
           placeholder="Search papers, methods, datasets…"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="h-[38px] w-full rounded-full border border-[var(--hairline)] bg-surface-card pl-8 pr-4 font-ui text-[13px] text-ink placeholder:text-ash/60 focus:outline-none focus:ring-1 focus:ring-primary/30"
+          className="h-[36px] sm:h-[38px] w-full rounded-full border border-[var(--hairline)] bg-surface-card pl-8 pr-4 font-ui text-[12px] sm:text-[13px] text-ink placeholder:text-ash/60 focus:outline-none focus:ring-1 focus:ring-primary/30"
         />
       </div>
     </div>
