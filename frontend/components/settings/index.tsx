@@ -2,20 +2,50 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { User, Lock, Sun, Moon, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { Lock, Sun, Moon, CheckCircle, XCircle } from "@phosphor-icons/react";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { formatDate } from "@/lib/utils";
-import type { UserProfile, AdminUser } from "@/lib/types";
+import type { UserProfile } from "@/lib/types";
 
 export function ProfileSection({ profile }: { profile: UserProfile }) {
   const theme = useUIStore((s) => s.theme);
   const toggleTheme = useUIStore((s) => s.toggleTheme);
   const changePassword = useSettingsStore((s) => s.changePassword);
+  const updateProfileName = useSettingsStore((s) => s.updateProfileName);
+  const [displayName, setDisplayName] = useState(profile.display_name ?? "");
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  async function handleUpdateProfile(e: React.FormEvent) {
+    e.preventDefault();
+    const name = displayName.trim().replace(/\s+/g, " ");
+    if (!name) {
+      toast.error("Display name is required");
+      return;
+    }
+    if (name.length > 80) {
+      toast.error("Display name must be 80 characters or fewer");
+      return;
+    }
+    if (name === (profile.display_name ?? "")) {
+      toast.message("No profile changes to save");
+      return;
+    }
+
+    setSavingProfile(true);
+    const updated = await updateProfileName(name);
+    setSavingProfile(false);
+    if (updated) {
+      toast.success("Name updated");
+      setDisplayName(updated.display_name ?? "");
+    } else {
+      toast.error("Failed to update name");
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -36,7 +66,31 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
     <div className="space-y-6">
       <div className="rounded-[12px] bg-surface-card p-6" style={{ border: "1px solid var(--hairline)" }}>
         <h2 className="font-ui text-base font-semibold text-ink mb-4">Account Information</h2>
-        <div className="space-y-3">
+        <form onSubmit={handleUpdateProfile} className="mb-5 grid gap-3 sm:max-w-md">
+          <div>
+            <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">
+              Display Name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="focus-ring h-[44px] w-full rounded-full bg-surface-bone px-4 font-ui text-sm text-ink outline-none"
+              style={{ border: "1px solid var(--hairline)" }}
+              maxLength={80}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={savingProfile}
+            className="focus-ring font-ui h-[42px] w-full rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50 sm:w-fit"
+          >
+            {savingProfile ? "Saving…" : "Update Name"}
+          </button>
+        </form>
+
+        <div className="space-y-3 border-t border-hairline pt-5">
           <div className="flex items-center justify-between">
             <span className="font-ui text-sm text-charcoal">Email</span>
             <span className="font-ui text-sm font-medium text-ink">{profile.email}</span>
@@ -131,6 +185,7 @@ export function AdminSection() {
             <thead>
               <tr className="bg-surface-bone/50">
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-6 py-3">Email</th>
+                <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-6 py-3">Name</th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-6 py-3">Role</th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-6 py-3">Status</th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-6 py-3">Joined</th>
@@ -141,6 +196,9 @@ export function AdminSection() {
               {users.map((u) => (
                 <tr key={u.id} className="hover:bg-surface-bone/30 transition-colors" style={{ borderTop: "1px solid var(--hairline)" }}>
                   <td className="px-6 py-3 font-ui text-sm text-ink">{u.email}</td>
+                  <td className="px-6 py-3 font-ui text-sm text-charcoal">
+                    {u.display_name || "—"}
+                  </td>
                   <td className="px-6 py-3 font-ui text-sm text-charcoal capitalize">{u.role}</td>
                   <td className="px-6 py-3">
                     <span className={`font-ui inline-flex items-center gap-1 text-[12px] font-semibold ${u.is_active ? "text-green-700" : "text-red-700"}`}>
