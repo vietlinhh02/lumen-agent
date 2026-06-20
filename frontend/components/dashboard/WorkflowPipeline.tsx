@@ -34,13 +34,15 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { key: "report", label: "Review", number: "06", icon: PencilLine },
 ];
 
-export const STEP_HREFS: Record<PipelineStepKey, string> = {
-  search: "/search",
-  save: "/papers",
-  matrix: "/matrix",
-  map: "/map",
-  gaps: "/gaps",
-  report: "/reports",
+// Project-scoped hrefs — built per-project by the consumer (see
+// ContinueWorkingHero). Kept here only as the typed list of slugs.
+export const STEP_SLUGS: Record<PipelineStepKey, string> = {
+  search: "search",
+  save: "papers",
+  matrix: "matrix",
+  map: "map",
+  gaps: "gaps",
+  report: "reports",
 };
 
 export const STEP_NEXT_LABELS: Record<PipelineStepKey, string> = {
@@ -66,16 +68,29 @@ export function WorkflowPipeline({ current, compact = false }: Props) {
   const barCls = compact ? "w-2 sm:w-4" : "w-3 sm:w-6";
 
   return (
-    <div className={"flex items-center " + gapCls + " overflow-x-auto scrollbar-hide"}>
+    <div
+      className={
+        compact
+          ? "grid grid-cols-3 gap-2 sm:flex sm:items-center sm:overflow-x-auto sm:scrollbar-hide " + gapCls
+          : "flex items-center overflow-x-auto scrollbar-hide " + gapCls
+      }
+    >
       {PIPELINE_STEPS.map((s, i) => {
         const isDone = i < clamped;
         const isCurrent = i === clamped;
         const Icon = s.icon;
         return (
-          <div key={s.key} className={"flex items-center " + gapCls + " shrink-0"}>
+          <div
+            key={s.key}
+            className={
+              compact
+                ? "flex min-w-0 items-center gap-1.5 rounded-[10px] bg-surface-bone/60 px-2 py-2 sm:shrink-0 sm:bg-transparent sm:px-0 sm:py-0 " + gapCls
+                : "flex shrink-0 items-center " + gapCls
+            }
+          >
             <div
               className={
-                "flex " + size + " items-center justify-center rounded-full font-display font-bold transition-all " +
+                "flex shrink-0 " + size + " items-center justify-center rounded-full font-display font-bold transition-all " +
                 (isDone
                   ? "bg-primary text-on-primary"
                   : isCurrent
@@ -94,14 +109,22 @@ export function WorkflowPipeline({ current, compact = false }: Props) {
             </div>
             <span
               className={
-                "font-ui " + labelCls + " font-medium " +
+                "min-w-0 truncate font-ui " + labelCls + " font-medium " +
                 (isCurrent ? "text-ink" : isDone ? "text-charcoal" : "text-ash")
               }
             >
               {s.label}
             </span>
             {i < PIPELINE_STEPS.length - 1 && (
-              <span className={"h-px " + barCls + " " + (isDone ? "bg-primary" : "bg-hairline")} />
+              <span
+                className={
+                  (compact ? "hidden sm:block " : "") +
+                  "h-px " +
+                  barCls +
+                  " " +
+                  (isDone ? "bg-primary" : "bg-hairline")
+                }
+              />
             )}
           </div>
         );
