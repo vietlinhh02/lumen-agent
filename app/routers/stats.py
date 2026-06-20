@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.models import (
+    ConflictingFinding,
     LiteratureMatrixRow,
     Paper,
     Project,
@@ -34,11 +35,33 @@ async def get_stats(
     import asyncio
 
     proj_stmt = select(func.count()).select_from(Project).where(Project.owner_id == user.id)
-    paper_stmt = select(func.count()).select_from(ProjectPaper).join(Project, Project.id == ProjectPaper.project_id).where(Project.owner_id == user.id, ProjectPaper.status == "saved")
-    matrix_stmt = select(func.count()).select_from(LiteratureMatrixRow).join(Project, Project.id == LiteratureMatrixRow.project_id).where(Project.owner_id == user.id)
-    gap_stmt = select(func.count()).select_from(ResearchGap).join(Project, Project.id == ResearchGap.project_id).where(Project.owner_id == user.id)
-    report_stmt = select(func.count()).select_from(ReviewReport).where(ReviewReport.created_by == user.id)
-    recent_stmt = select(Project).where(Project.owner_id == user.id).order_by(Project.updated_at.desc()).limit(5)
+    paper_stmt = (
+        select(func.count())
+        .select_from(ProjectPaper)
+        .join(Project, Project.id == ProjectPaper.project_id)
+        .where(Project.owner_id == user.id, ProjectPaper.status == "saved")
+    )
+    matrix_stmt = (
+        select(func.count())
+        .select_from(LiteratureMatrixRow)
+        .join(Project, Project.id == LiteratureMatrixRow.project_id)
+        .where(Project.owner_id == user.id)
+    )
+    gap_stmt = (
+        select(func.count())
+        .select_from(ResearchGap)
+        .join(Project, Project.id == ResearchGap.project_id)
+        .where(Project.owner_id == user.id)
+    )
+    report_stmt = (
+        select(func.count()).select_from(ReviewReport).where(ReviewReport.created_by == user.id)
+    )
+    recent_stmt = (
+        select(Project)
+        .where(Project.owner_id == user.id)
+        .order_by(Project.updated_at.desc())
+        .limit(8)
+    )
 
     results = await asyncio.gather(
         db.execute(proj_stmt),
@@ -55,6 +78,87 @@ async def get_stats(
     gap_count = results[3].scalar() or 0
     report_count = results[4].scalar() or 0
     recent_projects = results[5].scalars().all()
+    recent_project_ids = [project.id for project in recent_projects]
+
+    workflow_counts: dict[str, dict[str, int]] = {}
+    if recent_project_ids:
+        count_queries = {
+            "paper_count": (
+                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
+                .where(
+                    ProjectPaper.project_id.in_(recent_project_ids),
+                    ProjectPaper.status == "saved",
+                )
+                .group_by(ProjectPaper.project_id)
+            ),
+            "full_text_count": (
+                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
+                .where(
+                    ProjectPaper.project_id.in_(recent_project_ids),
+                    ProjectPaper.status == "saved",
+                    ProjectPaper.full_text_status.in_(("completed", "raw_extracted")),
+                )
+                .group_by(ProjectPaper.project_id)
+            ),
+            "raw_text_count": (
+                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
+                .where(
+                    ProjectPaper.project_id.in_(recent_project_ids),
+                    ProjectPaper.status == "saved",
+                    ProjectPaper.full_text_status == "raw_extracted",
+                )
+                .group_by(ProjectPaper.project_id)
+            ),
+            "matrix_count": (
+                select(LiteratureMatrixRow.project_id, func.count(LiteratureMatrixRow.id))
+                .where(LiteratureMatrixRow.project_id.in_(recent_project_ids))
+                .group_by(LiteratureMatrixRow.project_id)
+            ),
+            "gap_count": (
+                select(ResearchGap.project_id, func.count(ResearchGap.id))
+                .where(ResearchGap.project_id.in_(recent_project_ids))
+                .group_by(ResearchGap.project_id)
+            ),
+            "conflict_count": (
+                select(ConflictingFinding.project_id, func.count(ConflictingFinding.id))
+                .where(ConflictingFinding.project_id.in_(recent_project_ids))
+                .group_by(ConflictingFinding.project_id)
+            ),
+            "report_count": (
+                select(ReviewReport.project_id, func.count(ReviewReport.id))
+                .where(
+                    ReviewReport.project_id.in_(recent_project_ids),
+                    ReviewReport.created_by == user.id,
+                )
+                .group_by(ReviewReport.project_id)
+            ),
+        }
+        count_results = await asyncio.gather(
+            *(db.execute(query) for query in count_queries.values())
+        )
+        for key, result in zip(count_queries, count_results, strict=True):
+            for project_id, count in result.all():
+                workflow_counts.setdefault(str(project_id), {})[key] = count
+
+    project_workflows = []
+    for project in recent_projects:
+        counts = workflow_counts.get(str(project.id), {})
+        project_workflows.append(
+            {
+                "id": str(project.id),
+                "title": project.title,
+                "topic": project.topic,
+                "status": project.status,
+                "updated_at": str(project.updated_at),
+                "paper_count": counts.get("paper_count", 0),
+                "full_text_count": counts.get("full_text_count", 0),
+                "raw_text_count": counts.get("raw_text_count", 0),
+                "matrix_count": counts.get("matrix_count", 0),
+                "gap_count": counts.get("gap_count", 0),
+                "conflict_count": counts.get("conflict_count", 0),
+                "report_count": counts.get("report_count", 0),
+            }
+        )
 
     return {
         "project_count": proj_count,
@@ -71,6 +175,7 @@ async def get_stats(
             }
             for p in recent_projects
         ],
+        "project_workflows": project_workflows,
     }
 
 
@@ -128,7 +233,7 @@ async def list_all_papers(
         order_col = Paper.citation_count
 
     stmt = stmt.order_by(order_col.asc() if sort_asc else order_col.desc())
-    
+
     # Pagination
     stmt = stmt.limit(limit).offset(offset)
 
