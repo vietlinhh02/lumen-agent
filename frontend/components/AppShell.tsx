@@ -6,16 +6,12 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { useProjectsStore } from "@/lib/stores/projects-store";
 import { SessionList } from "@/components/assistant/SessionList";
 import {
   SquaresFour,
   Folder,
-  MagnifyingGlass,
   FileText,
-  Table,
-  Graph,
-  Lightbulb,
-  PencilLine,
   GearSix,
   SignOut,
   List,
@@ -23,19 +19,21 @@ import {
   ChatCircle,
   Sliders,
   CaretDown,
+  Plus,
 } from "@phosphor-icons/react";
+import { useProjects } from "@/lib/hooks/useProjects";
 
-/* ── Navigation items ── */
-
+/* ── Navigation items ──
+ *
+ * Workflow tabs (Search / Matrix / Map / Gaps / Reports / Saved Papers)
+ * are scoped to a project and therefore no longer live in the global
+ * sidebar — they are accessible from inside each project workspace at
+ * `/projects/[id]/...`.
+ */
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: SquaresFour },
   { label: "Projects", href: "/projects", icon: Folder },
-  { label: "Search Papers", href: "/search", icon: MagnifyingGlass },
   { label: "Saved Papers", href: "/papers", icon: FileText },
-  { label: "Matrix", href: "/matrix", icon: Table },
-  { label: "Knowledge Map", href: "/map", icon: Graph },
-  { label: "Gaps", href: "/gaps", icon: Lightbulb },
-  { label: "Reports", href: "/reports", icon: PencilLine },
   { label: "Assistant", href: "/assistant", icon: ChatCircle },
   { label: "Settings", href: "/settings", icon: GearSix },
 ];
@@ -58,11 +56,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={
           isAssistant
-            ? "h-[calc(100vh-60px)] overflow-hidden ml-0 xl:ml-[56px]"
-            : "min-h-[calc(100vh-60px)] px-4 sm:px-8 pt-8 pb-12 ml-0 xl:ml-[56px]"
+            ? "h-screen overflow-hidden ml-0 xl:ml-[56px]"
+            : "h-screen overflow-y-auto pt-[60px] pl-0 xl:pl-[56px] bg-canvas"
         }
       >
-        {children}
+        {/* pt-[60px] reserves space for the fixed header; xl:pl-[56px] reserves space for the fixed sidebar */}
+        <div className="px-4 sm:px-8 pt-6 pb-12 min-h-full">
+          {children}
+        </div>
       </main>
     </>
   );
@@ -80,8 +81,17 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
   const isAssistant = pathname?.startsWith("/assistant") ?? false;
   const ref = useRef<HTMLDivElement>(null);
 
-  const seed = token ?? "lumen";
-  const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
+  const { projects } = useProjects();
+  const projectSwitcherOpen = useUIStore((s) => s.projectSwitcherOpen);
+  const setProjectSwitcherOpen = useUIStore((s) => s.setProjectSwitcherOpen);
+  const switcherRef = useRef<HTMLDivElement>(null);
+
+  // Detect which project we're currently inside (if any) so the switcher
+  // can highlight the active entry.
+  const activeProjectId =
+    pathname?.match(/^\/projects\/([^/]+)/)?.[1] ?? "";
+
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -92,26 +102,50 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
     return () => document.removeEventListener("mousedown", handler);
   }, [userMenuOpen, setUserMenuOpen]);
 
+  useEffect(() => {
+    if (!projectSwitcherOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setProjectSwitcherOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [projectSwitcherOpen, setProjectSwitcherOpen]);
+
+  const seed = token ?? "lumen";
+  const avatarUrl = `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed)}`;
+
   const handleSignOut = () => {
     logout();
     router.push("/login");
   };
 
+  const handlePickProject = (id: string) => {
+    setProjectSwitcherOpen(false);
+    router.push(`/projects/${id}`);
+  };
+
+  const handleNewProject = () => {
+    setProjectSwitcherOpen(false);
+    router.push("/projects/new");
+  };
+
   return (
     <header
-      className="sticky top-0 z-20 flex h-[60px] items-center px-4 sm:px-6 bg-canvas"
+      className="fixed top-0 left-0 right-0 z-20 flex h-[60px] items-center gap-2 px-3 sm:px-6 bg-canvas"
       style={{ borderBottom: "1px solid var(--hairline)" }}
     >
       {/* Hamburger — mobile only */}
       <button
         type="button"
         onClick={onMenuClick}
-        className="xl:hidden flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-charcoal hover:text-ink hover:bg-surface-bone transition-colors mr-3"
+        className="xl:hidden flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[10px] text-charcoal hover:text-ink hover:bg-surface-bone transition-colors sm:mr-1"
       >
         <List size={22} weight="bold" />
       </button>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <span
           className="font-display text-[20px] font-semibold leading-[1.4] text-ink"
           style={{ letterSpacing: "-0.3px" }}
@@ -120,12 +154,83 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
         </span>
       </div>
 
-      <div className="flex-1" />
+      {/* Project switcher — hidden on the Assistant page since that page
+          has its own header controls and switching project there would
+          be confusing. */}
+      {!isAssistant && projects.length > 0 && (
+        <div ref={switcherRef} className="relative min-w-0 flex-1 sm:ml-2 sm:flex-none">
+          <button
+            type="button"
+            onClick={() => setProjectSwitcherOpen(!projectSwitcherOpen)}
+            className="flex h-9 max-w-full items-center gap-1.5 rounded-full bg-surface-bone px-2.5 font-ui text-[12px] font-medium text-charcoal hover:text-ink hover:bg-hairline transition-colors sm:gap-2 sm:px-3 sm:text-[13px]"
+            title="Switch project"
+          >
+            <Folder size={14} weight="bold" className="shrink-0 text-primary" />
+            <span className="min-w-0 max-w-[116px] truncate sm:max-w-[180px]">
+              {activeProject ? activeProject.title : "All Projects"}
+            </span>
+            <CaretDown size={12} weight="bold" className={`shrink-0 transition-transform duration-200 ${projectSwitcherOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {projectSwitcherOpen && (
+            <div
+              className="absolute left-0 top-[44px] z-50 w-[280px] rounded-[12px] bg-surface-card shadow-2xl overflow-hidden animate-scale-in"
+              style={{ border: "1px solid var(--hairline)" }}
+            >
+              <div className="px-3 py-2" style={{ borderBottom: "1px solid var(--hairline)" }}>
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-ash">
+                  Switch project
+                </p>
+              </div>
+              <div className="max-h-[320px] overflow-y-auto p-1">
+                {projects.slice(0, 12).map((p) => {
+                  const isActive = p.id === activeProjectId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handlePickProject(p.id)}
+                      className={`flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left ${
+                        isActive ? "bg-primary/10 text-primary" : "text-ink hover:bg-surface-bone"
+                      }`}
+                    >
+                      <Folder size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : "text-ash"} />
+                      <span className="truncate flex-1">{p.title}</span>
+                      <span className="font-ui text-[10px] text-ash">{p.paper_count}p</span>
+                    </button>
+                  );
+                })}
+                {projects.length > 12 && (
+                  <button
+                    type="button"
+                    onClick={() => { setProjectSwitcherOpen(false); router.push("/projects"); }}
+                    className="flex w-full items-center justify-center rounded-[8px] py-2 font-ui text-[12px] font-medium text-charcoal hover:bg-surface-bone"
+                  >
+                    View all {projects.length} projects →
+                  </button>
+                )}
+              </div>
+              <div className="p-1" style={{ borderTop: "1px solid var(--hairline)" }}>
+                <button
+                  type="button"
+                  onClick={handleNewProject}
+                  className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] font-semibold text-primary hover:bg-primary/10 transition-colors"
+                >
+                  <Plus size={14} weight="bold" />
+                  New Project
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="hidden flex-1 sm:block" />
 
       {/* Assistant page header controls (rendered only on /assistant/*) */}
       {isAssistant && <AssistantHeaderControls />}
 
-      <div ref={ref} className="relative">
+      <div ref={ref} className="relative ml-2 shrink-0 sm:ml-0">
         <button
           type="button"
           onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -168,14 +273,24 @@ function AssistantHeaderControls() {
   const loadSessions = useAssistantStore((s) => s.loadSessions);
   const createSession = useAssistantStore((s) => s.createSession);
   const activeSessionId = useAssistantStore((s) => s.activeSessionId);
-  const currentSession = useAssistantStore((s) => s.currentSession);
   const eventsMap = useAssistantStore((s) => s.events);
+  const currentSession = useAssistantStore((s) => s.currentSession);
+  const updateSessionProject = useAssistantStore((s) => s.updateSessionProject);
 
   const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
   const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
   const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
   const toggleToolPanel = useUIStore((s) => s.toggleAssistantToolPanel);
   const toggleSessions = useUIStore((s) => s.toggleAssistantSessions);
+
+  const { projects } = useProjects();
+  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
+
+  // Make sure the projects list is available so the header project
+  // picker has something to show.
+  useEffect(() => {
+    void fetchProjects();
+  }, [fetchProjects]);
 
   // A "new" session is one that has no events yet. Disabling the New
   // action in that state prevents the user from spamming the API by
@@ -243,6 +358,17 @@ function AssistantHeaderControls() {
 
   return (
     <div ref={dropdownRef} className="flex items-center gap-1 mr-2 relative">
+      {/* Project picker — visible when a session is active. The session
+          is loaded on the chat page; on the assistant index page
+          `currentSession` is null so the picker is hidden. */}
+      {currentSession && (
+        <HeaderProjectPicker
+          projects={projects}
+          currentProjectId={currentSession.project_id}
+          onChange={(id) => void updateSessionProject(currentSession.id, id)}
+        />
+      )}
+
       {/* Sessions dropdown trigger (hidden on desktop since we have the left toggle button) */}
       <button
         type="button"
@@ -303,6 +429,155 @@ function AssistantHeaderControls() {
           onSelectSession={() => setSessionsOpen(false)}
         />
       </div>
+    </div>
+  );
+}
+
+/* ── Header project picker ─────────────────────────────────────────────── */
+
+/**
+ * Compact project control rendered in the assistant header.
+ *
+ * Behaviour:
+ * - If the active session is already linked to a project, we render a
+ *   static label (the project name + folder icon) so the user can see
+ *   the context but cannot re-link the session to a different project.
+ * - If the session is unlinked, we render a clickable "Link project"
+ *   button that opens a dropdown to pick a project.
+ *
+ * The intent is that the project link is a one-time decision per
+ * session — once chosen, the project is fixed and clearly visible in
+ * the chat. Unlinked sessions are hidden from the SessionList, so
+ * the picker is the only way to bind a fresh session to a project.
+ */
+function HeaderProjectPicker({
+  projects,
+  currentProjectId,
+  onChange,
+}: {
+  projects: import("@/lib/types").ProjectResponse[];
+  currentProjectId: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouse = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onMouse);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouse);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current = projects.find((p) => p.id === currentProjectId) ?? null;
+
+  // ── Linked state: static label, not interactive ──────────────────────
+  if (current) {
+    return (
+      <div
+        ref={ref}
+        className="flex h-9 items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 sm:px-3 font-ui text-sm text-primary"
+        title={`Linked to: ${current.title}`}
+      >
+        <Folder size={16} weight="fill" className="shrink-0" />
+        <span className="max-w-[160px] truncate font-medium">
+          {current.title}
+        </span>
+      </div>
+    );
+  }
+
+  // ── Unlinked state: clickable picker that opens a dropdown ───────────
+  const handleSelect = (id: string) => {
+    onChange(id);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 font-ui text-sm transition-all duration-150 active:scale-95 text-charcoal hover:text-ink hover:bg-surface-bone"
+        title="Link this chat to a project"
+        aria-label="Link to a project"
+      >
+        <Folder size={16} weight="regular" className="shrink-0" />
+        <span className="hidden sm:inline max-w-[140px] truncate font-medium">
+          Link project
+        </span>
+        <CaretDown
+          size={12}
+          weight="bold"
+          className={`hidden sm:inline transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-[44px] z-50 w-[280px] rounded-[12px] bg-canvas shadow-2xl overflow-hidden animate-scale-in"
+          style={{ border: "1px solid var(--hairline)" }}
+        >
+          <div
+            className="px-3 py-2"
+            style={{ borderBottom: "1px solid var(--hairline)" }}
+          >
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-ash">
+              Link to project
+            </p>
+          </div>
+          <div className="max-h-[320px] overflow-y-auto p-1">
+            {projects.length === 0 ? (
+              <p className="px-3 py-4 font-ui text-[12px] text-ash text-center">
+                No projects yet
+              </p>
+            ) : (
+              projects.slice(0, 12).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleSelect(p.id)}
+                  className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left text-ink hover:bg-surface-bone"
+                >
+                  <Folder
+                    size={14}
+                    weight="regular"
+                    className="text-ash"
+                  />
+                  <span className="truncate flex-1">{p.title}</span>
+                  <span className="font-ui text-[10px] text-ash">
+                    {p.paper_count}p
+                  </span>
+                </button>
+              ))
+            )}
+            {projects.length > 12 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  router.push("/projects");
+                }}
+                className="flex w-full items-center justify-center rounded-[8px] py-2 font-ui text-[12px] font-medium text-charcoal hover:bg-surface-bone"
+              >
+                View all {projects.length} projects →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

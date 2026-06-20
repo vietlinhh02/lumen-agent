@@ -22,8 +22,6 @@ import { ChatBox } from "@/components/assistant/ChatBox";
 import { ToolPanel } from "@/components/assistant/ToolPanel";
 
 import { SessionList } from "@/components/assistant/SessionList";
-import { ProjectSelector } from "@/components/ProjectSelector";
-import { useProjectsStore } from "@/lib/stores/projects-store";
 import type {
   AssistantEventData,
   ErrorEvent,
@@ -34,8 +32,7 @@ import {
   ArrowClockwise,
   PaperPlaneTilt,
   WarningCircle,
-  CaretLeft,
-  CaretRight,
+  Folder,
 } from "@phosphor-icons/react";
 
 export default function AssistantSessionPage() {
@@ -62,21 +59,18 @@ export default function AssistantSessionPage() {
   const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
   const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
 
-  const projects = useProjectsStore((s) => s.projects);
-  const fetchProjects = useProjectsStore((s) => s.fetchProjects);
-  const updateSessionProject = useAssistantStore((s) => s.updateSessionProject);
-
   const [jumpToLatest, setJumpToLatest] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load sessions and projects
+  // Load sessions (the project picker in the AppShell header also
+  // triggers its own fetchProjects call so the page itself doesn't
+  // need to do it).
   useEffect(() => {
     if (!token) return;
     void loadSessions();
-    void fetchProjects();
-  }, [token, loadSessions, fetchProjects]);
+  }, [token, loadSessions]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -319,18 +313,19 @@ export default function AssistantSessionPage() {
             {/* Chat column - centered in the viewport, full width up to
                 3xl breakpoint. */}
             <div className="mx-auto w-full max-w-4xl space-y-4">
-                {/* Project Selector Header */}
-                {currentSession && (
-                  <div className="flex justify-center mb-6 pt-4">
-                    <div className="w-full max-w-sm">
-                      <ProjectSelector
-                        projects={projects}
-                        selectedId={currentSession.project_id || ""}
-                        onChange={(id) => updateSessionProject(currentSession.id, id)}
-                        label=""
-                        placeholder="Link to a project to provide context..."
-                        showStatus={false}
-                      />
+                {/* Project context banner — shown when the session is
+                    linked to a project so the user always knows which
+                    project's papers / matrix / gaps the assistant is
+                    reasoning about. This is purely informational; the
+                    project link is set in the header and cannot be
+                    re-selected once the session is linked. */}
+                {currentSession?.project_id && currentSession.project_title && (
+                  <div className="flex justify-center pt-4">
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 font-ui text-[12px] font-semibold text-primary">
+                      <Folder size={12} weight="fill" />
+                      <span className="max-w-[260px] truncate">
+                        {currentSession.project_title}
+                      </span>
                     </div>
                   </div>
                 )}
