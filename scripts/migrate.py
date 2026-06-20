@@ -16,6 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import get_settings
 
 _MIGRATIONS = [
+    # 0. Add display name to users
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(80)",
+    "UPDATE users SET display_name = split_part(email, '@', 1) WHERE display_name IS NULL",
     # 1. Add full_text_status to project_papers
     "ALTER TABLE project_papers ADD COLUMN IF NOT EXISTS full_text_status VARCHAR(16)",
     # 1b. Add raw_text to paper_enrichments
