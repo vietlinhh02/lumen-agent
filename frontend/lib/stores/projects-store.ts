@@ -23,6 +23,22 @@ export interface StatsData {
     status: string;
     updated_at: string;
   }>;
+  project_workflows?: ProjectWorkflowStatus[];
+}
+
+export interface ProjectWorkflowStatus {
+  id: string;
+  title: string;
+  topic: string;
+  status: string;
+  updated_at: string;
+  paper_count: number;
+  full_text_count: number;
+  raw_text_count: number;
+  matrix_count: number;
+  gap_count: number;
+  conflict_count: number;
+  report_count: number;
 }
 
 /** How long the cached projects list is considered "fresh" (ms). */
