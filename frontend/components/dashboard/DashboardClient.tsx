@@ -26,10 +26,15 @@ export function DashboardClient() {
     }
   }, [token, fetchStats, fetchProjects]);
 
-  // Active project = most recently updated with status=active
   const activeProject = useMemo(() => {
     return projects.find((p) => p.status === "active") ?? projects[0] ?? null;
   }, [projects]);
+  const workflows = useMemo(() => stats?.project_workflows ?? [], [stats?.project_workflows]);
+  const activeWorkflow = useMemo(() => {
+    if (workflows.length === 0) return null;
+    if (!activeProject) return workflows[0] ?? null;
+    return workflows.find((workflow) => workflow.id === activeProject.id) ?? workflows[0] ?? null;
+  }, [activeProject, workflows]);
 
   return (
     <div>
@@ -37,20 +42,24 @@ export function DashboardClient() {
 
       <GlobalSearchBar />
 
-      {activeProject && stats && (
-        <ContinueWorkingHero project={activeProject} stats={stats} />
+      {activeWorkflow && (
+        <ContinueWorkingHero workflow={activeWorkflow} />
       )}
 
       <StatsGrid stats={stats} />
 
       <QuickActionsRow projectCount={stats?.project_count ?? 0} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-2 lg:gap-6">
         <section>
           <h2 className="mb-4 font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
             Your Projects
           </h2>
-          <ProjectsList projects={projects} loading={loadingProjects} />
+          <ProjectsList
+            projects={projects}
+            workflows={workflows}
+            loading={loadingProjects}
+          />
         </section>
 
         <section>
