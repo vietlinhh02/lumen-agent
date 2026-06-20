@@ -5,10 +5,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    LoginRequest,
+    ProfileUpdateRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 from app.services.auth import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        display_name=user.display_name,
+        role=user.role,
+        is_active=user.is_active,
+    )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -22,12 +38,13 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
 
     user = User(
         email=body.email,
+        display_name=body.email.split("@")[0],
         password_hash=hash_password(body.password),
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return UserResponse(id=str(user.id), email=user.email, role=user.role, is_active=user.is_active)
+    return _user_response(user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -47,7 +64,27 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(id=str(user.id), email=user.email, role=user.role, is_active=user.is_active)
+    return _user_response(user)
+
+
+@router.patch("/profile", response_model=UserResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserResponse:
+    """Update the current user's profile."""
+    display_name = " ".join(body.display_name.split())
+    if not display_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Display name is required",
+        )
+
+    user.display_name = display_name
+    await db.commit()
+    await db.refresh(user)
+    return _user_response(user)
 
 
 @router.patch("/password")
