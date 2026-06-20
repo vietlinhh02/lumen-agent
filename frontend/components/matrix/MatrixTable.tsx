@@ -42,25 +42,25 @@ function MatrixCard({
 
   return (
     <div
-      className={`rounded-[14px] p-5 animate-scale-in transition-colors hover:shadow-sm ${
+      className={`rounded-[14px] p-3.5 sm:p-5 animate-scale-in transition-colors hover:shadow-sm ${
         isLowConfidence ? "bg-surface-bone/50 opacity-80" : "bg-surface-card"
       }`}
       style={{ border: "1px solid var(--hairline)" }}
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-ui text-[15px] font-semibold leading-[1.4] text-ink line-clamp-2">
+      <div className="flex items-start justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <h3 className="font-ui text-[14px] sm:text-[15px] font-semibold leading-[1.4] text-ink line-clamp-2 break-words">
             {row.paper_title ? <MathText text={row.paper_title} /> : "—"}
           </h3>
           {!expanded && (
-            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-2">
               {SUMMARY_FIELDS.map((f) => (
-                <div key={f.key} className="min-w-0">
-                  <span className="block font-ui text-[11px] font-semibold text-ash uppercase tracking-wide">
+                <div key={f.key} className="min-w-0 overflow-hidden">
+                  <span className="block font-ui text-[10px] sm:text-[11px] font-semibold text-ash uppercase tracking-wide">
                     {f.label}
                   </span>
-                  <span className="block font-ui text-[13px] text-body leading-[1.5] line-clamp-1">
+                  <span className="block font-ui text-[12px] sm:text-[13px] text-body leading-[1.5] truncate">
                     {(row[f.key] as string) || "not specified"}
                   </span>
                 </div>
@@ -68,15 +68,16 @@ function MatrixCard({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {isLowConfidence && (
             <button
               onClick={onDelete}
-              className="focus-ring font-ui inline-flex items-center gap-1.5 h-7 rounded-full bg-red-50 px-3 text-[12px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
+              className="focus-ring font-ui inline-flex items-center gap-1.5 h-7 rounded-full bg-red-50 px-2.5 sm:px-3 text-[11px] sm:text-[12px] font-semibold text-red-600 hover:bg-red-100 transition-colors"
               title="Remove this low-relevance paper from the project"
             >
               <Trash size={12} weight="bold" />
-              Remove from Project
+              <span className="hidden sm:inline">Remove from Project</span>
+              <span className="sm:hidden">Remove</span>
             </button>
           )}
           <ConfidenceBadge level={row.extraction_confidence} />
@@ -101,10 +102,10 @@ function MatrixCard({
 
       {/* Expanded fields */}
       {expanded && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 pt-4 animate-slide-up" style={{ borderTop: "1px solid var(--hairline)" }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 sm:gap-y-4 pt-3 sm:pt-4 animate-slide-up" style={{ borderTop: "1px solid var(--hairline)" }}>
           {DETAIL_FIELDS.map((f) => (
             <div key={f.key} className={f.span || ""}>
-              <span className="block font-ui text-[11px] font-semibold text-ash uppercase tracking-wide mb-1">
+              <span className="block font-ui text-[10px] sm:text-[11px] font-semibold text-ash uppercase tracking-wide mb-1">
                 {f.label}
               </span>
               <EditableCell
@@ -127,7 +128,7 @@ interface TableProps {
 
 export function MatrixTable({ rows, onEdit, onDelete }: TableProps) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3 sm:gap-4">
       {rows.map((row) => (
         <MatrixCard
           key={row.id}
