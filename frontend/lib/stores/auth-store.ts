@@ -9,6 +9,7 @@ import { TOKEN_KEY } from "@/lib/jwt";
 export interface AuthUser {
   id: string;
   email: string;
+  display_name: string | null;
   role: string;
   is_active: boolean;
 }
@@ -21,6 +22,7 @@ interface TokenResponse {
 interface RegisterResponse {
   id: string;
   email: string;
+  display_name: string | null;
   role: string;
   is_active: boolean;
 }
