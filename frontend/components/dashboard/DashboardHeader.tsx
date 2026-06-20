@@ -15,7 +15,7 @@ export function DashboardHeader({ stats, runningJobs }: Props) {
   const { greeting, sub } = useMemo(() => {
     const hour = new Date().getHours();
     const base = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-    const name = user?.email?.split("@")[0] ?? "researcher";
+    const name = user?.display_name?.trim() || user?.email?.split("@")[0] || "researcher";
     const cap = name.charAt(0).toUpperCase() + name.slice(1);
 
     const parts: string[] = [];
@@ -36,14 +36,15 @@ export function DashboardHeader({ stats, runningJobs }: Props) {
   }, [user, stats, runningJobs]);
 
   return (
-    <div className="mb-8 animate-fade-in">
+    <div className="mb-5 animate-fade-in sm:mb-8">
       <h1
-        className="font-display text-[36px] font-bold leading-[1.0] text-ink"
-        style={{ letterSpacing: "-1px" }}
+        className="font-display text-[28px] font-bold leading-[1.05] text-ink sm:text-[36px]"
       >
         {greeting}.
       </h1>
-      <p className="mt-2 max-w-2xl text-base leading-[1.6] text-charcoal">{sub}</p>
+      <p className="mt-2 max-w-2xl text-sm leading-[1.55] text-charcoal sm:text-base sm:leading-[1.6]">
+        {sub}
+      </p>
     </div>
   );
 }
