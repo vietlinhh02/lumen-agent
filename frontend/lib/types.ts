@@ -374,6 +374,7 @@ export interface KnowledgeGraphResponse {
 export interface UserProfile {
   id: string;
   email: string;
+  display_name: string | null;
   role: string;
   is_active: boolean;
 }
@@ -381,6 +382,7 @@ export interface UserProfile {
 export interface AdminUser {
   id: string;
   email: string;
+  display_name: string | null;
   role: string;
   is_active: boolean;
   created_at: string;
@@ -406,4 +408,3 @@ export type AgentStatus =
   | "stopped"
   | "done"
   | "error";
-
