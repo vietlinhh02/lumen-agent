@@ -33,6 +33,7 @@ class User(Base):
         server_default=func.gen_random_uuid(),
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(
         String(16), nullable=False, default="researcher", server_default="researcher"
@@ -312,7 +313,13 @@ class ProjectPaper(Base):
             name="ck_project_papers_relevance",
         ),
         Index("ix_project_papers_project_status", "project_id", "status"),
-        Index("ix_project_papers_project_status_saved", "project_id", "status", "saved_at", postgresql_using="btree"),
+        Index(
+            "ix_project_papers_project_status_saved",
+            "project_id",
+            "status",
+            "saved_at",
+            postgresql_using="btree",
+        ),
     )
 
 
