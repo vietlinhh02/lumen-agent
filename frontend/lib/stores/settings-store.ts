@@ -19,6 +19,7 @@ interface SettingsState {
   // Actions
   setActiveTab: (t: SettingsTab) => void;
   fetchProfile: () => Promise<void>;
+  updateProfileName: (displayName: string) => Promise<UserProfile | null>;
   fetchUsers: () => Promise<void>;
   toggleUserActive: (userId: string, currentActive: boolean) => Promise<AdminUser | null>;
   changePassword: (current: string, next: string) => Promise<boolean>;
@@ -46,8 +47,29 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
         headers: { Authorization: `Bearer ${token}` },
       });
       set({ profile: u, isAdmin: u.role === "admin" });
+      useAuthStore.getState().setUser(u);
     } finally {
       set({ loadingProfile: false });
+    }
+  },
+
+  async updateProfileName(displayName) {
+    const token = useAuthStore.getState().token;
+    if (!token) return null;
+    try {
+      const updated = await apiFetch<UserProfile>("/auth/profile", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ display_name: displayName }),
+      });
+      set({ profile: updated, isAdmin: updated.role === "admin" });
+      useAuthStore.getState().setUser(updated);
+      return updated;
+    } catch {
+      return null;
     }
   },
 
