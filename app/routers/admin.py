@@ -44,6 +44,7 @@ async def list_users(
         UserAdminResponse(
             id=str(u.id),
             email=u.email,
+            display_name=u.display_name,
             role=u.role,
             is_active=u.is_active,
             created_at=str(u.created_at),
@@ -84,6 +85,7 @@ async def update_user(
     return UserAdminResponse(
         id=str(target.id),
         email=target.email,
+        display_name=target.display_name,
         role=target.role,
         is_active=target.is_active,
         created_at=str(target.created_at),
