@@ -15,7 +15,7 @@ export function MatrixStats({ rows }: Props) {
 
   return (
     <div
-      className="flex items-center gap-x-5 gap-y-1 rounded-[10px] bg-surface-card px-4 py-3 font-ui text-[13px] text-ash"
+      className="mt-4 sm:mt-5 flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-1.5 sm:gap-y-1 rounded-[10px] bg-surface-card px-3.5 sm:px-4 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] text-ash"
       style={{ border: "1px solid var(--hairline)" }}
     >
       <span><strong className="font-semibold text-charcoal">{rows.length}</strong> papers analyzed</span>
