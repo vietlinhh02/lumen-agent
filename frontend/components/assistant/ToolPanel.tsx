@@ -207,7 +207,7 @@ function PaperListView({
       )}
       {projectId && (
         <a
-          href={`/papers?project=${projectId}`}
+          href={`/projects/${projectId}/papers`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-ui text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
@@ -260,7 +260,7 @@ function MatrixPreview({
       )}
       {projectId && (
         <a
-          href={`/matrix?project=${projectId}`}
+          href={`/projects/${projectId}/matrix`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-ui text-xs font-medium text-primary hover:bg-primary/10 transition-colors mt-2"
@@ -313,7 +313,7 @@ function GapListView({
       )}
       {projectId && (
         <a
-          href={`/gaps?project=${projectId}`}
+          href={`/projects/${projectId}/gaps`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 font-ui text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
@@ -406,7 +406,7 @@ function ReportPreview({
 
       {projectId && reportId && (
         <a
-          href={`/reports/${reportId}?project=${projectId}`}
+          href={`/projects/${projectId}/reports`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center gap-1.5 w-full rounded-lg bg-primary px-3 py-2 font-ui text-xs font-medium text-white hover:bg-primary/90 transition-colors"
