@@ -2,7 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @plugin "@tailwindcss/typography";
-@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 
 :root {
   /* Surfaces */

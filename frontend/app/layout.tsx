@@ -44,6 +44,12 @@ export default function RootLayout({
       lang="en"
       className={cn("h-full", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
     >
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap"
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster position="top-right" toastOptions={{ style: { fontFamily: "var(--font-body)" } }} />
