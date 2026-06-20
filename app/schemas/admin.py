@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class UserAdminResponse(BaseModel):
     id: str
     email: str
+    display_name: str | None = None
     role: str
     is_active: bool
     created_at: str
