@@ -18,25 +18,25 @@ export function GlobalSearchBar() {
   return (
     <form
       onSubmit={handleSearch}
-      className="mb-8 animate-fade-in-up delay-300"
+      className="mb-5 animate-fade-in-up delay-300 sm:mb-8"
     >
-      <div className="relative">
+      <div className="relative grid gap-2 sm:block">
         <MagnifyingGlass
           size={18}
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-ash"
+          className="pointer-events-none absolute left-4 top-6 -translate-y-1/2 text-ash sm:top-1/2"
         />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search papers across all projects..."
-          className="focus-ring h-12 w-full rounded-full bg-surface-card pl-12 pr-36 text-base text-ink placeholder:text-ash outline-none transition-shadow"
+          className="focus-ring h-12 w-full rounded-full bg-surface-card pl-12 pr-4 text-sm text-ink placeholder:text-ash outline-none transition-shadow sm:pr-36 sm:text-base"
           style={{ border: "1px solid var(--hairline)" }}
         />
         <button
           type="submit"
           disabled={!query.trim()}
-          className="focus-ring absolute right-2 top-1/2 -translate-y-1/2 h-8 rounded-full bg-primary px-4 font-ui text-[13px] font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-40"
+          className="focus-ring h-10 rounded-full bg-primary px-4 font-ui text-[13px] font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-40 sm:absolute sm:right-2 sm:top-1/2 sm:h-8 sm:-translate-y-1/2"
         >
           Search
         </button>
