@@ -21,6 +21,11 @@ interface UIState {
    * is open.
    */
   assistantSessionsOpen: boolean;
+  /**
+   * Whether the header "Switch project" dropdown is open. Lives here so
+   * outside-click handlers in AppShell can mutate it cleanly.
+   */
+  projectSwitcherOpen: boolean;
 
   // Actions
   setTheme: (t: Theme) => void;
@@ -34,6 +39,7 @@ interface UIState {
   toggleAssistantToolPanel: () => void;
   setAssistantSessionsOpen: (v: boolean) => void;
   toggleAssistantSessions: () => void;
+  setProjectSwitcherOpen: (v: boolean) => void;
 }
 
 function applyTheme(t: Theme) {
@@ -49,6 +55,7 @@ export const useUIStore = create<UIState>()(
       userMenuOpen: false,
       assistantToolPanelOpen: false,
       assistantSessionsOpen: true,
+      projectSwitcherOpen: false,
 
       setTheme(t) {
         applyTheme(t);
@@ -88,6 +95,9 @@ export const useUIStore = create<UIState>()(
       },
       toggleAssistantSessions() {
         set({ assistantSessionsOpen: !get().assistantSessionsOpen });
+      },
+      setProjectSwitcherOpen(v) {
+        set({ projectSwitcherOpen: v });
       },
     }),
     {
