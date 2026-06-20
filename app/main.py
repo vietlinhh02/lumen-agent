@@ -140,6 +140,15 @@ async def lifespan(app: FastAPI):
                 "ADD COLUMN IF NOT EXISTS content_hash VARCHAR(16)"
             )
         )
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(80)")
+        )
+        await conn.execute(
+            text(
+                "UPDATE users SET display_name = split_part(email, '@', 1) "
+                "WHERE display_name IS NULL"
+            )
+        )
 
     # Phase 4: Constraint updates
     async with engine.begin() as conn:
