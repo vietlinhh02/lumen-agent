@@ -406,7 +406,7 @@ class ReActAgent:
                     else:
                         lines = [f"Bạn có {len(projects)} project(s):"]
                         for p in projects[:10]:
-                            lines.append(f"• {p.get('name', 'Unnamed')}")
+                            lines.append(f"- {p.get('name', 'Unnamed')}")
                         yield MessageEvent(role="assistant", content="\n".join(lines))
                     return
 
@@ -417,7 +417,7 @@ class ReActAgent:
                     else:
                         lines = [f"Tìm thấy {len(papers)} paper(s):"]
                         for paper in papers[:10]:
-                            lines.append(f"• {paper.get('title', 'Untitled')}")
+                            lines.append(f"- {paper.get('title', 'Untitled')}")
                         yield MessageEvent(role="assistant", content="\n".join(lines))
                     return
 
@@ -550,7 +550,9 @@ class ReActAgent:
         """
         system = (
             "You are a friendly research assistant. Keep your response brief and helpful. "
-            "If the user greets you, greet them back and briefly mention what you can help with."
+            "If the user greets you, greet them back and briefly mention what you can help with. "
+            "Do NOT use emoji, pictograms, decorative icons, emoticons, or Unicode symbol bullets. "
+            "Use ASCII bullets (-) if a list is needed."
         )
         messages = [{"role": "user", "content": message}]
 

@@ -655,14 +655,14 @@ class ResearchPipeline:
     ) -> str:
         """Build the final summary message."""
         lines = [
-            "## ✅ Research Pipeline Complete",
+            "## Research Pipeline Complete",
             "",
             "| | |",
             "|---|---|",
-            f"| 📄 Papers found | **{papers_found}** |",
-            f"| 💾 Papers saved to project | **{papers_saved}** |",
-            f"| 🔬 Literature matrix rows | **{matrix_rows}** |",
-            f"| 🔍 Research gaps identified | **{gaps}** |",
+            f"| Papers found | **{papers_found}** |",
+            f"| Papers saved to project | **{papers_saved}** |",
+            f"| Literature matrix rows | **{matrix_rows}** |",
+            f"| Research gaps identified | **{gaps}** |",
         ]
 
         if report_id:
@@ -670,7 +670,7 @@ class ResearchPipeline:
             lines += [
                 "",
                 "---",
-                f"📋 **Report ready!** → [View Full Report]({report_url})",
+                f"**Report ready.** [View Full Report]({report_url})",
             ]
 
         return "\n".join(lines)

@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agents.assistant.events import (
+    AssistantDeltaEvent,
     DoneEvent,
     MessageEvent,
 )
@@ -126,6 +127,75 @@ class TestAssistantSessionServiceInit:
         service = AssistantSessionService(db=mock_db)
         
         assert service.db is mock_db
+
+
+class TestAssistantDeltaGate:
+    """Test filtering of graph delta events before they reach the chat UI."""
+
+    def test_streams_visible_delta_immediately(self):
+        """Visible assistant deltas are yielded before the final event."""
+        from app.services.assistant.session_service import _AssistantDeltaGate
+
+        gate = _AssistantDeltaGate()
+        turn_id = str(uuid.uuid4())
+
+        events, content = gate.collect(
+            AssistantDeltaEvent(delta="First chunk.", turn_id=turn_id),
+            turn_id,
+        )
+
+        assert [event.delta for event in events] == ["First chunk."]
+        assert content is None
+
+    def test_flushes_final_answer_without_tool_call(self):
+        """Final answer text is streamed as chunks and persisted at completion."""
+        from app.services.assistant.session_service import _AssistantDeltaGate
+
+        gate = _AssistantDeltaGate()
+        turn_id = str(uuid.uuid4())
+
+        events, content = gate.collect(AssistantDeltaEvent(delta="Final ", turn_id=turn_id), turn_id)
+        assert content is None
+        assert [event.delta for event in events] == ["Final "]
+
+        events, content = gate.collect(
+            AssistantDeltaEvent(delta="answer.", is_final=True, turn_id=turn_id),
+            turn_id,
+        )
+
+        assert content == "Final answer."
+        assert [event.delta for event in events] == ["answer.", ""]
+        assert events[-1].is_final is True
+
+    def test_strips_emoji_from_final_answer(self):
+        """Decorative emoji are removed from visible assistant text."""
+        from app.services.assistant.session_service import _AssistantDeltaGate
+
+        gate = _AssistantDeltaGate()
+        turn_id = str(uuid.uuid4())
+
+        events, content = gate.collect(
+            AssistantDeltaEvent(delta="Tóm tắt báo cáo 😊\n- Điểm chính 📋", is_final=True),
+            turn_id,
+        )
+
+        assert content == "Tóm tắt báo cáo \n- Điểm chính "
+        assert [event.delta for event in events] == [content, ""]
+
+    def test_sanitizes_unicode_bullets_from_final_answer(self):
+        """Assistant-visible text uses ASCII bullets for consistent rendering."""
+        from app.services.assistant.session_service import _AssistantDeltaGate
+
+        gate = _AssistantDeltaGate()
+        turn_id = str(uuid.uuid4())
+
+        events, content = gate.collect(
+            AssistantDeltaEvent(delta="Danh sách:\n• Paper A\n• Paper B", is_final=True),
+            turn_id,
+        )
+
+        assert content == "Danh sách:\n- Paper A\n- Paper B"
+        assert [event.delta for event in events] == [content, ""]
 
 
 class TestCreateSession:

@@ -192,7 +192,8 @@ async def simple_chat_node(
         "If the user greets you, greet them back and briefly mention what you can help with. "
         "IMPORTANT: Respond directly to the user. Do NOT include any internal reasoning, "
         "thinking process, or meta-commentary about the user's message in your response. "
-        "Output only your actual reply to the user."
+        "Output only your actual reply to the user. Do NOT use emoji, pictograms, "
+        "decorative icons, or emoticons."
     )
 
     streamed_text = ""
@@ -315,7 +316,7 @@ async def direct_tool_node(
                 else:
                     lines = [f"Bạn có {len(projects)} project(s):"]
                     for p in projects[:10]:
-                        lines.append(f"• {p.get('name', 'Unnamed')}")
+                        lines.append(f"- {p.get('name', 'Unnamed')}")
                     content = "\n".join(lines)
             elif "papers" in data:
                 papers = data["papers"]
@@ -324,7 +325,7 @@ async def direct_tool_node(
                 else:
                     lines = [f"Tìm thấy {len(papers)} paper(s):"]
                     for paper in papers[:10]:
-                        lines.append(f"• {paper.get('title', 'Untitled')}")
+                        lines.append(f"- {paper.get('title', 'Untitled')}")
                     content = "\n".join(lines)
             else:
                 content = str(result)
@@ -403,6 +404,7 @@ async def react_loop_node(
 
     # Stream LLM response
     response_text = ""
+    pending_text_delta: str | None = None
     tool_calls_found: list[ToolCall] = []
     tool_call_args: dict[str, dict[str, Any]] = {}
 
@@ -415,9 +417,12 @@ async def react_loop_node(
         ):
             if isinstance(chunk, TextChunk):
                 response_text += chunk.delta
-                emit(AssistantDeltaEvent(delta=chunk.delta, is_final=False))
+                if pending_text_delta is not None:
+                    emit(AssistantDeltaEvent(delta=pending_text_delta, is_final=False))
+                pending_text_delta = chunk.delta
 
             elif isinstance(chunk, ToolCallStart):
+                pending_text_delta = None
                 tool_call_args[chunk.call_id] = {"name": chunk.name, "args_str": ""}
                 emit(
                     ToolEvent(
@@ -434,6 +439,7 @@ async def react_loop_node(
                     tool_call_args[chunk.call_id]["args_str"] += chunk.delta
 
             elif isinstance(chunk, ToolCallDone):
+                pending_text_delta = None
                 name = chunk.name or tool_call_args.get(chunk.call_id, {}).get("name", "unknown")
                 args = chunk.arguments or {}
                 if not args and tool_call_args.get(chunk.call_id, {}).get("args_str"):
@@ -454,11 +460,13 @@ async def react_loop_node(
         logger.error("stream_with_tools failed: %s", exc)
         emit(ErrorEvent(code="PROVIDER_ERROR", message=f"Provider stream failed: {exc}"))
 
-    if response_text:
-        emit(AssistantDeltaEvent(delta="", is_final=True))
-
     # Check for tool calls
     if not tool_calls_found:
+        if pending_text_delta is not None:
+            emit(AssistantDeltaEvent(delta=pending_text_delta, is_final=False))
+        if response_text:
+            emit(AssistantDeltaEvent(delta="", is_final=True))
+
         # No tools - graph will proceed to final_answer_node
         return {
             "iteration": iteration + 1,
@@ -897,7 +905,9 @@ def _build_react_messages(state: AssistantGraphState) -> list[dict[str, Any]]:
             "1. Call exactly ONE tool per turn.\n"
             "2. When calling a tool, output ONLY the tool call, no preamble.\n"
             "3. If you have the information needed, answer the user directly in text.\n"
-            "4. Do not ask for the project name; you are already working within the context of the project listed above."
+            "4. Do not ask for the project name; you are already working within the context of the project listed above.\n"
+            "5. Do not use emoji, pictograms, decorative icons, emoticons, or Unicode symbol bullets in final answers.\n"
+            "6. Use clean markdown with ASCII bullets (-) and plain text headings."
         )
     else:
         system_content = (
@@ -910,7 +920,9 @@ def _build_react_messages(state: AssistantGraphState) -> list[dict[str, Any]]:
             "2. CRITICAL: If the user asks about 'this project', 'the project', or existing projects, YOU MUST use the 'list_projects' tool to find available projects. DO NOT say you don't know or ask the user for the project name first.\n"
             "3. For 'create_project': pass name, topic, research_question based on user input.\n"
             "4. For 'list_projects': call with no args.\n"
-            "5. When calling a tool, output ONLY the tool call, no preamble. If you have the information needed, answer the user directly in text."
+            "5. When calling a tool, output ONLY the tool call, no preamble. If you have the information needed, answer the user directly in text.\n"
+            "6. Do not use emoji, pictograms, decorative icons, emoticons, or Unicode symbol bullets in final answers.\n"
+            "7. Use clean markdown with ASCII bullets (-) and plain text headings."
         )
     messages.append({"role": "system", "content": system_content})
 

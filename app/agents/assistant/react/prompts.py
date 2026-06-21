@@ -85,8 +85,10 @@ Always provide the arguments as a valid JSON object in the `Action Input:` block
 **Formatting Rules**:
 - ALWAYS format your Final Answer using clean, beautiful markdown.
 - Use explicit double newlines (`\\n\\n`) between paragraphs, headings, bullet points, and numbered list items to ensure they are rendered correctly on separate lines.
-- Use bullet lists (`- ` or `• `) and bold key items (`**item**`) to make the text easy to scan.
+- Use ASCII bullet lists (`- `) and bold key items (`**item**`) to make the text easy to scan.
 - Do NOT output consecutive lines of text without spacing.
+- Do NOT use emoji, pictograms, decorative icons, emoticons, or Unicode symbol bullets in the final answer.
+- Use plain text headings and ASCII bullets instead of emoji-led or icon-led labels.
 
 **Response structure**:
 1. Thought: [reasoning]

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
@@ -46,11 +47,13 @@ from sqlalchemy.orm import selectinload
 
 from app.agents.assistant.event_mapper import EventMapper
 from app.agents.assistant.events import (
+    AssistantDeltaEvent,
     BaseEvent,
     DoneEvent,
     ErrorEvent,
     MessageEvent,
     TitleEvent,
+    ToolEvent,
 )
 from app.agents.assistant.react.agent import ProjectContext, ReActAgent
 from app.agents.assistant.react.memory import Scratchpad
@@ -83,6 +86,76 @@ _cancellation_flags: dict[str, asyncio.Event] = {}  # For external cancellation 
 _active_chat_flags: dict[str, bool] = {}  # For tracking concurrent chats
 MAX_CONTEXT_MESSAGES = 8
 MAX_CONTEXT_CHARS_PER_MESSAGE = 1200
+EMOJI_RE = re.compile(
+    "["
+    "\U0001f1e6-\U0001f1ff"
+    "\U0001f300-\U0001f5ff"
+    "\U0001f600-\U0001f64f"
+    "\U0001f680-\U0001f6ff"
+    "\U0001f700-\U0001f77f"
+    "\U0001f780-\U0001f7ff"
+    "\U0001f800-\U0001f8ff"
+    "\U0001f900-\U0001f9ff"
+    "\U0001fa00-\U0001faff"
+    "\u2600-\u26ff"
+    "\u2700-\u27bf"
+    "\ufe0f"
+    "]+"
+)
+
+
+def _strip_emoji(text: str) -> str:
+    """Remove decorative emoji while preserving normal text and Vietnamese."""
+    return EMOJI_RE.sub("", text)
+
+
+def _sanitize_assistant_content(text: str) -> str:
+    """Normalize assistant-visible text before streaming or persisting."""
+    return _strip_emoji(text).replace("•", "-")
+
+
+class _AssistantDeltaGate:
+    """Buffer assistant deltas until they are known to be visible answer text."""
+
+    def __init__(self) -> None:
+        self._content = ""
+        self._pending = False
+
+    def discard_pending(self) -> None:
+        """Drop buffered deltas when a tool call proves they were intermediate text."""
+        self._content = ""
+        self._pending = False
+
+    def collect(
+        self,
+        event: AssistantDeltaEvent,
+        turn_id: str,
+    ) -> tuple[list[AssistantDeltaEvent], str | None]:
+        """Return visible delta events immediately and final content on completion."""
+        visible_events: list[AssistantDeltaEvent] = []
+
+        if event.delta:
+            self._content += event.delta
+            self._pending = True
+            visible_events.append(
+                AssistantDeltaEvent(
+                    delta=_sanitize_assistant_content(event.delta),
+                    is_final=False,
+                    turn_id=turn_id,
+                )
+            )
+
+        if not event.is_final:
+            return visible_events, None
+
+        if not self._pending:
+            self.discard_pending()
+            return visible_events, None
+
+        content = _sanitize_assistant_content(self._content)
+        self.discard_pending()
+        visible_events.append(AssistantDeltaEvent(delta="", is_final=True, turn_id=turn_id))
+        return visible_events, content
 
 
 def sort_session_events(events: list[DBAssistantEvent]) -> list[DBAssistantEvent]:
@@ -938,6 +1011,9 @@ class AssistantSessionService:
             # Surface auto-created project (if any) to the user before the
             # pipeline starts. Persist to DB so it's part of the transcript.
             if auto_created_message is not None:
+                auto_created_message.content = _sanitize_assistant_content(
+                    auto_created_message.content
+                )
                 # Persist as a message row so reload shows the same text
                 acm_row = AssistantMessage(
                     session_id=session.id,
@@ -967,9 +1043,7 @@ class AssistantSessionService:
             # Mark chat as active
             _active_chat_flags[session_id_str] = True
 
-            # Track accumulators for assistant message
-            assistant_content = ""
-            assistant_pending = False
+            assistant_delta_gate = _AssistantDeltaGate()
 
             # Run graph
             async for event in runner.run(
@@ -980,19 +1054,15 @@ class AssistantSessionService:
                 event.turn_id = turn_id
 
                 # Handle assistant delta accumulation
-                from app.agents.assistant.events import AssistantDeltaEvent as ADE
-                if isinstance(event, ADE):
-                    # Accumulate delta content
-                    if event.delta:
-                        assistant_content += event.delta
-                        assistant_pending = True
-                    
-                    # When final delta arrives (is_final=True), persist the message
-                    # regardless of whether this final delta had content
-                    if event.is_final and assistant_pending:
-                        # Yield the final delta FIRST so frontend closes the streaming message
-                        yield event
+                if isinstance(event, AssistantDeltaEvent):
+                    delta_events, assistant_content = assistant_delta_gate.collect(
+                        event,
+                        turn_id,
+                    )
+                    for delta_event in delta_events:
+                        yield delta_event
 
+                    if assistant_content is not None:
                         # Persist final assistant message
                         assistant_msg = AssistantMessage(
                             session_id=session.id,
@@ -1027,12 +1097,13 @@ class AssistantSessionService:
                             content=assistant_content,
                             turn_id=turn_id,
                         )
+                    continue
 
-                        assistant_pending = False
-                        assistant_content = ""
-                        continue  # Skip yielding the event again at the bottom
+                if isinstance(event, ToolEvent):
+                    assistant_delta_gate.discard_pending()
 
                 elif isinstance(event, MessageEvent) and event.role == "assistant":
+                    event.content = _sanitize_assistant_content(event.content)
                     # Persist direct message events immediately
                     assistant_msg = AssistantMessage(
                         session_id=session.id,

@@ -351,26 +351,69 @@ html, body {
   border-radius: 0;
 }
 .assistant-message-markdown {
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.68;
 }
 .assistant-message-markdown p {
   white-space: pre-wrap;
+  margin: 0.7em 0;
 }
-.assistant-message-markdown h1 { font-size: 22px; }
-.assistant-message-markdown h2 { font-size: 18px; }
-.assistant-message-markdown h3 { font-size: 16px; }
+.assistant-message-markdown h1,
+.assistant-message-markdown h2,
+.assistant-message-markdown h3,
+.assistant-message-markdown h4 {
+  letter-spacing: 0;
+  margin-top: 1.15em;
+}
+.assistant-message-markdown h1:first-child,
+.assistant-message-markdown h2:first-child,
+.assistant-message-markdown h3:first-child,
+.assistant-message-markdown h4:first-child {
+  margin-top: 0;
+}
+.assistant-message-markdown h1 { font-size: 20px; }
+.assistant-message-markdown h2 { font-size: 17px; }
+.assistant-message-markdown h3 { font-size: 15px; }
 .assistant-message-markdown h4 { font-size: 14px; }
 .assistant-message-markdown code {
-  font-size: 13px;
+  font-size: 12px;
+}
+.assistant-message-markdown ul,
+.assistant-message-markdown ol {
+  display: grid;
+  gap: 0.38rem;
+  margin: 0.75em 0;
+  padding-left: 1.25rem;
+}
+.assistant-message-markdown li {
+  margin: 0;
+  padding-left: 0.05rem;
+}
+.assistant-message-markdown li::marker {
+  color: var(--primary);
+  font-weight: 700;
+}
+.assistant-message-markdown blockquote {
+  margin: 0.8em 0;
+  border-left: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  padding: 0.35rem 0 0.35rem 0.85rem;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+}
+.assistant-message-markdown hr {
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+.assistant-message-markdown strong {
+  font-weight: 650;
 }
 @media (min-width: 640px) {
   .assistant-message-markdown {
-    font-size: 16px;
+    font-size: 15px;
   }
-  .assistant-message-markdown h1 { font-size: 24px; }
-  .assistant-message-markdown h2 { font-size: 20px; }
-  .assistant-message-markdown h3 { font-size: 17px; }
+  .assistant-message-markdown h1 { font-size: 21px; }
+  .assistant-message-markdown h2 { font-size: 18px; }
+  .assistant-message-markdown h3 { font-size: 16px; }
   .assistant-message-markdown h4 { font-size: 15px; }
 }
 .markdown-body h1,
