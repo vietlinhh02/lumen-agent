@@ -141,6 +141,9 @@ async def lifespan(app: FastAPI):
             )
         )
         await conn.execute(
+            text("ALTER TABLE papers ADD COLUMN IF NOT EXISTS content_sha256 VARCHAR(64)")
+        )
+        await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(80)")
         )
         await conn.execute(
@@ -179,6 +182,16 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text("ALTER TABLE background_jobs ADD COLUMN IF NOT EXISTS progress_json JSONB")
+        )
+        # Allow 'draft' status for papers awaiting upload confirmation.
+        await conn.execute(
+            text("ALTER TABLE project_papers DROP CONSTRAINT IF EXISTS ck_project_papers_status")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE project_papers ADD CONSTRAINT ck_project_papers_status "
+                "CHECK (status IN ('saved', 'rejected', 'uncertain', 'draft'))"
+            )
         )
 
     # Phase 5: Assistant tables (Plan-Act chat surface).

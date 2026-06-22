@@ -138,6 +138,9 @@ class Paper(Base):
     source_names: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, default=list, server_default="{}"
     )
+    # SHA-256 of the uploaded file bytes; set only for user-uploaded papers
+    # so re-uploading the same file into a project can be detected.
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -306,7 +309,8 @@ class ProjectPaper(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "paper_id", name="uq_project_papers_project_paper"),
         CheckConstraint(
-            "status IN ('saved', 'rejected', 'uncertain')", name="ck_project_papers_status"
+            "status IN ('saved', 'rejected', 'uncertain', 'draft')",
+            name="ck_project_papers_status",
         ),
         CheckConstraint(
             "relevance_label IS NULL OR relevance_label IN ('core', 'related', 'background', 'low')",

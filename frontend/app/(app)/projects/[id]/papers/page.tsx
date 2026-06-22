@@ -3,13 +3,14 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FileText } from "@phosphor-icons/react";
+import { FileText, UploadSimple } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
 import { apiFetch } from "@/lib/api";
 import type { ProjectPaperResponse, FullTextResponse, NormalizeResponse } from "@/lib/types";
 import { PaperCard } from "@/components/PaperCard";
 import { ManualDownloadModal } from "@/components/ManualDownloadModal";
+import { UploadPaperModal } from "@/components/UploadPaperModal";
 import { FullTextPanel } from "@/components/FullTextPanel";
 
 export default function ProjectPapersPage() {
@@ -25,6 +26,7 @@ export default function ProjectPapersPage() {
   const [fullTextData, setFullTextData] = useState<FullTextResponse | null>(null);
   const [normalizing, setNormalizing] = useState(false);
   const [normalizeProgress, setNormalizeProgress] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -193,6 +195,12 @@ export default function ProjectPapersPage() {
             {papers.length} paper{papers.length !== 1 ? "s" : ""} in this project
           </p>
         </div>
+        <button
+          onClick={() => setShowUploadModal(true)}
+          className="focus-ring font-ui inline-flex h-[40px] items-center gap-2 rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-colors hover:bg-primary-deep active:bg-primary-deep"
+        >
+          <UploadSimple size={16} weight="bold" /> Upload Paper
+        </button>
       </div>
 
       {papers.length === 0 ? (
@@ -240,6 +248,18 @@ export default function ProjectPapersPage() {
             />
           ))}
         </div>
+      )}
+
+      {showUploadModal && id && (
+        <UploadPaperModal
+          projectId={id}
+          token={token ?? ""}
+          onClose={() => setShowUploadModal(false)}
+          onConfirmed={() => {
+            setShowUploadModal(false);
+            void fetchProjectPapers(id);
+          }}
+        />
       )}
 
       {manualDownloadPaperId && (

@@ -95,6 +95,7 @@ class ProjectPaperResponse(BaseModel):
     pdf_path: str | None = None
     has_matrix: bool = False
     has_enrichment: bool = False
+    source_names: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -133,6 +134,53 @@ class NormalizeResponse(BaseModel):
     processed: int
     skipped: int
     failed: int
+
+
+# ── Upload Papers (PDF / Markdown) ──────────────────────────────────────────
+
+
+class UploadDraftItem(BaseModel):
+    """One uploaded file's outcome from the upload kickoff."""
+
+    filename: str
+    status: str  # "pending" | "rejected" | "duplicate"
+    project_paper_id: UUID | None = None
+    paper_id: UUID | None = None
+    reason: str | None = None  # populated for "rejected"/"duplicate"
+
+
+class UploadResponse(BaseModel):
+    drafts: list[UploadDraftItem]
+
+
+class UploadStatusItem(BaseModel):
+    """Draft state polled by the confirm form while ingestion runs."""
+
+    project_paper_id: UUID
+    filename: str
+    full_text_status: str | None = None  # pending|ingesting|completed|failed|ocr_required
+    title: str
+    authors: list[dict] = Field(default_factory=list)
+    year: int | None = None
+    venue: str | None = None
+    abstract: str | None = None
+
+
+class ConfirmUploadItem(BaseModel):
+    project_paper_id: UUID
+    title: str = Field(..., min_length=1)
+    authors: list[dict] = Field(default_factory=list)
+    year: int | None = None
+    venue: str | None = None
+    abstract: str | None = None
+
+
+class ConfirmUploadsRequest(BaseModel):
+    items: list[ConfirmUploadItem] = Field(..., min_length=1)
+
+
+class DiscardUploadsRequest(BaseModel):
+    project_paper_ids: list[UUID] = Field(..., min_length=1)
 
 
 class RetrieveEvidenceRequest(BaseModel):
