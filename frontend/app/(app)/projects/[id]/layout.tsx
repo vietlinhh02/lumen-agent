@@ -18,6 +18,7 @@ import {
   Lock,
   ChatCircle,
   Spinner,
+  ClipboardText,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
@@ -33,6 +34,7 @@ import { DeleteProjectModal } from "@/components/DeleteProjectModal";
 
 const TABS = [
   { key: "overview", label: "Overview", href: "", icon: House, minStep: 1 },
+  { key: "protocol", label: "Protocol", href: "/protocol", icon: ClipboardText, minStep: 1 },
   { key: "papers", label: "Papers", href: "/papers", icon: FileText, minStep: 1 },
   { key: "search", label: "Search", href: "/search", icon: MagnifyingGlass, minStep: 1 },
   { key: "matrix", label: "Matrix", href: "/matrix", icon: Table, minStep: 3 },
