@@ -215,7 +215,14 @@ async def _ingest_and_extract_metadata_bg(
     paper_id: UUID,
     file_path: str,
 ) -> None:
-    """Background task: ingest full text then fill metadata. Never raises."""
+    """Background task: ingest full text then fill metadata. Never raises.
+
+    Race-safe against :func:`discard_uploads`: re-checks the ProjectPaper
+    row at every phase boundary and treats a concurrent delete (FK violation
+    on commit, or a vanished row) as a benign cancellation.
+    """
+    from sqlalchemy.exc import IntegrityError
+
     from app.db.session import async_session_factory
     from app.services.pdf_fulltext import process_pdf
 
@@ -224,6 +231,8 @@ async def _ingest_and_extract_metadata_bg(
         async with async_session_factory() as db:
             pp = await db.get(ProjectPaper, project_paper_id)
             if pp is None:
+                # Discarded before we even started.
+                logger.info("Upload ingest skipped: pp %s gone", project_paper_id)
                 return
             pp.full_text_status = "ingesting"
             await db.commit()
@@ -235,11 +244,16 @@ async def _ingest_and_extract_metadata_bg(
             # pass runs afterwards, so if we left it terminal the confirm form would
             # snapshot empty metadata (race). Keep "ingesting" through that pass.
             pp = await db.get(ProjectPaper, project_paper_id)
-            if pp is not None:
-                pp.full_text_status = (
-                    "ingesting" if result.status == "completed" else result.status
-                )
-                await db.commit()
+            if pp is None:
+                # Discarded mid-ingest: chunks were CASCADE-deleted with pp, but
+                # process_pdf already inserted them into this session — rollback
+                # by simply exiting without committing further writes.
+                logger.info("Upload ingest aborted: pp %s deleted during ingest", project_paper_id)
+                return
+            pp.full_text_status = (
+                "ingesting" if result.status == "completed" else result.status
+            )
+            await db.commit()
 
         if result.status != "completed":
             logger.info("Upload ingest non-complete (%s): %s", result.status, path.name)
@@ -249,6 +263,24 @@ async def _ingest_and_extract_metadata_bg(
         meta = await extract_metadata_from_text(text)
 
         async with async_session_factory() as db:
+            # Re-check existence + status before overwriting Paper fields.
+            # If the user has already confirmed (status moved from "draft" to
+            # "saved") their edits are now authoritative — the background pass
+            # must NOT clobber them.
+            pp = await db.get(ProjectPaper, project_paper_id)
+            if pp is None:
+                logger.info("Upload metadata skipped: pp %s gone", project_paper_id)
+                return
+            if pp.status != "draft":
+                logger.info(
+                    "Upload metadata skipped: pp %s already %s, leaving user edits intact",
+                    project_paper_id, pp.status,
+                )
+                # Still settle the row so the UI leaves the "ingesting" state.
+                pp.full_text_status = "completed"
+                await db.commit()
+                return
+
             paper = await db.get(Paper, paper_id)
             if paper is not None and meta:
                 if meta.get("title"):
@@ -266,6 +298,14 @@ async def _ingest_and_extract_metadata_bg(
             if pp is not None:
                 pp.full_text_status = "completed"
             await db.commit()
+    except IntegrityError as exc:
+        # Foreign-key / unique violation = the ProjectPaper or Paper row was
+        # deleted concurrently (typically by discard_uploads). Treat as a
+        # benign cancellation; the orphan cleanup already ran.
+        logger.info(
+            "Upload ingest: integrity race on %s (%s); treating as cancel",
+            project_paper_id, getattr(exc, "orig", exc),
+        )
     except Exception as exc:
         logger.exception("Upload ingest failed for %s: %s", project_paper_id, exc)
         try:
@@ -488,10 +528,21 @@ async def discard_uploads(
                 await db.execute(select(Paper.id).where(Paper.content_sha256 == digest))
             ).first()
             if still_used is None:
+                # Best-effort cleanup. The bg ingestion task may still hold an
+                # open handle on this file (e.g. Windows blocks unlink on an
+                # open file); if so we leave the file in place and let the next
+                # orphan sweep pick it up. Re-uploads with the same content are
+                # deduped via content_sha256 so an on-disk orphan is harmless.
                 try:
                     for fp in pdf_dir.glob(f"upload_{digest[:12]}_*"):
-                        fp.unlink(missing_ok=True)
+                        try:
+                            fp.unlink(missing_ok=True)
+                        except OSError as exc:
+                            logger.info(
+                                "Upload file still in use, leaving for later cleanup: %s (%s)",
+                                fp, exc,
+                            )
                 except Exception:  # pragma: no cover - best-effort cleanup
-                    pass
+                    logger.exception("Failed to scan upload dir for cleanup")
 
     return True
