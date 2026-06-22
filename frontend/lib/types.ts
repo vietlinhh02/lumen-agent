@@ -56,6 +56,41 @@ export interface ProjectPaperResponse {
   pdf_path: string | null;
   has_matrix: boolean;
   has_enrichment: boolean;
+  source_names: string[];
+}
+
+// ── Upload Papers (PDF / Markdown) ───────────────────────────────────────
+
+export interface UploadDraftItem {
+  filename: string;
+  status: "pending" | "rejected" | "duplicate";
+  project_paper_id: string | null;
+  paper_id: string | null;
+  reason: string | null;
+}
+
+export interface UploadResponse {
+  drafts: UploadDraftItem[];
+}
+
+export interface UploadStatusItem {
+  project_paper_id: string;
+  filename: string;
+  full_text_status: string | null;
+  title: string;
+  authors: Array<{ name: string }>;
+  year: number | null;
+  venue: string | null;
+  abstract: string | null;
+}
+
+export interface ConfirmUploadItem {
+  project_paper_id: string;
+  title: string;
+  authors: Array<{ name: string }>;
+  year: number | null;
+  venue: string | null;
+  abstract: string | null;
 }
 
 export interface PaperAuthor {

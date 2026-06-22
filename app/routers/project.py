@@ -6,7 +6,7 @@ import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,8 @@ from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
 from app.schemas.project import (
+    ConfirmUploadsRequest,
+    DiscardUploadsRequest,
     EvidenceChunkResponse,
     FullTextResponse,
     NormalizeResponse,
@@ -28,6 +30,8 @@ from app.schemas.project import (
     SavePaperRequest,
     SavePaperResponse,
     UpdatePaperRequest,
+    UploadResponse,
+    UploadStatusItem,
 )
 from app.services.project import (
     create_project,
@@ -301,6 +305,82 @@ async def normalize_papers_endpoint(
     )
 
     return NormalizeResponse(processed=0, skipped=raw_count, failed=0)
+
+
+# ── Upload Papers (PDF / Markdown) ─────────────────────────────────────────
+
+
+@router.post("/{project_id}/papers:upload", response_model=UploadResponse)
+async def upload_papers_endpoint(
+    project_id: UUID,
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UploadResponse:
+    """Upload up to 5 PDF/Markdown files; ingestion runs in the background."""
+    from app.services.paper_upload import handle_uploads
+
+    try:
+        drafts = await handle_uploads(db, user, project_id, files)
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if drafts is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return UploadResponse(drafts=drafts)
+
+
+@router.get("/{project_id}/papers:upload-status", response_model=list[UploadStatusItem])
+async def upload_status_endpoint(
+    project_id: UUID,
+    ids: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[UploadStatusItem]:
+    """Poll ingest status + extracted metadata for draft uploads (comma-separated ids)."""
+    from app.services.paper_upload import get_upload_status
+
+    try:
+        id_list = [UUID(x.strip()) for x in ids.split(",") if x.strip()]
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST, detail="Invalid ids"
+        ) from exc
+
+    items = await get_upload_status(db, user, project_id, id_list)
+    if items is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return items
+
+
+@router.post("/{project_id}/papers:confirm-uploads")
+async def confirm_uploads_endpoint(
+    project_id: UUID,
+    body: ConfirmUploadsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Apply confirmed metadata, promote drafts to saved, trigger matrix."""
+    from app.services.paper_upload import confirm_uploads
+
+    ok = await confirm_uploads(db, user, project_id, body.items)
+    if ok is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return {"status": "ok"}
+
+
+@router.post("/{project_id}/papers:discard-uploads", status_code=http_status.HTTP_204_NO_CONTENT)
+async def discard_uploads_endpoint(
+    project_id: UUID,
+    body: DiscardUploadsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Cancel pending uploads: delete draft papers + files."""
+    from app.services.paper_upload import discard_uploads
+
+    ok = await discard_uploads(db, user, project_id, body.project_paper_ids)
+    if ok is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
 @router.post("/{project_id}/evidence:retrieve", response_model=RetrieveEvidenceResponse)

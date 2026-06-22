@@ -4,9 +4,16 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  // For FormData bodies let the browser set the multipart Content-Type (with
+  // boundary); forcing application/json would break the upload.
+  const isFormData =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const headers = isFormData
+    ? { ...init?.headers }
+    : { "Content-Type": "application/json", ...init?.headers };
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

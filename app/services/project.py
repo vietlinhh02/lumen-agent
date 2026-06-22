@@ -273,7 +273,10 @@ async def list_project_papers(
     result = await db.execute(
         select(ProjectPaper, Paper)
         .join(Paper, ProjectPaper.paper_id == Paper.id)
-        .where(ProjectPaper.project_id == project_id, ProjectPaper.status == "saved")
+        .where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.status == "saved",
+        )
         .order_by(ProjectPaper.saved_at.desc())
     )
     rows = result.all()
@@ -620,6 +623,7 @@ async def _to_project_paper_response(
         pdf_path=pdf_path,
         has_matrix=has_matrix,
         has_enrichment=has_enrichment,
+        source_names=paper.source_names if isinstance(paper.source_names, list) else [],
     )
 
 

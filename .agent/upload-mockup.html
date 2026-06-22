@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root{
+    --bg:#f7f5f0; --card:#ffffff; --line:#ece8e0; --ink:#1c1b19; --muted:#8c887f;
+    --red:#e2492f; --red-soft:#fdecea; --green-bg:#e4f3ea; --green:#2f8a55;
+    --blue:#3aa6c9;
+  }
+  body{ font-family:'Segoe UI',Inter,Arial,sans-serif; background:#e9e6df; color:var(--ink); padding:28px; }
+  .label{ font-size:15px; font-weight:700; color:#5b5750; margin:6px 4px 12px; letter-spacing:.2px; }
+  .frame{ width:1180px; background:var(--bg); border:1px solid var(--line); border-radius:14px;
+          overflow:hidden; margin-bottom:34px; box-shadow:0 6px 22px rgba(0,0,0,.06); }
+  /* top bar */
+  .top{ display:flex; align-items:center; gap:14px; padding:14px 22px; }
+  .logo{ font-size:22px; font-weight:800; }
+  .proj-pill{ display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:#fff;
+              padding:7px 12px; border-radius:9px; font-weight:600; font-size:14px; }
+  .avatar{ margin-left:auto; width:34px; height:34px; border-radius:50%; background:var(--blue); }
+  /* body */
+  .main{ display:flex; }
+  .rail{ width:58px; padding:18px 0; display:flex; flex-direction:column; align-items:center; gap:22px; color:#b9b4a9; }
+  .rail .on{ color:var(--red); }
+  .rail i{ width:20px; height:20px; border:2px solid currentColor; border-radius:5px; display:block; }
+  .content{ flex:1; padding:6px 30px 26px; }
+  .h-row{ display:flex; align-items:center; gap:12px; }
+  h1{ font-size:30px; font-weight:800; }
+  .active-tag{ color:var(--green); font-weight:700; font-size:13px; background:var(--green-bg); padding:3px 9px; border-radius:7px;}
+  .ask{ margin-left:auto; background:var(--red); color:#fff; border:none; padding:9px 15px; border-radius:9px;
+        font-weight:600; font-size:13px; display:flex; gap:7px; align-items:center; }
+  .sub{ color:var(--muted); margin-top:4px; font-size:14px; }
+  .tabs{ display:flex; gap:26px; border-bottom:1px solid var(--line); margin-top:18px; }
+  .tab{ padding:12px 2px; color:var(--muted); font-size:14px; font-weight:600; display:flex; gap:7px; align-items:center; }
+  .tab .cnt{ background:var(--red-soft); color:var(--red); font-size:11px; padding:1px 7px; border-radius:9px; }
+  .tab.on{ color:var(--ink); border-bottom:2px solid var(--red); margin-bottom:-1px; }
+  /* papers header with upload */
+  .papers-head{ display:flex; align-items:flex-end; margin-top:22px; }
+  .papers-head h2{ font-size:24px; font-weight:800; }
+  .papers-head .pcount{ color:var(--muted); font-size:14px; margin-top:5px; }
+  .upload-btn{ margin-left:auto; background:var(--red); color:#fff; border:none; padding:11px 18px;
+        border-radius:10px; font-weight:700; font-size:14px; display:flex; gap:9px; align-items:center; cursor:pointer;
+        box-shadow:0 3px 10px rgba(226,73,47,.30); }
+  .upload-btn .ic{ font-size:16px; }
+  /* paper card */
+  .pcard{ background:var(--card); border:1px solid var(--line); border-radius:13px; padding:20px 22px; margin-top:16px; }
+  .pcard .t{ font-size:18px; font-weight:700; display:flex; align-items:center; gap:11px; }
+  .badge-ft{ color:var(--green); background:var(--green-bg); font-size:12px; font-weight:700; padding:2px 9px; border-radius:7px; }
+  .badge-up{ color:#b25a00; background:#fbeed6; font-size:12px; font-weight:700; padding:2px 9px; border-radius:7px; }
+  .pcard .ab{ color:#55514a; font-size:14px; line-height:1.5; margin-top:10px; }
+  .pcard .meta{ color:var(--muted); font-size:13px; margin-top:14px; display:flex; gap:18px; align-items:center; }
+  .pcard .acts{ float:right; display:flex; gap:12px; align-items:center; }
+  .lnk{ color:var(--red); font-weight:600; font-size:13px; }
+  /* modal */
+  .modal-wrap{ background:rgba(30,28,25,.45); padding:36px 0; display:flex; justify-content:center; }
+  .modal{ width:560px; background:#fff; border-radius:16px; padding:26px 28px; box-shadow:0 18px 50px rgba(0,0,0,.25); }
+  .modal h3{ font-size:20px; font-weight:800; }
+  .modal .mh-sub{ color:var(--muted); font-size:13.5px; margin-top:5px; }
+  .drop{ margin-top:20px; border:2px dashed #d8d2c6; border-radius:13px; padding:34px; text-align:center; background:#faf8f4; }
+  .drop .big{ font-size:34px; }
+  .drop .d1{ font-weight:700; font-size:15px; margin-top:8px; }
+  .drop .d2{ color:var(--muted); font-size:13px; margin-top:5px; }
+  .fmts{ display:flex; gap:10px; justify-content:center; margin-top:14px; }
+  .chip{ font-size:12px; font-weight:700; padding:5px 11px; border-radius:8px; border:1px solid var(--line); }
+  .chip.pdf{ color:#c0392b; background:#fdecea; }
+  .chip.md{ color:#2c6e9e; background:#e9f2fa; }
+  .pipe{ margin-top:20px; background:#f4f8f5; border:1px solid #dcebe1; border-radius:11px; padding:14px 16px; font-size:13px; color:#3c6b50; }
+  .pipe b{ color:#2f8a55; }
+  .step-flow{ display:flex; align-items:center; gap:8px; margin-top:8px; font-weight:600; color:#2f8a55; flex-wrap:wrap; }
+  .step-flow span{ background:#e4f3ea; padding:4px 10px; border-radius:7px; font-size:12px; }
+  .mfoot{ display:flex; gap:12px; justify-content:flex-end; margin-top:24px; }
+  .btn-ghost{ background:#fff; border:1px solid var(--line); padding:10px 18px; border-radius:9px; font-weight:600; font-size:13px; }
+  .btn-red{ background:var(--red); color:#fff; border:none; padding:10px 18px; border-radius:9px; font-weight:700; font-size:13px; }
+  /* form */
+  .ai-note{ margin-top:6px; margin-bottom:4px; display:flex; gap:8px; align-items:center; color:#8a6d1f; background:#fbf3da;
+            border:1px solid #f0e3b8; border-radius:9px; padding:9px 13px; font-size:12.5px; font-weight:600; }
+  .field{ margin-top:15px; }
+  .field label{ display:block; font-size:12.5px; font-weight:700; color:#6b665d; margin-bottom:6px; }
+  .field input,.field textarea{ width:100%; border:1px solid #ddd7cb; border-radius:9px; padding:10px 12px; font-size:13.5px;
+            font-family:inherit; color:var(--ink); background:#fff; }
+  .field textarea{ height:78px; resize:none; line-height:1.45; }
+  .row2{ display:flex; gap:14px; }
+  .row2 .field{ flex:1; }
+  .filetag{ display:inline-flex; gap:7px; align-items:center; background:#fdecea; color:#c0392b; font-weight:700;
+            font-size:12px; padding:5px 11px; border-radius:8px; }
+  /* selected file list */
+  .filelist{ margin-top:8px; display:flex; flex-direction:column; gap:8px; }
+  .fitem{ display:flex; align-items:center; gap:11px; border:1px solid var(--line); border-radius:10px; padding:9px 12px; background:#fff; }
+  .fi-ic{ font-size:10px; font-weight:800; padding:3px 7px; border-radius:6px; }
+  .fi-ic.pdf{ color:#c0392b; background:#fdecea; }
+  .fi-ic.md{ color:#2c6e9e; background:#e9f2fa; }
+  .fi-name{ font-size:13px; font-weight:600; }
+  .fi-sz{ margin-left:auto; font-size:12px; color:var(--muted); }
+  .fi-x{ color:#c9c4ba; font-size:13px; }
+  /* multi confirm cards */
+  .mcard{ border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-top:12px; background:#fdfcfa; }
+  .mcard.collapsed{ display:flex; align-items:center; gap:11px; }
+  .mc-head{ display:flex; align-items:center; gap:10px; }
+  .mc-idx{ font-size:11px; font-weight:800; color:#fff; background:var(--red); border-radius:6px; padding:2px 8px; }
+  .mc-file{ font-size:12px; font-weight:700; color:#6b665d; }
+  .mc-ok{ margin-left:auto; font-size:12px; font-weight:700; color:var(--green); }
+  .mc-sum{ font-size:13px; font-weight:600; }
+  .mc-caret{ margin-left:auto; color:#b9b4a9; }
+</style>
+</head>
+<body>
+
+<!-- ========== STATE 1 : Upload button in Papers tab ========== -->
+<div class="label">① Tab Papers — thêm nút “Upload Paper” (góc phải, cùng hàng tiêu đề)</div>
+<div class="frame">
+  <div class="top">
+    <div class="logo">Lumen</div>
+    <div class="proj-pill">📁 graphrag ⌄</div>
+    <div class="avatar"></div>
+  </div>
+  <div class="main">
+    <div class="rail"><i></i><i class="on"></i><i></i><i></i><i></i></div>
+    <div class="content">
+      <div class="h-row">
+        <h1>graphrag</h1><span class="active-tag">Active</span>
+        <button class="ask">💬 Ask Assistant</button>
+      </div>
+      <div class="sub">graphrag</div>
+      <div class="tabs">
+        <div class="tab">⌂ Overview</div>
+        <div class="tab on">📄 Papers <span class="cnt">6</span></div>
+        <div class="tab">🔍 Search</div>
+        <div class="tab">▦ Matrix <span class="cnt">6</span></div>
+        <div class="tab">⋔ Map</div>
+        <div class="tab">💡 Gaps</div>
+        <div class="tab">✎ Reports</div>
+      </div>
+
+      <div class="papers-head">
+        <div>
+          <h2>Papers</h2>
+          <div class="pcount">6 papers in this project</div>
+        </div>
+        <button class="upload-btn"><span class="ic">⬆</span> Upload Paper</button>
+      </div>
+
+      <div class="pcard">
+        <div class="acts"><span class="lnk">View full text</span><span style="color:#c9c4ba">🗑</span></div>
+        <div class="t">Hệ thống RAG cho hồ sơ y tế nội bộ <span class="badge-up">⬆ Upload</span> <span class="badge-ft">Full Text</span></div>
+        <div class="ab">Bài báo do người dùng tải lên (PDF). Đã tự động trích xuất full text, sinh đầy đủ các trường trong tab Matrix. Được đối xử tương đương paper tải từ internet — có CRUD đầy đủ trong danh sách này.</div>
+        <div class="meta">👤 Nguyễn Tiến Đạt &nbsp;·&nbsp; 📅 2026 &nbsp;·&nbsp; <span style="color:#b25a00;font-weight:600">Nguồn: Upload</span></div>
+      </div>
+
+      <div class="pcard">
+        <div class="acts"><span class="lnk">Download PDF</span><span style="color:#c9c4ba">🗑</span></div>
+        <div class="t">Utilizing Metadata for Better Retrieval-Augmented Generation <span class="badge-ft">Full Text</span></div>
+        <div class="ab">Retrieval-Augmented Generation systems depend on retrieving semantically relevant document chunks to support accurate, grounded outputs from large language models...</div>
+        <div class="meta">👤 Raquib Bin Yousuf, Shengzhe Xu et al. &nbsp;·&nbsp; 📅 2026</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== STATE 2 : Upload dialog ========== -->
+<div class="label">② Bấm “Upload Paper” → hộp thoại chọn file (PDF / Markdown)</div>
+<div class="frame">
+  <div class="modal-wrap">
+    <div class="modal">
+      <h3>Tải bài báo lên</h3>
+      <div class="mh-sub">Thêm vào project: <b>graphrag</b> · Hỗ trợ PDF và Markdown</div>
+
+      <div class="drop">
+        <div class="big">⬆️</div>
+        <div class="d1">Kéo thả file vào đây, hoặc bấm để chọn</div>
+        <div class="d2"><b>Tối đa 5 file mỗi lần</b> · &lt; 30&nbsp;MB / file</div>
+        <div class="fmts">
+          <span class="chip pdf">.PDF</span>
+          <span class="chip md">.MD / Markdown</span>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:12.5px;font-weight:700;color:#6b665d;">Đã chọn 3 / 5 file</div>
+        <div style="font-size:12px;color:var(--muted);">Còn nhận thêm 2 file</div>
+      </div>
+      <div class="filelist">
+        <div class="fitem"><span class="fi-ic pdf">PDF</span><span class="fi-name">medical-rag.pdf</span><span class="fi-sz">1.8&nbsp;MB</span><span class="fi-x">✕</span></div>
+        <div class="fitem"><span class="fi-ic pdf">PDF</span><span class="fi-name">graphrag-survey-2026.pdf</span><span class="fi-sz">3.2&nbsp;MB</span><span class="fi-x">✕</span></div>
+        <div class="fitem"><span class="fi-ic md">MD</span><span class="fi-name">notes-retrieval-drift.md</span><span class="fi-sz">42&nbsp;KB</span><span class="fi-x">✕</span></div>
+      </div>
+
+      <div class="pipe">
+        Sau khi tải lên, mỗi file tự động xử lý:
+        <div class="step-flow">
+          <span>Ingest full text</span> → <span>AI trích metadata</span> → <span>Xác nhận thông tin</span> → <span>Sinh Matrix</span>
+        </div>
+      </div>
+
+      <div class="mfoot">
+        <button class="btn-ghost">Hủy</button>
+        <button class="btn-red">Tải lên &amp; xử lý (3)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== STATE 3 : Metadata confirmation form ========== -->
+<div class="label">③ Ingest xong → xác nhận metadata cho từng file (1 danh sách, AI điền sẵn) → “Lưu tất cả”</div>
+<div class="frame">
+  <div class="modal-wrap">
+    <div class="modal" style="width:600px;">
+      <h3>Xác nhận thông tin · 3 bài báo</h3>
+      <div class="mh-sub">Đã trích xuất full text cho tất cả file. Kiểm tra/sửa rồi lưu một lần.</div>
+      <div class="ai-note">✨ Các trường do AI tự điền từ nội dung mỗi file — hãy kiểm tra trước khi lưu.</div>
+
+      <!-- File 1 : expanded -->
+      <div class="mcard">
+        <div class="mc-head">
+          <span class="mc-idx">1 / 3</span>
+          <span class="mc-file">📄 medical-rag.pdf</span>
+          <span class="mc-ok">✓ đã trích xuất</span>
+        </div>
+        <div class="field">
+          <label>Tiêu đề *</label>
+          <input value="Hệ thống RAG cho hồ sơ y tế nội bộ">
+        </div>
+        <div class="row2">
+          <div class="field"><label>Tác giả</label><input value="Nguyễn Tiến Đạt, Trần Văn A"></div>
+          <div class="field" style="max-width:120px"><label>Năm</label><input value="2026"></div>
+        </div>
+        <div class="field">
+          <label>Tóm tắt (Abstract)</label>
+          <textarea>Kiến trúc RAG cho hồ sơ y tế nội bộ, tập trung truy hồi theo metadata và giảm ảo giác khi sinh nội dung lâm sàng...</textarea>
+        </div>
+      </div>
+
+      <!-- File 2 : collapsed summary -->
+      <div class="mcard collapsed">
+        <span class="mc-idx">2 / 3</span>
+        <div>
+          <div class="mc-sum">A Survey of GraphRAG Methods (2026)</div>
+          <div class="mc-file">📄 graphrag-survey-2026.pdf · ✓ đã trích xuất</div>
+        </div>
+        <span class="mc-caret">⌄</span>
+      </div>
+
+      <!-- File 3 : collapsed summary -->
+      <div class="mcard collapsed">
+        <span class="mc-idx">3 / 3</span>
+        <div>
+          <div class="mc-sum">Notes on Retrieval Drift</div>
+          <div class="mc-file">📝 notes-retrieval-drift.md · ✓ đã trích xuất</div>
+        </div>
+        <span class="mc-caret">⌄</span>
+      </div>
+
+      <div class="mfoot">
+        <button class="btn-ghost">Hủy</button>
+        <button class="btn-red">Lưu tất cả (3) &amp; sinh Matrix</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

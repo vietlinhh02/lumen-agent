@@ -57,6 +57,14 @@ export function PaperCard({
           <h3 className="font-ui text-[14px] font-semibold leading-[1.4] text-ink">
             <MathText text={paper.title} />
           </h3>
+          {paper.source_names?.includes("upload") && (
+            <span
+              className="font-ui shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700"
+              title="Bài báo do người dùng tải lên"
+            >
+              Upload
+            </span>
+          )}
           {paper.full_text_status && viewableStatuses.has(paper.full_text_status) && (
             <button
               onClick={onViewFullText}
