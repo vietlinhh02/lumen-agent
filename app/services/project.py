@@ -17,6 +17,7 @@ from app.schemas.project import (
     ProjectPaperResponse,
     ProjectResponse,
     ProjectUpdate,
+    ReviewProtocol,
     SavePaperRequest,
     SavePaperResponse,
     UpdatePaperRequest,
@@ -28,6 +29,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+VALID_PROJECT_PAPER_STATUSES = {"saved", "rejected", "uncertain"}
+VALID_EXCLUSION_REASONS = {
+    "wrong_population",
+    "wrong_intervention_or_topic",
+    "wrong_outcome",
+    "wrong_study_type",
+    "not_peer_reviewed",
+    "outside_date_range",
+    "duplicate",
+    "no_full_text",
+    "insufficient_relevance",
+    "other",
+}
+
 
 # ── Project CRUD ───────────────────────────────────────────────────────────
 
@@ -38,6 +53,7 @@ async def create_project(db: AsyncSession, user: User, data: ProjectCreate) -> P
         title=data.title,
         topic=data.topic,
         research_question=data.research_question,
+        review_protocol=data.review_protocol.model_dump(),
     )
     db.add(project)
     await db.commit()
@@ -56,7 +72,10 @@ async def list_projects(db: AsyncSession, user: User) -> list[ProjectResponse]:
     if project_ids:
         counts_result = await db.execute(
             select(ProjectPaper.project_id, func.count(ProjectPaper.id))
-            .where(ProjectPaper.project_id.in_(project_ids))
+            .where(
+                ProjectPaper.project_id.in_(project_ids),
+                ProjectPaper.status == "saved",
+            )
             .group_by(ProjectPaper.project_id)
         )
         counts = dict(counts_result.all())
@@ -75,7 +94,10 @@ async def get_project(db: AsyncSession, user: User, project_id: UUID) -> Project
         return None
 
     paper_count_result = await db.execute(
-        select(func.count(ProjectPaper.id)).where(ProjectPaper.project_id == project_id)
+        select(func.count(ProjectPaper.id)).where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.status == "saved",
+        )
     )
     paper_count = paper_count_result.scalar() or 0
     return _to_project_response(project, paper_count=paper_count)
@@ -95,12 +117,17 @@ async def update_project(
         value = getattr(data, field, None)
         if value is not None:
             setattr(project, field, value)
+    if data.review_protocol is not None:
+        project.review_protocol = data.review_protocol.model_dump()
 
     await db.commit()
     await db.refresh(project)
 
     paper_count_result = await db.execute(
-        select(func.count(ProjectPaper.id)).where(ProjectPaper.project_id == project_id)
+        select(func.count(ProjectPaper.id)).where(
+            ProjectPaper.project_id == project_id,
+            ProjectPaper.status == "saved",
+        )
     )
     paper_count = paper_count_result.scalar() or 0
     return _to_project_response(project, paper_count=paper_count)
@@ -139,6 +166,8 @@ async def save_paper_to_project(
     paper = await _upsert_paper(db, data)
 
     # Link to project (no duplicates)
+    target_status = data.status or "saved"
+    _validate_project_paper_update(target_status, data.exclusion_reason)
     existing = await db.execute(
         select(ProjectPaper).where(
             ProjectPaper.project_id == project_id,
@@ -152,13 +181,17 @@ async def save_paper_to_project(
             pp.relevance_label = data.relevance_label
         if data.user_note is not None:
             pp.user_note = data.user_note
+        pp.status = target_status
+        pp.exclusion_reason = data.exclusion_reason if target_status == "rejected" else None
         await db.commit()
         await db.refresh(pp)
     else:
         pp = ProjectPaper(
             project_id=project_id,
             paper_id=paper.id,
+            status=target_status,
             relevance_label=data.relevance_label,
+            exclusion_reason=data.exclusion_reason if target_status == "rejected" else None,
             user_note=data.user_note,
         )
         db.add(pp)
@@ -184,8 +217,9 @@ async def save_paper_to_project(
     # The paper record is already committed; the background task handles
     # download + text extraction asynchronously.
     pdf_path: str | None = None
-    full_text_status: str | None = "pending"
+    full_text_status: str | None = None
     if data.download_pdf:
+        full_text_status = "pending"
         from app.sources.base import RawPaper
 
         raw = RawPaper(
@@ -239,7 +273,7 @@ async def list_project_papers(
     result = await db.execute(
         select(ProjectPaper, Paper)
         .join(Paper, ProjectPaper.paper_id == Paper.id)
-        .where(ProjectPaper.project_id == project_id)
+        .where(ProjectPaper.project_id == project_id, ProjectPaper.status == "saved")
         .order_by(ProjectPaper.saved_at.desc())
     )
     rows = result.all()
@@ -314,7 +348,13 @@ async def update_project_paper(
     if data.user_note is not None:
         pp.user_note = data.user_note
     if data.status is not None:
+        _validate_project_paper_update(data.status, data.exclusion_reason)
         pp.status = data.status
+        if data.status != "rejected":
+            pp.exclusion_reason = None
+    if data.exclusion_reason is not None:
+        _validate_project_paper_update(data.status or pp.status, data.exclusion_reason)
+        pp.exclusion_reason = data.exclusion_reason
 
     await db.commit()
     await db.refresh(pp)
@@ -514,6 +554,7 @@ def _to_project_response(p: Project, paper_count: int) -> ProjectResponse:
         title=p.title,
         topic=p.topic,
         research_question=p.research_question,
+        review_protocol=ReviewProtocol.model_validate(p.review_protocol or {}),
         status=p.status,
         created_at=p.created_at,
         updated_at=p.updated_at,
@@ -564,6 +605,7 @@ async def _to_project_paper_response(
         paper_id=paper.id,
         status=pp.status,
         relevance_label=pp.relevance_label,
+        exclusion_reason=pp.exclusion_reason,
         user_note=pp.user_note,
         full_text_status=pp.full_text_status,
         saved_at=pp.saved_at,
@@ -579,3 +621,12 @@ async def _to_project_paper_response(
         has_matrix=has_matrix,
         has_enrichment=has_enrichment,
     )
+
+
+def _validate_project_paper_update(status: str, exclusion_reason: str | None) -> None:
+    if status not in VALID_PROJECT_PAPER_STATUSES:
+        raise ValueError(f"Invalid project paper status: {status}")
+    if exclusion_reason is not None and exclusion_reason not in VALID_EXCLUSION_REASONS:
+        raise ValueError(f"Invalid exclusion reason: {exclusion_reason}")
+    if status == "rejected" and not exclusion_reason:
+        raise ValueError("Rejected papers require an exclusion reason")

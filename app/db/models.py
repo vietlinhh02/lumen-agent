@@ -71,6 +71,9 @@ class Project(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     topic: Mapped[str] = mapped_column(Text, nullable=False)
     research_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_protocol: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", server_default="active"
     )
@@ -277,6 +280,7 @@ class ProjectPaper(Base):
         String(16), nullable=False, default="saved", server_default="saved"
     )
     relevance_label: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    exclusion_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_text_status: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
     saved_at: Mapped[datetime] = mapped_column(server_default=func.now())

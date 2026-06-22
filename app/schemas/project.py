@@ -10,16 +10,31 @@ from pydantic import BaseModel, Field
 # ── Project CRUD ──────────────────────────────────────────────────────────
 
 
+class ReviewProtocol(BaseModel):
+    research_questions: list[str] = Field(default_factory=list)
+    inclusion_criteria: list[str] = Field(default_factory=list)
+    exclusion_criteria: list[str] = Field(default_factory=list)
+    population: str | None = None
+    intervention_or_topic: str | None = None
+    comparison: str | None = None
+    outcome: str | None = None
+    date_range: str | None = None
+    source_list: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
 class ProjectCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=512)
     topic: str = Field(..., min_length=1)
     research_question: str | None = None
+    review_protocol: ReviewProtocol = Field(default_factory=ReviewProtocol)
 
 
 class ProjectUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=512)
     topic: str | None = None
     research_question: str | None = None
+    review_protocol: ReviewProtocol | None = None
     status: str | None = None  # "active" | "archived"
 
 
@@ -29,6 +44,7 @@ class ProjectResponse(BaseModel):
     title: str
     topic: str
     research_question: str | None = None
+    review_protocol: ReviewProtocol = Field(default_factory=ReviewProtocol)
     status: str
     created_at: datetime
     updated_at: datetime
@@ -57,6 +73,8 @@ class SavePaperRequest(BaseModel):
     paper_authors: list[dict[str, str]] = Field(default_factory=list)
     paper_source_names: list[str] = Field(default_factory=list)
     relevance_label: str | None = None  # "core" | "related" | "background"
+    status: str | None = None  # "saved" | "rejected" | "uncertain"
+    exclusion_reason: str | None = None
     user_note: str | None = None
     download_pdf: bool = False
     source_specific: dict = Field(default_factory=dict)
@@ -81,6 +99,7 @@ class ProjectPaperResponse(BaseModel):
     paper_id: UUID
     status: str
     relevance_label: str | None = None
+    exclusion_reason: str | None = None
     user_note: str | None = None
     full_text_status: str | None = None
     saved_at: datetime
@@ -102,6 +121,7 @@ class ProjectPaperResponse(BaseModel):
 class UpdatePaperRequest(BaseModel):
     relevance_label: str | None = None
     user_note: str | None = None
+    exclusion_reason: str | None = None
     status: str | None = None  # "saved" | "rejected" | "uncertain"
     full_text_status: str | None = None
 

@@ -145,6 +145,18 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text(
+                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS "
+                "review_protocol JSONB NOT NULL DEFAULT '{}'"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE project_papers ADD COLUMN IF NOT EXISTS "
+                "exclusion_reason VARCHAR(64)"
+            )
+        )
+        await conn.execute(
+            text(
                 "UPDATE users SET display_name = split_part(email, '@', 1) "
                 "WHERE display_name IS NULL"
             )
