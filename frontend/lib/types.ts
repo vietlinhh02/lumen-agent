@@ -2,6 +2,20 @@ export interface ProjectCreate {
   title: string;
   topic: string;
   research_question?: string | null;
+  review_protocol?: ReviewProtocol;
+}
+
+export interface ReviewProtocol {
+  research_questions: string[];
+  inclusion_criteria: string[];
+  exclusion_criteria: string[];
+  population: string | null;
+  intervention_or_topic: string | null;
+  comparison: string | null;
+  outcome: string | null;
+  date_range: string | null;
+  source_list: string[];
+  notes: string | null;
 }
 
 export interface ProjectResponse {
@@ -10,6 +24,7 @@ export interface ProjectResponse {
   title: string;
   topic: string;
   research_question: string | null;
+  review_protocol: ReviewProtocol;
   status: string;
   created_at: string;
   updated_at: string;
@@ -26,6 +41,7 @@ export interface ProjectPaperResponse {
   paper_id: string;
   status: string;
   relevance_label: string | null;
+  exclusion_reason: string | null;
   user_note: string | null;
   full_text_status: string | null;
   saved_at: string;
@@ -99,6 +115,8 @@ export interface SavePaperRequest {
   paper_source_names?: string[];
   source_specific?: Record<string, unknown>;
   relevance_label?: string | null;
+  status?: string | null;
+  exclusion_reason?: string | null;
   user_note?: string | null;
   download_pdf?: boolean;
 }
@@ -110,6 +128,13 @@ export interface SavePaperResponse {
   status: string;
   pdf_path: string | null;
   full_text_status: string | null;
+}
+
+export interface SuggestQueriesRequest {
+  title?: string;
+  topic: string;
+  research_question?: string;
+  review_protocol?: ReviewProtocol;
 }
 
 export interface SuggestQueriesResponse {

@@ -3,10 +3,12 @@
 import { create } from "zustand";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "./auth-store";
+import { useProjectsStore } from "./projects-store";
 import type {
   PaperResult,
   SavePaperRequest,
   SavePaperResponse,
+  SuggestQueriesRequest,
   SuggestQueriesResponse,
   SessionListResponse,
   SessionDetailResponse,
@@ -29,6 +31,7 @@ interface SearchState {
   suggestedQueries: string[];
   suggestingLabels: boolean;
   savedIds: Set<string>;
+  rejectedIds: Set<string>;
 
   // Actions
   setQuery: (q: string) => void;
@@ -39,7 +42,7 @@ interface SearchState {
 
   loadSession: (sid: string, p: number) => Promise<void>;
   loadPage: (p: number) => Promise<void>;
-  search: (q?: string, limit?: number) => Promise<void>;
+  search: (q?: string) => Promise<void>;
   startSearch: (q?: string) => Promise<{ job_id: string; session_id: string; status: string } | null>;
   loadSessions: () => Promise<void>;
   suggestQueries: (params: {
@@ -53,9 +56,15 @@ interface SearchState {
     paper: PaperResult,
     projectId: string,
   ) => Promise<SavePaperResponse | null>;
+  rejectPaper: (
+    paper: PaperResult,
+    projectId: string,
+    exclusionReason: string,
+  ) => Promise<SavePaperResponse | null>;
   unsavePaper: (paper: PaperResult) => Promise<boolean>;
 
   isSaved: (paper: PaperResult) => boolean;
+  isRejected: (paper: PaperResult) => boolean;
   reset: () => void;
 }
 
@@ -78,6 +87,7 @@ const initialState = {
   suggestedQueries: [] as string[],
   suggestingLabels: false,
   savedIds: new Set<string>(),
+  rejectedIds: new Set<string>(),
 };
 
 export const useSearchStore = create<SearchState>()((set, get) => ({
@@ -114,6 +124,7 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
       set({
         sessionData: data,
         savedIds: new Set(data.saved_paper_ids || []),
+        rejectedIds: new Set(),
       });
     } finally {
       set({ loading: false });
@@ -146,10 +157,11 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
     set({
       loading: true,
       sessionId: null,
-      sessionData: null,
-      page: 1,
-      savedIds: new Set(),
-    });
+        sessionData: null,
+        page: 1,
+        savedIds: new Set(),
+        rejectedIds: new Set(),
+      });
 
     try {
       const data = await apiFetch<{ job_id: string; session_id: string; status: string }>(
@@ -172,7 +184,7 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
     }
   },
 
-  async search(q, limit = 100) {
+  async search(q) {
     // Convenience wrapper that calls startSearch and persists to URL
     const data = await get().startSearch(q);
     if (data && typeof window !== "undefined") {
@@ -201,15 +213,24 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
   async suggestQueries({ title, topic, research_question }) {
     const token = useAuthStore.getState().token;
     if (!token) return;
+    // Lấy review_protocol của project đang chọn để LLM anchor gợi ý query
+    const projectId = useProjectsStore.getState().selectedProjectId;
+    const currentProject = useProjectsStore
+      .getState()
+      .projects.find((p) => p.id === projectId);
+    const reviewProtocol = currentProject?.review_protocol;
+
     set({ suggestingLabels: true });
     try {
+      const body: SuggestQueriesRequest = {
+        title,
+        topic,
+        research_question,
+        review_protocol: reviewProtocol,
+      };
       const data = await apiFetch<SuggestQueriesResponse>("/papers/suggest-queries", {
         method: "POST",
-        body: JSON.stringify({
-          title,
-          topic,
-          research_question,
-        }),
+        body: JSON.stringify(body),
         headers: { Authorization: `Bearer ${token}` },
       });
       set({ suggestedQueries: data.queries });
@@ -298,7 +319,58 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
       set((s) => {
         const next = new Set(s.savedIds);
         next.add(key);
-        return { savedIds: next };
+        const rejected = new Set(s.rejectedIds);
+        rejected.delete(key);
+        return { savedIds: next, rejectedIds: rejected };
+      });
+      return result;
+    } catch {
+      return null;
+    } finally {
+      set({ savingId: null });
+    }
+  },
+
+  async rejectPaper(paper, projectId, exclusionReason) {
+    const token = useAuthStore.getState().token;
+    if (!token) return null;
+    const key = paperKey(paper);
+    set({ savingId: key });
+    try {
+      const body: SavePaperRequest = {
+        paper_title: paper.title,
+        paper_abstract: paper.abstract,
+        paper_year: paper.year,
+        paper_venue: paper.venue,
+        paper_doi: paper.doi,
+        paper_arxiv_id: paper.arxiv_id,
+        paper_semantic_scholar_id: paper.semantic_scholar_id,
+        paper_url: paper.url,
+        paper_citation_count: paper.citation_count,
+        paper_authors: paper.authors.map((a) => ({
+          name: a.name,
+          author_id: a.author_id ?? "",
+        })),
+        paper_source_names:
+          paper.source_names.length > 0 ? paper.source_names : ["paperhub"],
+        source_specific: paper.source_specific,
+        status: "rejected",
+        exclusion_reason: exclusionReason,
+      };
+      const result = await apiFetch<SavePaperResponse>(
+        `/projects/${projectId}/papers`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      set((s) => {
+        const rejected = new Set(s.rejectedIds);
+        rejected.add(key);
+        const saved = new Set(s.savedIds);
+        saved.delete(key);
+        return { rejectedIds: rejected, savedIds: saved };
       });
       return result;
     } catch {
@@ -342,7 +414,12 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
     return get().savedIds.has(key);
   },
 
+  isRejected(paper) {
+    const key = paperKey(paper);
+    return get().rejectedIds.has(key);
+  },
+
   reset() {
-    set({ ...initialState, savedIds: new Set() });
+    set({ ...initialState, savedIds: new Set(), rejectedIds: new Set() });
   },
 }));

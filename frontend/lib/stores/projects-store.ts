@@ -7,6 +7,7 @@ import type {
   ProjectListResponse,
   ProjectResponse,
   ProjectCreate,
+  ReviewProtocol,
 } from "@/lib/types";
 
 export type ProjectFilter = "all" | "active" | "archived";
@@ -75,7 +76,13 @@ interface ProjectsState {
   createProject: (data: ProjectCreate) => Promise<ProjectResponse | null>;
   updateProject: (
     id: string,
-    body: Record<string, string>,
+    body: Partial<{
+      title: string;
+      topic: string;
+      research_question: string | null;
+      status: string;
+      review_protocol: ReviewProtocol;
+    }>,
   ) => Promise<ProjectResponse | null>;
   deleteProject: (id: string) => Promise<boolean>;
   fetchProject: (id: string) => Promise<void>;
