@@ -7,6 +7,54 @@ Each prompt is a plain string. System prompts and user message templates are
 kept separate so callers can compose them with actual data.
 """
 
+from __future__ import annotations
+
+from typing import Any
+
+
+def format_protocol_for_prompt(protocol: Any) -> str:
+    """Render a review_protocol dict as readable text for inclusion in LLM prompts.
+
+    The protocol follows the ``ReviewProtocol`` schema and may include:
+    research_questions, inclusion_criteria, exclusion_criteria, population,
+    intervention_or_topic, comparison, outcome, date_range, source_list, notes.
+
+    Empty/missing sections are skipped so the prompt is concise. Returns
+    ``"Not provided"`` if *protocol* is empty so callers always get a
+    deterministic placeholder.
+    """
+    if not protocol:
+        return "Not provided"
+    if not isinstance(protocol, dict):
+        return "Not provided"
+
+    lines: list[str] = []
+
+    def _add(label: str, value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {label}: {value.strip()}")
+        elif isinstance(value, list) and value:
+            cleaned = [str(v).strip() for v in value if str(v).strip()]
+            if cleaned:
+                lines.append(f"- {label}: " + "; ".join(cleaned))
+
+    _add("Research questions", protocol.get("research_questions"))
+    _add("Population", protocol.get("population"))
+    _add("Intervention/Topic", protocol.get("intervention_or_topic"))
+    _add("Comparison", protocol.get("comparison"))
+    _add("Outcome", protocol.get("outcome"))
+    _add("Date range", protocol.get("date_range"))
+    _add("Inclusion criteria", protocol.get("inclusion_criteria"))
+    _add("Exclusion criteria", protocol.get("exclusion_criteria"))
+    _add("Source list", protocol.get("source_list"))
+    _add("Notes", protocol.get("notes"))
+
+    if not lines:
+        return "Not provided"
+    return "\n".join(lines)
+
 
 # ── Query Planner ─────────────────────────────────────────────────────────────
 
@@ -51,6 +99,11 @@ Research project title: {title}
 Research topic: {topic}
 Research question: {research_question}
 
+Review protocol (use these inclusion/exclusion criteria and population/comparison
+to anchor the queries — when the protocol says "exclude X", avoid queries that
+primarily target X):
+{protocol_context}
+
 Suggest 4–6 targeted academic search queries for this project.
 """
 
@@ -75,6 +128,8 @@ in a literature review on this topic.
 PAPER_SCREEN_USER = """\
 Research topic: {topic}
 Research question: {research_question}
+Review protocol:
+{review_protocol}
 
 Papers to screen:
 {paper_list}
@@ -176,6 +231,10 @@ Rules:
 MATRIX_EXTRACTION_USER = """\
 Project topic: {project_topic}
 
+Review protocol (use to judge whether each paper's method/dataset/outcome fits
+the project's inclusion criteria, population, and outcome focus):
+{protocol_context}
+
 Paper title: {title}
 Authors: {authors}
 Year: {year}
@@ -202,6 +261,10 @@ Rules:
 
 MATRIX_EXTRACTION_CHUNK_USER = """\
 Project topic: {project_topic}
+
+Review protocol (use to judge whether each paper's method/dataset/outcome fits
+the project's inclusion criteria, population, and outcome focus):
+{protocol_context}
 
 Paper title: {title}
 Authors: {authors}
@@ -236,6 +299,11 @@ Rules:
 GAP_ANALYSIS_USER = """\
 Project topic: {project_topic}
 
+Review protocol (use inclusion/exclusion criteria, population, comparison,
+outcome, and date_range to anchor what counts as a gap — gaps are absences
+relative to the protocol's specified scope):
+{protocol_context}
+
 Saved paper IDs available for evidence (use only these):
 {paper_ids_json}
 
@@ -263,6 +331,11 @@ Rules:
 
 GAP_ANALYSIS_CHUNK_USER = """\
 Project topic: {project_topic}
+
+Review protocol (use inclusion/exclusion criteria, population, comparison,
+outcome, and date_range to anchor what counts as a gap — gaps are absences
+relative to the protocol's specified scope):
+{protocol_context}
 
 Saved paper IDs available for evidence (use only these):
 {paper_ids_json}
@@ -295,6 +368,10 @@ Rules:
 CONTRADICTION_DETECTION_USER = """\
 Project topic: {project_topic}
 
+Review protocol (use population, comparison, and outcome criteria to judge
+whether two papers truly disagree on the protocol-relevant question):
+{protocol_context}
+
 Saved paper IDs (use only these):
 {paper_ids_json}
 
@@ -324,6 +401,10 @@ Rules:
 
 CONTRADICTION_DETECTION_CHUNK_USER = """\
 Project topic: {project_topic}
+
+Review protocol (use population, comparison, and outcome criteria to judge
+whether two papers truly disagree on the protocol-relevant question):
+{protocol_context}
 
 Saved paper IDs (use only these):
 {paper_ids_json}
@@ -358,6 +439,10 @@ Rules:
 REVIEW_WRITER_USER = """\
 Project topic: {project_topic}
 Research question: {research_question}
+
+Review protocol (frame the review against the population, comparison, outcome,
+date range, and inclusion/exclusion scope; do not drift outside the protocol):
+{protocol_context}
 
 Available evidence (cite only project_paper_ids from this list):
 {evidence_json}
@@ -402,6 +487,10 @@ Formatting rules for richer output:
 REVIEW_WRITER_CHUNK_USER = """\
 Project topic: {project_topic}
 Research question: {research_question}
+
+Review protocol (frame the review against the population, comparison, outcome,
+date range, and inclusion/exclusion scope; do not drift outside the protocol):
+{protocol_context}
 
 Available paper IDs for citation (use ONLY these):
 {paper_ids_json}

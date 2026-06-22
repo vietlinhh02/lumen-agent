@@ -123,6 +123,19 @@ class SuggestQueriesRequest(BaseModel):
     title: str = Field(default="", description="Project title")
     topic: str = Field(..., description="Research topic", min_length=2, max_length=500)
     research_question: str = Field(default="", description="Specific research question")
+    # Optional — when the caller knows the project, the server loads the
+    # stored review_protocol and uses it to bias query formulation.
+    project_id: str | None = Field(
+        default=None,
+        description="Optional project UUID; if provided, the server will look "
+        "up the project's review_protocol from the database.",
+    )
+    # Optional — caller-supplied protocol when project_id is not provided.
+    review_protocol: dict | None = Field(
+        default=None,
+        description="Optional pre-loaded review protocol (see ReviewProtocol). "
+        "Ignored when project_id resolves to a real project.",
+    )
 
 
 class SuggestQueriesResponse(BaseModel):
@@ -146,6 +159,11 @@ class ScreenPapersRequest(BaseModel):
 
     topic: str = Field(..., min_length=1, max_length=512)
     research_question: str | None = None
+    review_protocol: dict | None = Field(
+        default=None,
+        description="Optional review protocol so scoring can use "
+        "inclusion/exclusion criteria and population/comparison/outcome.",
+    )
     papers: list[ScreenPaperItem] = Field(..., min_length=1, max_length=100)
 
 
