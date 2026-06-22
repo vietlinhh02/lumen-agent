@@ -18,6 +18,7 @@ from app.ai.prompts import (
     PAPER_SCREEN_USER,
     SEARCH_SUGGEST_SYSTEM,
     SEARCH_SUGGEST_USER,
+    format_protocol_for_prompt,
 )
 from app.ai.provider import get_provider
 from app.schemas.paper import (
@@ -60,12 +61,19 @@ async def suggest_queries(request: SuggestQueriesRequest) -> SuggestQueriesRespo
 
     Uses the configured LLM to produce 4–6 specific, varied search queries
     that cover different angles (methods, applications, comparisons, trends).
+
+    When ``review_protocol`` is supplied (or a ``project_id`` is provided),
+    the inclusion/exclusion criteria and population/comparison/outcome anchors
+    bias query formulation — we avoid queries that primarily target excluded
+    populations and prioritize anchor terms from inclusion criteria.
     """
     provider = get_provider()
+    protocol_text = format_protocol_for_prompt(request.review_protocol)
     user_msg = SEARCH_SUGGEST_USER.format(
         title=request.title,
         topic=request.topic,
         research_question=request.research_question or request.topic,
+        protocol_context=protocol_text,
     )
 
     try:
@@ -101,7 +109,8 @@ async def screen_papers(request: ScreenPapersRequest) -> ScreenPapersResponse:
     """Screen paper search results for relevance to a research topic.
 
     Uses the configured LLM to score each paper as "high", "medium",
-    or "low" relevance based on title and abstract match with the topic.
+    or "low" relevance based on title and abstract match with the topic
+    (and the optional review protocol).
 
     Uses raw completion instead of structured output to avoid
     tool_choice incompatibility with DeepSeek thinking mode.
@@ -112,9 +121,11 @@ async def screen_papers(request: ScreenPapersRequest) -> ScreenPapersResponse:
         f"[{i}] {p.title}\nAbstract: {p.abstract or 'N/A'}" for i, p in enumerate(request.papers)
     )
 
+    protocol_text = format_protocol_for_prompt(request.review_protocol)
     user_msg = PAPER_SCREEN_USER.format(
         topic=request.topic,
         research_question=request.research_question or "Not specified",
+        review_protocol=protocol_text,
         paper_list=paper_list,
     )
 

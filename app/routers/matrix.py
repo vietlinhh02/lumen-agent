@@ -227,10 +227,19 @@ async def _run_matrix_job(
             from app.agents.nodes import matrix_extraction_node
             from app.agents.state import ResearchState
 
+            # Hydrate protocol from the project so matrix rows can be grounded
+            # in inclusion/exclusion + population + outcome criteria.
+            proj_reload = await bg_db.execute(
+                select(Project).where(Project.id == project_id)
+            )
+            proj_row = proj_reload.scalar_one_or_none()
+            protocol = (proj_row.review_protocol if proj_row else None) or None
+
             state = ResearchState(
                 project_id=project_id,
                 user_id=user_id,
                 user_topic=topic,
+                review_protocol=protocol,
             )
 
             async def _update_progress(processed: int, total: int, current_paper: str) -> None:

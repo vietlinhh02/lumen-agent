@@ -102,6 +102,7 @@ async def create_report(
             request.title,
             request.include_gap_section,
             gap_ids,
+            review_protocol=project.review_protocol,
         )
     )
 
@@ -117,6 +118,7 @@ async def _run_report_job(
     title: str | None,
     include_gap_section: bool,
     selected_gap_ids: list[uuid.UUID] | None,
+    review_protocol: dict | None = None,
 ) -> None:
     """Background worker: run report generation."""
     from datetime import UTC, datetime
@@ -140,6 +142,17 @@ async def _run_report_job(
             job.status = "running"
             await bg_db.commit()
 
+            # If the caller didn't pass the protocol (e.g. legacy caller),
+            # fall back to the project's stored protocol.
+            if review_protocol is None:
+                from app.db.models import Project
+
+                proj_reload = await bg_db.execute(
+                    sa_select(Project).where(Project.id == project_id)
+                )
+                proj_row = proj_reload.scalar_one_or_none()
+                review_protocol = proj_row.review_protocol if proj_row else None
+
             result = await generate_report(
                 db=bg_db,
                 project_id=project_id,
@@ -149,6 +162,7 @@ async def _run_report_job(
                 title=title,
                 include_gap_section=include_gap_section,
                 selected_gap_ids=selected_gap_ids,
+                review_protocol=review_protocol,
             )
 
             if result.get("status") == "failed":

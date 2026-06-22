@@ -24,6 +24,7 @@ from app.schemas.project import (
     ProjectUpdate,
     RetrieveEvidenceRequest,
     RetrieveEvidenceResponse,
+    ReviewProtocol,
     SavePaperRequest,
     SavePaperResponse,
     UpdatePaperRequest,
@@ -178,6 +179,60 @@ async def generate_project_metadata(
         ) from exc
 
 
+@router.post("/{project_id}/protocol:suggest", response_model=ReviewProtocol)
+async def suggest_review_protocol(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ReviewProtocol:
+    """Generate an editable protocol draft from the current project metadata."""
+    from app.ai.provider import get_provider
+
+    project = await get_project(db, user, project_id)
+    if project is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    system = (
+        "You are a systematic literature review protocol assistant. "
+        "Draft a practical, editable review protocol from the project metadata. "
+        "Return only structured data that matches the requested schema.\n\n"
+        "Rules:\n"
+        "- Keep criteria concrete enough for title/abstract screening.\n"
+        "- Use controlled, researcher-friendly wording.\n"
+        "- Include 3-6 inclusion criteria and 3-6 exclusion criteria.\n"
+        "- Prefer academic sources that this app can search.\n"
+        "- Use English.\n"
+        "- Fill population, intervention_or_topic, comparison, outcome, and "
+        "date_range when the project metadata supports a reasonable broad draft.\n"
+        "- If there is no direct comparator, set comparison to a useful baseline "
+        "such as 'alternative methods', 'standard practice', or 'not applicable'.\n"
+        "- Only use null when even a broad, editable draft would be misleading."
+    )
+    user_msg = (
+        f"Project title: {project.title}\n"
+        f"Topic: {project.topic}\n"
+        f"Research question: {project.research_question or 'Not specified'}\n"
+        f"Existing protocol draft: {project.review_protocol.model_dump()}"
+    )
+
+    provider = get_provider()
+    try:
+        result = await provider.complete_structured(
+            messages=[{"role": "user", "content": user_msg}],
+            schema=ReviewProtocol.model_json_schema(),
+            tool_name="draft_review_protocol",
+            system=system,
+            max_tokens=900,
+        )
+        return ReviewProtocol.model_validate(result)
+    except Exception as exc:
+        logger.warning("AI protocol generation failed for project %s: %s", project_id, exc)
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate review protocol. Please fill in manually.",
+        ) from exc
+
+
 # ── Paper Management ───────────────────────────────────────────────────
 
 
@@ -192,7 +247,10 @@ async def save_paper_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> SavePaperResponse:
-    result = await save_paper_to_project(db, user, project_id, body)
+    try:
+        result = await save_paper_to_project(db, user, project_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
     return result
@@ -317,7 +375,10 @@ async def update_paper_endpoint(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProjectPaperResponse:
-    result = await update_project_paper(db, user, project_id, project_paper_id, body)
+    try:
+        result = await update_project_paper(db, user, project_id, project_paper_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND, detail="Paper not found in project"

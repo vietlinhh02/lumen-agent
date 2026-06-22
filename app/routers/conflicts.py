@@ -112,11 +112,20 @@ async def _run_conflict_job(
             job.status = "running"
             await bg_db.commit()
 
+            # Hydrate protocol from project so conflict detection can
+            # decide whether two papers truly disagree on protocol terms.
+            proj_reload = await bg_db.execute(
+                select(Project).where(Project.id == project_id)
+            )
+            proj_row = proj_reload.scalar_one_or_none()
+            protocol = (proj_row.review_protocol if proj_row else None) or None
+
             state = ResearchState(
                 project_id=project_id,
                 user_id=user_id,
                 user_topic=topic,
                 research_question=research_question,
+                review_protocol=protocol,
             )
 
             result = await conflict_detection_node(state, bg_db)

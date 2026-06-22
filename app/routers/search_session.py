@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.prompts import PAPER_SCREEN_SYSTEM, PAPER_SCREEN_USER
 from app.ai.provider import get_provider
 from app.core.security import get_current_user
-from app.db.models import Paper, ProjectPaper, User
+from app.db.models import Paper, Project, ProjectPaper, User
 from app.db.session import get_db
 from app.routers.paper import _parse_screening_scores
 from app.schemas.paper import (
@@ -182,15 +183,23 @@ async def screen_session(
         return ScreenPapersResponse(scores=[])
 
     provider = get_provider()
+    project_result = await db.execute(
+        select(Project).where(Project.id == run.project_id, Project.owner_id == user.id)
+    )
+    project = project_result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
 
     paper_list = "\n\n".join(
         f"[{i}] {p.get('title', 'Untitled')}\nAbstract: {p.get('abstract') or 'N/A'}"
         for i, p in enumerate(results)
     )
 
+    protocol = project.review_protocol or {}
     user_msg = PAPER_SCREEN_USER.format(
-        topic=run.user_query,
-        research_question="Not specified",
+        topic=project.topic or run.user_query,
+        research_question=project.research_question or "Not specified",
+        review_protocol=json.dumps(protocol, ensure_ascii=False, indent=2),
         paper_list=paper_list,
     )
 
