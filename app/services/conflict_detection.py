@@ -56,6 +56,7 @@ async def _detect_one_group(
     group: list,
     valid_pp_ids: set[UUID],
     provider,
+    protocol_text: str | None = None,
 ) -> list[dict]:
     """Detect conflicts for a single candidate group (parallel worker).
 
@@ -82,6 +83,7 @@ async def _detect_one_group(
     try:
         user_msg = CONTRADICTION_DETECTION_CHUNK_USER.format(
             project_topic=topic,
+            protocol_context=protocol_text or "Not provided",
             paper_ids_json=paper_ids_json,
             matrix_rows_json=rows_json,
             chunk_context=chunk_context,
@@ -171,6 +173,7 @@ async def detect_and_persist_conflicts(
     db: AsyncSession,
     project_id: UUID,
     topic: str,
+    protocol_text: str | None = None,
 ) -> list[dict]:
     """Load matrix rows, group by shared method/dataset, retrieve per-paper
     full-text evidence, detect conflicts via LLM, validate paper IDs,
@@ -234,6 +237,7 @@ async def detect_and_persist_conflicts(
                 group=grp,
                 valid_pp_ids=valid_pp_ids,
                 provider=provider,
+                protocol_text=protocol_text,
             )
 
     # Fan out all groups in parallel (bounded by semaphore)

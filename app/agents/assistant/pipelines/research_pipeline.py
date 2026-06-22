@@ -27,6 +27,7 @@ from app.agents.assistant.events import (
     ProgressEvent,
 )
 from app.agents.assistant.tools.context import get_user
+from app.ai.prompts import format_protocol_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,33 @@ class ResearchPipeline:
     ) -> None:
         self.config = config
         self.cancel_event = cancel_event or asyncio.Event()
+        # Cached review protocol loaded lazily from the project so screening,
+        # reporting, gap, and matrix stages can ground themselves in the
+        # protocol's inclusion/exclusion + population + outcome scope.
+        self._review_protocol: dict | None = None
+
+    async def _get_review_protocol(self) -> dict | None:
+        """Load the project's stored review_protocol once and cache it."""
+        if self._review_protocol is not None:
+            return self._review_protocol
+        try:
+            from uuid import UUID as PyUUID
+
+            from sqlalchemy import select
+
+            from app.db.models import Project
+            from app.db.session import async_session_factory
+
+            pid = PyUUID(self.config.project_id)
+            async with async_session_factory() as db:
+                proj = (
+                    await db.execute(select(Project).where(Project.id == pid))
+                ).scalar_one_or_none()
+                self._review_protocol = (proj.review_protocol if proj else None) or None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load review_protocol for pipeline: %s", exc)
+            self._review_protocol = None
+        return self._review_protocol
 
     async def run(self) -> AsyncGenerator[BaseEvent]:
         """Run the full pipeline, yielding events.
@@ -321,10 +349,13 @@ class ResearchPipeline:
         # Get project topic from context for better screening
         project_topic = self.config.query
         research_question = ""
+        protocol = await self._get_review_protocol()
+        protocol_text = format_protocol_for_prompt(protocol)
 
         user_content = PAPER_SCREEN_USER.format(
             topic=project_topic,
             research_question=research_question,
+            review_protocol=protocol_text,
             paper_list=self._format_paper_list(papers),
         )
 

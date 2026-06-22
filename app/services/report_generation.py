@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.prompts import (
     REVIEW_WRITER_CHUNK_SYSTEM,
     REVIEW_WRITER_CHUNK_USER,
+    format_protocol_for_prompt,
 )
 from app.ai.provider import get_provider
 from app.ai.structured_outputs import ReviewOutput
@@ -70,6 +71,7 @@ def _build_review_retrieval_query(
     matrix_rows: Sequence[object],
     gaps: Sequence[object],
     conflicts: Sequence[object],
+    review_protocol: Mapping[str, object] | None = None,
 ) -> str:
     """Build a high-signal retrieval query from matrix, gap, and conflict data."""
     terms: list[str] = []
@@ -78,6 +80,28 @@ def _build_review_retrieval_query(
     _append_unique_term(terms, research_question)
     for keyword in _REVIEW_BASE_KEYWORDS:
         _append_unique_term(terms, keyword)
+
+    # Fold protocol anchors (population / outcome / topic / criteria) into the
+    # retrieval query so chunk fetcher biases toward protocol-relevant evidence.
+    if review_protocol:
+        for field in (
+            "population",
+            "intervention_or_topic",
+            "comparison",
+            "outcome",
+            "notes",
+        ):
+            _append_unique_term(terms, _get_field(review_protocol, field))
+        for list_field in (
+            "research_questions",
+            "inclusion_criteria",
+            "exclusion_criteria",
+            "source_list",
+        ):
+            value = _get_field(review_protocol, list_field)
+            if isinstance(value, list):
+                for item in value:
+                    _append_unique_term(terms, item)
 
     for row in matrix_rows:
         for field in (
@@ -147,6 +171,7 @@ async def _retrieve_multi_angle(
     matrix_rows: Sequence[object],
     gaps: Sequence[object],
     conflicts: Sequence[object],
+    review_protocol: Mapping[str, object] | None = None,
 ) -> list[RetrievedChunk]:
     """Run multiple thematic queries and merge + dedupe results.
 
@@ -159,7 +184,7 @@ async def _retrieve_multi_angle(
     query_topic = topic if not research_question else f"{topic} {research_question}"
     queries = [
         _build_review_retrieval_query(
-            topic, research_question, matrix_rows, gaps, conflicts
+            topic, research_question, matrix_rows, gaps, conflicts, review_protocol
         ),
         *[template.format(topic=query_topic) for template in _REPORT_ANGLE_QUERIES],
     ]
@@ -211,15 +236,21 @@ async def _plan_sections(
     safe_conflicts: list[dict],
     paper_catalog_str: str,
     provider,
+    protocol_text: str | None = None,
 ) -> list[dict]:
     """Plan literature review sections using LLM.
 
     Returns a list of section plans, each with heading, theme, focus_paper_ids, key_angles.
     """
+    protocol_block = protocol_text or "Not provided"
     plan_prompt = f"""Given the following literature:
 
 Topic: {topic}
 Research Question: {research_question or 'Not specified'}
+Review protocol (anchor the section plan to the protocol's population, comparison,
+outcome, and inclusion/exclusion scope):
+{protocol_block}
+
 Available Papers (ID to Title):
 {paper_catalog_str}
 
@@ -288,6 +319,7 @@ async def _generate_section(
     paper_catalog_str: str,
     topic: str,
     provider,
+    protocol_text: str | None = None,
 ) -> dict | None:
     """Generate a single section of the literature review.
 
@@ -326,11 +358,15 @@ async def _generate_section(
     chunk_context = "\n\n".join(chunk_parts) if chunk_parts else "No full-text available."
     json.dumps(list(included_pids))
 
+    protocol_block = protocol_text or "Not provided"
     section_prompt = f"""Write the following literature review section:
 
 Topic: {topic}
 Section: {section_plan.get('heading', 'Untitled')}
 Theme: {section_plan.get('theme', '')}
+Review protocol (frame this section within the protocol's population, comparison,
+outcome, and inclusion scope):
+{protocol_block}
 
 Available Papers (ID to Title):
 {paper_catalog_str}
@@ -425,12 +461,16 @@ async def generate_report(
     title: str | None,
     include_gap_section: bool,
     selected_gap_ids: list[UUID] | None,
+    review_protocol: Mapping[str, object] | None = None,
 ) -> dict:
     """Generate a citation-safe literature review.
 
     Returns dict with: id, title, validation_status, content_markdown,
     references, citation_audit.
     """
+    # Render protocol once for every downstream prompt + retrieval query.
+    protocol_text = format_protocol_for_prompt(review_protocol)
+
     # 1. Load matrix rows
     stmt = select(LiteratureMatrixRow).where(LiteratureMatrixRow.project_id == project_id)
     matrix_rows = list((await db.execute(stmt)).scalars().all())
@@ -445,10 +485,10 @@ async def generate_report(
     pp_results = list((await db.execute(pp_stmt)).all())
     if not pp_results:
         return {"error": "No saved papers in project.", "status": "failed"}
-        
+
     project_papers = [row[0] for row in pp_results]
     valid_pp_ids = {pp.id for pp in project_papers}
-    
+
     paper_catalog_dict = {str(row[0].id): row[1] for row in pp_results}
     paper_catalog_str = json.dumps(paper_catalog_dict, indent=2)
 
@@ -522,6 +562,7 @@ async def generate_report(
         matrix_rows,
         gaps,
         conflicts,
+        review_protocol=review_protocol,
     )
     chunks_by_paper = _group_chunks_by_paper(all_chunks)
     logger.info(
@@ -532,7 +573,14 @@ async def generate_report(
 
     # 8b. Section planning
     sections_plan = await _plan_sections(
-        topic, research_question, safe_rows, safe_gaps, safe_conflicts, paper_catalog_str, provider
+        topic,
+        research_question,
+        safe_rows,
+        safe_gaps,
+        safe_conflicts,
+        paper_catalog_str,
+        provider,
+        protocol_text=protocol_text,
     )
     logger.info("Section planning: %d sections planned", len(sections_plan))
     chunk_context: str | None = None
@@ -544,7 +592,12 @@ async def generate_report(
         async def _generate_with_semaphore(plan: dict) -> dict | None:
             async with sem:
                 return await _generate_section(
-                    plan, chunks_by_paper, paper_catalog_str, topic, provider
+                    plan,
+                    chunks_by_paper,
+                    paper_catalog_str,
+                    topic,
+                    provider,
+                    protocol_text=protocol_text,
                 )
 
         section_tasks = [_generate_with_semaphore(plan) for plan in sections_plan]
@@ -597,6 +650,7 @@ async def generate_report(
             safe_conflicts,
             chunk_context,
             valid_pp_ids,
+            protocol_text=protocol_text,
         )
 
     # 9. Validate citations
@@ -623,6 +677,7 @@ async def generate_report(
                 retry_warning=(
                     f"Previous attempt had {audit['invalid_citations']} invalid citations."
                 ),
+                protocol_text=protocol_text,
             )
             if audit2["invalid_citations"] < audit["invalid_citations"]:
                 cleaned_sections, audit = await _validate_citations(db, project_id, sections2)
@@ -675,11 +730,13 @@ async def _generate_and_validate(
     chunk_context: str,
     valid_pp_ids: set[UUID],
     retry_warning: str | None = None,
+    protocol_text: str | None = None,
 ) -> tuple[list[dict], dict, str]:
     """Run LLM, validate citations, return (sections, audit, markdown)."""
     user_msg = REVIEW_WRITER_CHUNK_USER.format(
         project_topic=topic,
         research_question=research_question or topic,
+        protocol_context=protocol_text or "Not provided",
         paper_ids_json=paper_catalog_str,
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         gaps_json=json.dumps(safe_gaps, indent=2),

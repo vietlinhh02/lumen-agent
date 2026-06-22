@@ -20,6 +20,12 @@ class ResearchState:
     project_id: UUID | None
     user_id: UUID
 
+    # ── Review Protocol ──
+    # Optional pre-loaded review protocol dict (see ReviewProtocol schema).
+    # Job runners hydrate this from ``Project.review_protocol`` so downstream
+    # nodes can pass protocol context into LLM prompts without re-querying.
+    review_protocol: dict | None = None
+
     # ── Query Planning ──
     user_topic: str = ""
     research_question: str | None = None

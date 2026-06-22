@@ -26,6 +26,7 @@ from app.ai.prompts import (
     QUERY_PLANNER_USER,
     REVIEW_WRITER_CHUNK_SYSTEM,
     REVIEW_WRITER_CHUNK_USER,
+    format_protocol_for_prompt,
 )
 from app.ai.provider import get_matrix_verifier_provider, get_provider
 from app.ai.structured_outputs import (
@@ -506,11 +507,15 @@ async def _verify_matrix_extraction(
     paper,
     chunk_context: str,
     primary_result: dict[str, Any],
+    protocol_text: str | None = None,
 ) -> dict[str, Any]:
     """Ask the verifier model to confirm or correct one matrix extraction."""
+    protocol_block = protocol_text or "Not provided"
     verify_prompt = f"""Verify this literature-matrix extraction against the paper evidence.
 
 Project topic: {user_topic or "Not specified"}
+Review protocol:
+{protocol_block}
 Paper title: {paper.title}
 Paper abstract: {paper.abstract or "No abstract available"}
 Paper venue: {paper.venue or "not specified"}
@@ -558,6 +563,10 @@ async def matrix_extraction_node(
             "matrix_status": "failed",
             "errors": ["No project_id in state"],
         }
+
+    # Render protocol once for all per-paper calls so the extraction prompt
+    # can use inclusion/exclusion + population + outcome to ground each row.
+    protocol_text = format_protocol_for_prompt(state.review_protocol)
 
     # 1. Load saved project_papers with existing matrix rows for cache checks.
     stmt = (
@@ -645,6 +654,7 @@ async def matrix_extraction_node(
             try:
                 user_msg = MATRIX_EXTRACTION_CHUNK_USER.format(
                     project_topic=state.user_topic,
+                    protocol_context=protocol_text,
                     title=paper.title,
                     authors=", ".join(
                         a.get("name", str(a)) if isinstance(a, dict) else str(a)
@@ -671,6 +681,7 @@ async def matrix_extraction_node(
                             paper=paper,
                             chunk_context=chunk_context,
                             primary_result=primary_result,
+                            protocol_text=protocol_text,
                         )
                         verified_normalized = _normalize_matrix_extraction(verified_result)
                         if verified_normalized != normalized:
@@ -811,6 +822,7 @@ async def _gap_map_chunk(
     project_topic: str,
     relevant_chunks: list[RetrievedChunk],
     provider,
+    protocol_text: str | None = None,
 ) -> list[dict]:
     """Map phase: extract candidate gaps from a chunk of matrix rows.
 
@@ -845,6 +857,7 @@ async def _gap_map_chunk(
 
     user_msg = GAP_ANALYSIS_CHUNK_USER.format(
         project_topic=project_topic,
+        protocol_context=protocol_text or "Not provided",
         paper_ids_json=json.dumps([str(r.project_paper_id) for r in rows_chunk]),
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         chunk_context=chunk_context,
@@ -932,6 +945,10 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             "errors": ["No project_id in state"],
         }
 
+    # Render protocol once for all Map-Reduce calls so the gap detection
+    # prompt can anchor absence claims to the project's stated scope.
+    protocol_text = format_protocol_for_prompt(state.review_protocol)
+
     # 1. Load matrix rows from DB
     stmt = select(LiteratureMatrixRow).where(LiteratureMatrixRow.project_id == state.project_id)
     matrix_rows = (await db.execute(stmt)).scalars().all()
@@ -986,7 +1003,11 @@ async def gap_analysis_node(state: ResearchState, db) -> dict:
             for r in rows_chunk:
                 relevant_chunks.extend(chunks_by_paper.get(r.project_paper_id, []))
             return await _gap_map_chunk(
-                rows_chunk, state.user_topic or "", relevant_chunks, provider
+                rows_chunk,
+                state.user_topic or "",
+                relevant_chunks,
+                provider,
+                protocol_text=protocol_text,
             )
 
     map_tasks = [_map_with_semaphore(chunk) for chunk in row_chunks]
@@ -1098,8 +1119,15 @@ async def conflict_detection_node(state: ResearchState, db) -> dict:
             "errors": ["No project_id in state"],
         }
 
+    protocol_text = format_protocol_for_prompt(state.review_protocol)
+
     try:
-        conflicts = await detect_and_persist_conflicts(db, state.project_id, state.user_topic or "")
+        conflicts = await detect_and_persist_conflicts(
+            db,
+            state.project_id,
+            state.user_topic or "",
+            protocol_text=protocol_text,
+        )
     except Exception as exc:
         logger.exception("Conflict detection failed")
         return {
@@ -1138,6 +1166,8 @@ async def review_writer_node(state: ResearchState, db) -> dict:
             "errors": ["No project_id in state"],
         }
 
+    protocol_text = format_protocol_for_prompt(state.review_protocol)
+
     # 1. Load matrix rows from DB
     from sqlalchemy import select
 
@@ -1169,13 +1199,15 @@ async def review_writer_node(state: ResearchState, db) -> dict:
     gaps = state.gaps or []
     conflicts = state.conflicts or []
 
-    # 4. RAG retrieval
+    # 4. RAG retrieval — fold protocol terms into the retrieval query so the
+    # chunk fetcher biases toward protocol-relevant evidence.
     query = _build_review_retrieval_query(
         state.user_topic or "",
         state.research_question,
         matrix_rows,
         gaps,
         conflicts,
+        review_protocol=state.review_protocol,
     )
     all_chunks = await retrieve_project_evidence(
         db, state.project_id, query, limit=_MAX_REVIEW_CHUNKS
@@ -1223,6 +1255,7 @@ async def review_writer_node(state: ResearchState, db) -> dict:
     user_msg = REVIEW_WRITER_CHUNK_USER.format(
         project_topic=state.user_topic,
         research_question=state.research_question or state.user_topic,
+        protocol_context=protocol_text,
         paper_ids_json=paper_ids_json,
         matrix_rows_json=json.dumps(safe_rows, indent=2),
         gaps_json=json.dumps(safe_gaps, indent=2),
