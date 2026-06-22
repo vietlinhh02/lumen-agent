@@ -1,9 +1,33 @@
 "use client";
 
 import { useState } from "react";
-import { User, Calendar, Buildings, Quotes, BookmarkSimple, CheckCircle, DownloadSimple, Spinner, Eye } from "@phosphor-icons/react";
+import {
+  User,
+  Calendar,
+  Buildings,
+  Quotes,
+  BookmarkSimple,
+  CheckCircle,
+  DownloadSimple,
+  Spinner,
+  Eye,
+  XCircle,
+} from "@phosphor-icons/react";
 import type { PaperResult } from "@/lib/types";
 import { MathText } from "./MathText";
+
+const EXCLUSION_REASONS = [
+  { value: "wrong_population", label: "Wrong population" },
+  { value: "wrong_intervention_or_topic", label: "Wrong topic" },
+  { value: "wrong_outcome", label: "Wrong outcome" },
+  { value: "wrong_study_type", label: "Wrong study type" },
+  { value: "not_peer_reviewed", label: "Not peer reviewed" },
+  { value: "outside_date_range", label: "Outside date range" },
+  { value: "duplicate", label: "Duplicate" },
+  { value: "no_full_text", label: "No full text" },
+  { value: "insufficient_relevance", label: "Insufficient relevance" },
+  { value: "other", label: "Other" },
+];
 
 function formatAuthors(authors: Array<{ name: string; author_id?: string | null }>) {
   if (!authors || authors.length === 0) return null;
@@ -14,6 +38,11 @@ function formatAuthors(authors: Array<{ name: string; author_id?: string | null 
 
 function scoreBadgeClass(score: string) {
   return { high: "bg-green-50 text-green-700", medium: "bg-amber-50 text-amber-700", low: "bg-ash/10 text-ash" }[score] || "";
+}
+
+function hasSourceValue(sourceSpecific: Record<string, unknown>, key: string) {
+  const value = sourceSpecific[key];
+  return typeof value === "string" ? value.length > 0 : Boolean(value);
 }
 
 export function SourceBadges({ paper }: { paper: PaperResult }) {
@@ -43,17 +72,20 @@ export function PaperCard({
   paper,
   projectId,
   onSave,
+  onReject,
   onUnsave,
   onDownload,
   onPreview,
   saving,
   savingPdf,
   saved,
+  rejected,
   score,
 }: {
   paper: PaperResult;
   projectId: string | null;
   onSave: (paper: PaperResult) => void;
+  onReject?: (paper: PaperResult, exclusionReason: string) => void;
   onUnsave: (paper: PaperResult) => void;
   /** Trigger a lazy PDF download for this paper. */
   onDownload?: (paper: PaperResult) => void;
@@ -62,16 +94,20 @@ export function PaperCard({
   saving: boolean;
   savingPdf?: boolean;
   saved: boolean;
+  rejected?: boolean;
   score?: string;
 }) {
   const authorsStr = formatAuthors(paper.authors);
   const isDownloaded = paper.pdf_downloaded;
   // `can_download` is a static metadata hint from the backend; fall back to
   // checking the same conditions on the client for older sessions.
-  const canDownload = paper.can_download ?? Boolean(paper.arxiv_id || (paper.source_specific as any)?.pdf_url);
+  const canDownload = paper.can_download ?? Boolean(
+    paper.arxiv_id || hasSourceValue(paper.source_specific, "pdf_url"),
+  );
   const pdfHref = paper.pdf_path || null;
 
   const [showLowRelevanceModal, setShowLowRelevanceModal] = useState(false);
+  const [exclusionReason, setExclusionReason] = useState("insufficient_relevance");
 
   const handleSaveClick = () => {
     if (score === "low") {
@@ -88,6 +124,12 @@ export function PaperCard({
 
   const handleCancelSave = () => {
     setShowLowRelevanceModal(false);
+  };
+
+  const handleReject = () => {
+    if (!onReject) return;
+    setShowLowRelevanceModal(false);
+    onReject(paper, exclusionReason);
   };
 
   return (
@@ -170,17 +212,31 @@ export function PaperCard({
               </a>
             )
           )}
-          {saved ? (
+          {rejected ? (
+            <span className="font-ui inline-flex h-[34px] items-center gap-1.5 rounded-full bg-red-50 px-4 text-[13px] font-semibold text-red-600">
+              <XCircle size={14} weight="fill" />
+              Rejected
+            </span>
+          ) : saved ? (
             <button onClick={() => onUnsave(paper)} disabled={saving}
               className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
               <BookmarkSimple size={14} weight="fill" />Saved
             </button>
           ) : (
-            <button onClick={handleSaveClick} disabled={!projectId || saving}
-              className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-              <BookmarkSimple size={14} weight="bold" />
-              Save
-            </button>
+            <>
+              {score === "low" && onReject && (
+                <button onClick={handleReject} disabled={!projectId || saving}
+                  className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-surface-bone px-4 text-[13px] font-semibold text-charcoal transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <XCircle size={14} weight="bold" />
+                  Reject
+                </button>
+              )}
+              <button onClick={handleSaveClick} disabled={!projectId || saving}
+                className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-primary px-4 text-[13px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                <BookmarkSimple size={14} weight="bold" />
+                Save
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -192,6 +248,25 @@ export function PaperCard({
             <p className="text-sm text-charcoal mb-6 leading-relaxed">
               AI has evaluated this paper as having <strong className="text-ink">low relevance</strong> to your project topic. Saving irrelevant papers may degrade the quality of your Literature Review. Are you sure you want to save it?
             </p>
+            {onReject && (
+              <label className="mb-5 block">
+                <span className="mb-1.5 block font-ui text-[12px] font-semibold text-ink">
+                  Exclusion reason
+                </span>
+                <select
+                  value={exclusionReason}
+                  onChange={(event) => setExclusionReason(event.target.value)}
+                  className="focus-ring h-[40px] w-full rounded-full bg-surface-card px-4 font-ui text-[13px] text-ink"
+                  style={{ border: "1px solid var(--hairline)" }}
+                >
+                  {EXCLUSION_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex justify-end gap-3">
               <button
                 onClick={handleCancelSave}
@@ -199,6 +274,14 @@ export function PaperCard({
               >
                 Cancel
               </button>
+              {onReject && (
+                <button
+                  onClick={handleReject}
+                  className="focus-ring h-[36px] rounded-full bg-surface-bone px-5 font-ui text-[13px] font-semibold text-charcoal hover:bg-red-50 hover:text-red-600 transition-colors"
+                >
+                  Reject
+                </button>
+              )}
               <button
                 onClick={handleConfirmSave}
                 className="focus-ring h-[36px] rounded-full bg-red-50 text-red-600 px-5 font-ui text-[13px] font-semibold hover:bg-red-100 transition-colors"

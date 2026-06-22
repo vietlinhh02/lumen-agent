@@ -12,10 +12,10 @@ import { useJobPolling } from "@/lib/hooks/useJobPolling";
 import { PaperCard, SkeletonCard, Pagination, LanguageAudit, PDFPreviewModal } from "@/components/search";
 import type {
   PaperResult,
-  SessionDetailResponse,
 } from "@/lib/types";
 
 const PAGE_SIZE = 20;
+type SearchPaperRecord = Record<string, unknown>;
 
 function paperKey(paper: PaperResult) {
   return paper.semantic_scholar_id || paper.doi || paper.arxiv_id || paper.title;
@@ -59,15 +59,19 @@ export default function ProjectSearchPage() {
   const screen = useSearchStore((s) => s.screen);
   const autoSave = useSearchStore((s) => s.autoSave);
   const savePaper = useSearchStore((s) => s.savePaper);
+  const rejectPaper = useSearchStore((s) => s.rejectPaper);
   const unsavePaper = useSearchStore((s) => s.unsavePaper);
   const isSaved = useSearchStore((s) => s.isSaved);
+  const isRejected = useSearchStore((s) => s.isRejected);
   const loadSession = useSearchStore((s) => s.loadSession);
   const loadPage = useSearchStore((s) => s.loadPage);
 
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [previewPaper, setPreviewPaper] = useState<PaperResult | null>(null);
 
-  const papers = (sessionData?.papers || []).map((d: any) => ({
+  const papers = (sessionData?.papers || []).map((d: SearchPaperRecord) => {
+    const sourceSpecific = (d.source_specific || {}) as Record<string, unknown>;
+    return {
     title: d.title as string,
     abstract: (d.abstract as string) || null,
     year: d.year as number,
@@ -81,12 +85,15 @@ export default function ProjectSearchPage() {
     fields_of_study: (d.fields_of_study || []) as string[],
     is_open_access: d.is_open_access as boolean,
     source_names: (d.source_names || []) as string[],
-    source_specific: (d.source_specific || {}) as Record<string, unknown>,
+    source_specific: sourceSpecific,
     pdf_downloaded: (d.pdf_downloaded || false) as boolean,
     pdf_path: d.pdf_path as string,
     pdf_source: d.pdf_source as string,
-    can_download: (d.can_download ?? Boolean(d.arxiv_id || d.source_specific?.pdf_url || d.source_specific?.pmc_id)) as boolean,
-  })) as PaperResult[];
+    can_download: (d.can_download ?? Boolean(
+      d.arxiv_id || sourceSpecific.pdf_url || sourceSpecific.pmc_id,
+    )) as boolean,
+  };
+  }) as PaperResult[];
 
   const totalPages = sessionData?.total_pages || 1;
   const scores = sessionData?.screening_scores || [];
@@ -196,6 +203,13 @@ export default function ProjectSearchPage() {
     else toast.error("Failed to save paper");
   }
 
+  async function handleReject(paper: PaperResult, exclusionReason: string) {
+    if (!projectId) return;
+    const result = await rejectPaper(paper, projectId, exclusionReason);
+    if (result) toast.success("Paper rejected with reason");
+    else toast.error("Failed to reject paper");
+  }
+
   async function handleUnsave(paper: PaperResult) {
     const ok = await unsavePaper(paper);
     if (ok) toast.success("Paper removed from project");
@@ -207,7 +221,12 @@ export default function ProjectSearchPage() {
     const key = paperKey(paper);
     setDownloadingKey(key);
     try {
-      const data = await apiFetch<{ ok: boolean; paper?: any; error?: string; already_downloaded?: boolean }>(
+      const data = await apiFetch<{
+        ok: boolean;
+        paper?: SearchPaperRecord;
+        error?: string;
+        already_downloaded?: boolean;
+      }>(
         `/papers/search/sessions/${sessionId}/download-pdf`,
         {
           method: "POST",
@@ -221,18 +240,20 @@ export default function ProjectSearchPage() {
         },
       );
       if (data?.ok && data.paper) {
+        const downloadedPaper = data.paper;
         // Patch the matching paper in-place so the card flips to "View"
         // immediately. We read the current session via the store to avoid
         // depending on a functional updater.
         const current = useSearchStore.getState().sessionData;
         if (current) {
-          const updated = (current.papers || []).map((p: any) => {
+          const updated = (current.papers || []).map((p: SearchPaperRecord) => {
             const same =
-              (data.paper.semantic_scholar_id && p.semantic_scholar_id === data.paper.semantic_scholar_id) ||
-              (data.paper.doi && p.doi === data.paper.doi) ||
-              (data.paper.arxiv_id && p.arxiv_id === data.paper.arxiv_id) ||
-              (data.paper.title && p.title === data.paper.title);
-            return same ? { ...p, ...data.paper } : p;
+              (downloadedPaper.semantic_scholar_id &&
+                p.semantic_scholar_id === downloadedPaper.semantic_scholar_id) ||
+              (downloadedPaper.doi && p.doi === downloadedPaper.doi) ||
+              (downloadedPaper.arxiv_id && p.arxiv_id === downloadedPaper.arxiv_id) ||
+              (downloadedPaper.title && p.title === downloadedPaper.title);
+            return same ? { ...p, ...downloadedPaper } : p;
           });
           setSessionData({ ...current, papers: updated });
         }
@@ -375,12 +396,14 @@ export default function ProjectSearchPage() {
                   paper={paper}
                   projectId={projectId}
                   onSave={handleSave}
+                  onReject={handleReject}
                   onUnsave={handleUnsave}
                   onDownload={handleDownloadPDF}
                   onPreview={handlePreview}
                   saving={savingId === paperKey(paper)}
                   savingPdf={downloadingKey === paperKey(paper)}
                   saved={isSaved(paper)}
+                  rejected={isRejected(paper)}
                   score={scores[(page - 1) * PAGE_SIZE + i]}
                 />
               ))}
