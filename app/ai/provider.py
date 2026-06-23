@@ -321,8 +321,13 @@ class AnthropicAdapter(AIProvider):
 class OpenAICompatibleAdapter(AIProvider):
     """Generic adapter for any provider exposing an OpenAI-compatible chat API.
 
-    Used for DeepSeek (via opencode.ai), standard OpenAI, and local models
-    like vLLM / Ollama.
+    Used for DeepSeek (via opencode.ai), standard OpenAI, MiniMax
+    (api.minimax.io/v1), and local models like vLLM / Ollama.
+
+    Supports an ``extra_body`` dict that is merged into every chat
+    completions request — useful for provider-specific switches such as
+    MiniMax's ``thinking`` and ``reasoning_split`` parameters, which the
+    OpenAI SDK does not expose as first-class args.
     """
 
     def __init__(
@@ -331,19 +336,29 @@ class OpenAICompatibleAdapter(AIProvider):
         *,
         api_key: str,
         base_url: str | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         self._model = model
+        # extra_body is merged into every chat.completions.create request.
+        # Provider-specific switches like MiniMax's `thinking` /
+        # `reasoning_split` live here because the OpenAI SDK has no
+        # typed field for them.
+        self._extra_body: dict[str, Any] = dict(extra_body or {})
         client_kwargs: dict[str, Any] = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
         self._client = AsyncOpenAI(**client_kwargs)
 
-    async def complete(
+    def _base_kwargs(
         self,
         messages: list[dict[str, str]],
-        system: str | None = None,
-        max_tokens: int = 2048,
-    ) -> str:
+        system: str | None,
+        max_tokens: int,
+        *,
+        stream: bool = False,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Build common request kwargs, merging extra_body if set."""
         msgs = _build_openai_messages(messages, system)
         kwargs: dict[str, Any] = {
             "model": self._model,
@@ -351,6 +366,22 @@ class OpenAICompatibleAdapter(AIProvider):
             "max_tokens": max_tokens,
             "temperature": 0.0,
         }
+        if stream:
+            kwargs["stream"] = True
+        if tools:
+            kwargs["tools"] = tools
+        if self._extra_body:
+            # OpenAI SDK forwards extra_body into the JSON request body.
+            kwargs["extra_body"] = dict(self._extra_body)
+        return kwargs
+
+    async def complete(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> str:
+        kwargs = self._base_kwargs(messages, system, max_tokens)
         response = await self._client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
 
@@ -374,17 +405,14 @@ class OpenAICompatibleAdapter(AIProvider):
         the caller should be ready to handle tool-call chunks; for the
         ReAct text-based flow we ignore tool_calls and only forward the
         text deltas.
+
+        Always discards ``reasoning_content`` (DeepSeek, MiniMax with
+        ``reasoning_split=True``) so internal thinking never leaks into
+        the user-visible token stream.
         """
-        msgs = _build_openai_messages(messages, system)
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": msgs,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "stream": True,
-        }
-        if tools:
-            kwargs["tools"] = tools
+        kwargs = self._base_kwargs(
+            messages, system, max_tokens, stream=True, tools=tools
+        )
 
         try:
             stream = await self._client.chat.completions.create(**kwargs)
@@ -474,7 +502,8 @@ class OpenAICompatibleAdapter(AIProvider):
         }
         if use_response_format:
             kwargs["response_format"] = {"type": "json_object"}
-            
+        if self._extra_body:
+            kwargs["extra_body"] = dict(self._extra_body)
 
         response = await self._client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
@@ -482,13 +511,13 @@ class OpenAICompatibleAdapter(AIProvider):
         content = content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("\n```", 1)[0]
-            
+
         # Additional cleanup to find JSON block in case reasoning model rambled
         start_idx = content.find("{")
         end_idx = content.rfind("}")
         if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
             content = content[start_idx:end_idx+1]
-            
+
         return json.loads(content)
 
     async def _structured_via_tool_choice(
@@ -518,6 +547,8 @@ class OpenAICompatibleAdapter(AIProvider):
             "tools": [tool_def],
             "tool_choice": "auto" if self._model.startswith("mimo") else {"type": "function", "function": {"name": tool_name}},
         }
+        if self._extra_body:
+            kwargs["extra_body"] = dict(self._extra_body)
         response = await self._client.chat.completions.create(**kwargs)
         tool_calls = response.choices[0].message.tool_calls
         if not tool_calls:
@@ -542,17 +573,10 @@ class OpenAICompatibleAdapter(AIProvider):
         We parse these to emit structured ToolCallStart/ToolCallArgsDelta/ToolCallDone events.
         """
         import json
-        
-        msgs = _build_openai_messages(messages, system)
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": msgs,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "stream": True,
-        }
-        if tools:
-            kwargs["tools"] = tools
+
+        kwargs = self._base_kwargs(
+            messages, system, max_tokens, stream=True, tools=tools
+        )
 
         accumulated_text = ""
         tool_calls: dict[str, dict[str, Any]] = {}  # call_id -> {name, args_str}
@@ -563,39 +587,42 @@ class OpenAICompatibleAdapter(AIProvider):
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
-                
-                # Handle text content
+
+                # Handle text content (visible tokens)
                 content = getattr(delta, "content", None)
                 if content:
                     accumulated_text += content
                     yield TextChunk(delta=content)
-                
-                # Handle reasoning content (DeepSeek)
-                reasoning = getattr(delta, "reasoning_content", None)
-                if reasoning:
-                    accumulated_text += reasoning
-                    yield TextChunk(delta=reasoning)
-                
+
+                # Handle reasoning content (DeepSeek / MiniMax with reasoning_split).
+                # IMPORTANT: do NOT yield this as TextChunk — that would leak
+                # the model's chain of thought into the user-visible message.
+                # The reasoning is intentionally discarded so the UI only ever
+                # sees the final answer.
+                _reasoning = getattr(delta, "reasoning_content", None)
+                # (kept as a no-op assignment so the variable is read and
+                #  static analyzers see the explicit intent)
+
                 # Handle tool_call chunks
                 tool_calls_delta = getattr(delta, "tool_calls", None)
                 if tool_calls_delta:
                     for tc_delta in tool_calls_delta:
                         call_id = getattr(tc_delta, "id", None)
-                        
+
                         func_delta = getattr(tc_delta, "function", None)
                         name = getattr(func_delta, "name", None) if func_delta else None
                         args_delta = getattr(func_delta, "arguments", None) if func_delta else None
-                        
+
                         # In OpenAI streaming, the first chunk for a tool call has the ID and name
                         # Subsequent chunks have the same index but ID/name might be None, with arguments string
-                        
+
                         # Use index to track the current tool call since call_id is only present in the first chunk
                         tc_index = getattr(tc_delta, "index", 0)
-                        
+
                         # We use a string key based on index to track tool calls across chunks
                         # if we don't have the call_id yet
                         idx_key = str(tc_index)
-                        
+
                         if idx_key not in tool_calls:
                             tool_calls[idx_key] = {"id": call_id or f"call_{tc_index}", "name": name or "", "args_str": ""}
                             if name:
@@ -604,12 +631,12 @@ class OpenAICompatibleAdapter(AIProvider):
                             # Update ID if it arrives late
                             if call_id and tool_calls[idx_key]["id"].startswith("call_"):
                                 tool_calls[idx_key]["id"] = call_id
-                        
+
                         # Arguments delta
                         if args_delta:
                             tool_calls[idx_key]["args_str"] += args_delta
                             yield ToolCallArgsDelta(call_id=tool_calls[idx_key]["id"], delta=args_delta)
-            
+
             # Emit final tool call completion
             final_tool_calls = []
             for call_id, call_data in tool_calls.items():
@@ -627,7 +654,7 @@ class OpenAICompatibleAdapter(AIProvider):
                     name=call_data["name"],
                     arguments=args,
                 )
-            
+
             yield StreamDone(content=accumulated_text, tool_calls=final_tool_calls)
             
         except Exception as exc:
@@ -692,11 +719,24 @@ def _build_provider_for_model(model: str) -> AIProvider:
     # / MiMo (the operator points DEEPSEEK_BASE_URL at api.minimax.io/v1 in
     # the deployment env), so we route through the OpenAI-compatible
     # adapter using those credentials.
+    #
+    # Per MiniMax docs (https://platform.minimax.io/docs/llms.txt):
+    #   - `reasoning_split=True` separates thinking tokens from the answer
+    #     into the `reasoning_details` field, keeping `content` clean.
+    #   - `thinking: {"type": "disabled"}` actually disables thinking on
+    #     MiniMax-M3, but M2.x models (M2.7, M2.5, M2.1, M2) always emit
+    #     reasoning regardless of the flag. For M2.x we still set
+    #     `reasoning_split=True` so the visible content is clean even when
+    #     the chain-of-thought can't be turned off.
     if model_lower.startswith("minimax"):
+        extra_body: dict[str, Any] = {"reasoning_split": True}
+        if "m3" in model_lower or "m-3" in model_lower:
+            extra_body["thinking"] = {"type": "disabled"}
         return OpenAICompatibleAdapter(
             model=model,
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
+            extra_body=extra_body,
         )
 
     if model_lower.startswith(("deepseek", "mimo")):
