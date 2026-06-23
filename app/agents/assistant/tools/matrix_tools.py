@@ -361,7 +361,10 @@ async def generate_matrix(
     Generate a literature matrix for a project by extracting information from saved papers.
 
     Use this when the user wants to create or regenerate a literature matrix.
-    This runs AI extraction on all saved papers, which may take 1-2 minutes.
+    This runs AI extraction on all saved papers (up to ``matrix_max_papers``
+    per run — default 100, configurable via env). At concurrency=8 this
+    takes roughly 1-2 minutes for 100 papers, longer if the verifier model
+    is also enabled.
 
     Prerequisites:
     - Project must have at least 1 saved paper

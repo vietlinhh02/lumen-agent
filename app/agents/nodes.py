@@ -50,7 +50,17 @@ _MAX_CHUNK_CONTEXT_CHARS = 8000
 # Matrix extraction parallelization constants
 _MATRIX_CONCURRENCY = 8  # Bound by LLM rate limit (typical 10 concurrent)
 _MAX_CHUNKS_PER_PAPER = 5
-_MAX_PAPERS = 20
+# Max saved papers to process per matrix-generation run. Default to the
+# configured limit (``settings.matrix_max_papers``) — 100 by default —
+# so projects of realistic size are fully covered. Previously hardcoded
+# at 20 which silently truncated extraction for larger projects.
+def _get_max_papers() -> int:
+    """Read the matrix-max-papers setting (avoids import-at-load-time cycle)."""
+    try:
+        from app.core.config import get_settings
+        return max(1, int(get_settings().matrix_max_papers))
+    except Exception:
+        return 100
 _COLLABORATIVE_MATRIX_MAX_TOKENS = 32768
 _MATRIX_VERIFICATION_SYSTEM = """You verify literature-matrix extractions against paper evidence.
 
@@ -579,7 +589,7 @@ async def matrix_extraction_node(
             ProjectPaper.project_id == state.project_id,
             ProjectPaper.status == "saved",
         )
-        .limit(_MAX_PAPERS)
+        .limit(_get_max_papers())
     )
     papers_to_process = (await db.execute(stmt)).scalars().all()
 

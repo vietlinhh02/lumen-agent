@@ -745,3 +745,33 @@ async def test_matrix_extraction_rows_are_json_serializable():
 
     # This should NOT raise TypeError: Object of type UUID is not JSON serializable
     json.dumps(result["matrix_rows"])
+
+
+@pytest.mark.asyncio
+async def test_matrix_max_papers_setting_is_honored(monkeypatch):
+    """Matrix extraction must process up to ``settings.matrix_max_papers``
+    papers (default 100), not silently cap at 20."""
+    from app.core.config import Settings, get_settings
+
+    # Override setting to a known value
+    test_settings = Settings(matrix_max_papers=42)
+    monkeypatch.setattr(
+        "app.core.config.get_settings",
+        lambda: test_settings,
+    )
+
+    # Confirm the helper reads it correctly
+    from app.agents.nodes import _get_max_papers
+
+    assert _get_max_papers() == 42
+
+
+@pytest.mark.asyncio
+async def test_matrix_default_limit_is_at_least_50():
+    """Sanity-check the default ``matrix_max_papers`` is large enough to
+    cover realistic projects (not the old 20)."""
+    from app.agents.nodes import _get_max_papers
+
+    assert _get_max_papers() >= 50, (
+        f"Default matrix limit too small: {_get_max_papers()}"
+    )

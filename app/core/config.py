@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     default_model: str = "deepseek-v4-flash"
     matrix_verifier_model: str = ""
 
+    # Matrix extraction
+    # Max saved papers to process per matrix-generation run. Bump this via env
+    # if you have very large projects; processing 100 papers takes ~1-2 min
+    # with concurrency=8 (one LLM call per paper, plus optional verification).
+    matrix_max_papers: int = 100
+
     # Embeddings (NVIDIA Nemotron via OpenRouter API)
     openrouter_api_key: str = ""
     embedding_provider: str = "openrouter"
