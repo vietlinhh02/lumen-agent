@@ -108,3 +108,77 @@ async def test_auto_search_rejects_concurrent_job_for_same_user():
 
     result = await auto_search_and_save(db, user, project.id, "RAG", 50)
     assert result == {"error": "Another auto-search is already running", "status_code": 429}
+
+
+@pytest.mark.asyncio
+async def test_run_auto_search_phase1_calls_search_and_download():
+    """Phase 1 invokes search_and_download with max_per_source=200."""
+    from app.services.search_session import _run_auto_search_job
+
+    user_id = uuid4()
+    project_id = uuid4()
+    job_id = uuid4()
+    session_id = uuid4()
+
+    # Mock the job + session + user
+    job = SimpleNamespace(
+        id=job_id,
+        status="pending",
+        progress=0,
+        total=50,
+        progress_json={"phase": "queued", "target_count": 50},
+        result={},
+        error_message=None,
+    )
+    run = SimpleNamespace(
+        id=session_id,
+        user_query="RAG",
+        results_json=[],
+        screening_scores=[],
+    )
+    user = SimpleNamespace(id=user_id)
+
+    with patch("app.services.search_session.async_session_factory") as mock_factory:
+        bg_db = AsyncMock()
+        bg_db.execute = AsyncMock(side_effect=[
+            # First: load job
+            MagicMock(scalar_one_or_none=MagicMock(return_value=job)),
+            # Second: load session
+            MagicMock(scalar_one_or_none=MagicMock(return_value=run)),
+            # Third: load user
+            MagicMock(scalar_one_or_none=MagicMock(return_value=user)),
+            # Subsequent execute calls (no specific result expected)
+            MagicMock(),
+        ])
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        # Mock search_and_download to return 200 papers
+        with patch("app.services.search_session.search_and_download") as mock_search:
+            mock_paper = SimpleNamespace(
+                title="Paper A", abstract="abstract", year=2024,
+                venue="NeurIPS", doi=None, arxiv_id="2401.00001",
+                semantic_scholar_id="ss1", url="https://example.com",
+                citation_count=10, authors=[{"name": "Alice", "author_id": ""}],
+                source_name="semantic_scholar", source_specific={},
+            )
+            mock_outcome = SimpleNamespace(
+                raw_papers=[mock_paper] * 200,
+                response=SimpleNamespace(source_diagnostics=[]),
+            )
+            mock_search.return_value = mock_outcome
+
+            with patch("app.services.search_session.batch_score_papers") as mock_score:
+                mock_score.return_value = ["high"] * 50 + ["medium"] * 100 + ["low"] * 50
+
+                with patch("app.services.search_session.save_paper_to_project") as mock_save:
+                    mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
+
+                    await _run_auto_search_job(
+                        job_id, session_id, project_id, user_id, "RAG", 50,
+                        timeout_seconds=5,
+                    )
+
+        # search_and_download was called with max_per_source=200
+        call_kwargs = mock_search.call_args.kwargs
+        assert call_kwargs.get("max_per_source") == 200

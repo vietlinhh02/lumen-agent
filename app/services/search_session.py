@@ -15,7 +15,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.prompts import AUTO_SEARCH_SCREEN_SYSTEM, AUTO_SEARCH_SCREEN_USER
+from app.ai.provider import get_provider
 from app.db.models import Paper, Project, ProjectPaper, SearchRun, User
+from app.db.session import async_session_factory
+from app.schemas.paper import PaperSearchRequest
+from app.schemas.project import SavePaperRequest
+from app.services.paper_search import _deduplicate_raw_books, search_and_download
+from app.services.project import save_paper_to_project
 
 logger = logging.getLogger(__name__)
 
@@ -746,4 +753,399 @@ async def auto_search_and_save(
         "session_id": str(run.id),
         "target_count": target_count,
         "status": "running",
+    }
+
+
+# ── 4-phase auto-search worker ──────────────────────────────────────────
+
+
+async def _run_auto_search_job(
+    job_id: UUID,
+    session_id: UUID,
+    project_id: UUID,
+    user_id: UUID,
+    query: str,
+    target_count: int,
+    timeout_seconds: int = 300,
+) -> None:
+    """4-phase auto-search worker.
+
+    Phase 1 (0-25%):  Fan-out search across all sources, max 200/source
+    Phase 2 (25-60%): Dedupe + batch LLM score (25/batch)
+    Phase 3 (60-65%): Filter score=high, pick top N (fallback to medium)
+    Phase 4 (65-100%): Auto-save top N papers (skip duplicates)
+
+    Updates ``job.progress_json`` between phases so the frontend polling
+    endpoint can show a multi-step progress UI.
+    """
+    from app.db.models import BackgroundJob
+
+    import time
+    from datetime import UTC, datetime
+
+    start_wall = time.monotonic()
+    job = None
+
+    async with async_session_factory() as bg_db:
+        try:
+            # ── Load job + session + user ────────────────────────────────
+            job_result = await bg_db.execute(
+                select(BackgroundJob).where(BackgroundJob.id == job_id)
+            )
+            job = job_result.scalar_one_or_none()
+            if not job:
+                return
+
+            job.status = "running"
+            await bg_db.commit()
+
+            run_result = await bg_db.execute(
+                select(SearchRun).where(SearchRun.id == session_id)
+            )
+            run = run_result.scalar_one_or_none()
+            user_result = await bg_db.execute(select(User).where(User.id == user_id))
+            user = user_result.scalar_one_or_none()
+            if run is None or user is None:
+                job.status = "failed"
+                job.error_message = "Session or user not found"
+                await bg_db.commit()
+                return
+
+            async def _update_progress(payload: dict) -> None:
+                job.progress_json = {**(job.progress_json or {}), **payload}
+                job.progress = int(payload.get("percent", job.progress or 0))
+                await bg_db.commit()
+
+            # ── Phase 1: Search all sources in parallel ──────────────────
+            await _update_progress({
+                "phase": "searching",
+                "current_source": "all",
+                "papers_found": 0,
+                "percent": 5,
+            })
+
+            search_req = PaperSearchRequest(
+                query=query, limit=2000, download_pdfs=False
+            )
+            outcome = await search_and_download(
+                search_req, max_per_source=200,
+            )
+            all_raw = outcome.raw_papers
+
+            await _update_progress({
+                "phase": "searching",
+                "current_source": "done",
+                "papers_found": len(all_raw),
+                "percent": 25,
+            })
+
+            if time.monotonic() - start_wall > timeout_seconds:
+                raise TimeoutError("Phase 1 exceeded timeout")
+
+            # ── Phase 2: Dedupe + batch LLM score ─────────────────────────
+            deduped = _deduplicate_raw_books(all_raw)
+
+            batches_total = max(1, (len(deduped) + 24) // 25)
+            await _update_progress({
+                "phase": "scoring",
+                "batches_total": batches_total,
+                "papers_scored": 0,
+                "papers_total": len(deduped),
+                "percent": 30,
+            })
+
+            scores: list[str] = await _batch_score_papers(
+                deduped, user, _update_progress, timeout_seconds, start_wall,
+            )
+
+            if time.monotonic() - start_wall > timeout_seconds:
+                raise TimeoutError("Phase 2 exceeded timeout")
+
+            # ── Phase 3: Filter + pick top N ──────────────────────────────
+            scored = [
+                (paper, score)
+                for paper, score in zip(deduped, scores, strict=False)
+                if score in ("high", "medium", "low")
+            ]
+            # Sort: high first, then medium, then low; stable by original order
+            priority = {"high": 0, "medium": 1, "low": 2}
+            scored.sort(key=lambda p: priority.get(p[1], 9))
+
+            high_picks = [(p, s) for p, s in scored if s == "high"][:target_count]
+            if len(high_picks) < target_count:
+                remaining = target_count - len(high_picks)
+                medium_picks = [(p, s) for p, s in scored if s == "medium"][:remaining]
+                high_picks.extend(medium_picks)
+
+            top_papers = [p for p, _ in high_picks[:target_count]]
+
+            await _update_progress({
+                "phase": "filtering",
+                "kept": len(top_papers),
+                "percent": 65,
+            })
+
+            # ── Phase 4: Auto-save top N papers ───────────────────────────
+            await _update_progress({
+                "phase": "saving",
+                "saved": 0,
+                "skipped": 0,
+                "total": len(top_papers),
+                "current_paper": "",
+                "percent": 70,
+            })
+
+            saved_count = 0
+            skipped_count = 0
+            saved_paper_dicts: list[dict] = []
+
+            for idx, paper in enumerate(top_papers):
+                if time.monotonic() - start_wall > timeout_seconds:
+                    raise TimeoutError("Phase 4 exceeded timeout")
+
+                paper_dict = _raw_paper_to_dict(paper)
+
+                try:
+                    authors_mapped = [
+                        {
+                            "name": a.get("name") if isinstance(a, dict) else str(a),
+                            "author_id": "",
+                        }
+                        for a in (paper.authors or [])
+                    ]
+                    req = SavePaperRequest(
+                        paper_title=paper.title,
+                        paper_abstract=paper.abstract,
+                        paper_year=paper.year,
+                        paper_venue=paper.venue,
+                        paper_doi=paper.doi,
+                        paper_arxiv_id=paper.arxiv_id,
+                        paper_semantic_scholar_id=paper.semantic_scholar_id,
+                        paper_url=paper.url,
+                        paper_citation_count=paper.citation_count,
+                        paper_authors=authors_mapped,
+                        paper_source_names=[paper.source_name] if paper.source_name else ["paperhub"],
+                        download_pdf=True,
+                        source_specific=paper.source_specific or {},
+                    )
+                    save_result = await save_paper_to_project(
+                        bg_db, user, project_id, req,
+                    )
+                    if save_result is None:
+                        skipped_count += 1
+                    else:
+                        saved_count += 1
+                        paper_dict["screening_score"] = "high"
+                        saved_paper_dicts.append(paper_dict)
+                except Exception as exc:
+                    logger.warning(
+                        "Auto-save failed for paper '%s': %s",
+                        paper.title[:60], exc,
+                    )
+                    skipped_count += 1
+                    with contextlib.suppress(Exception):
+                        await bg_db.rollback()
+
+                percent = 70 + int(25 * (idx + 1) / max(1, len(top_papers)))
+                await _update_progress({
+                    "phase": "saving",
+                    "saved": saved_count,
+                    "skipped": skipped_count,
+                    "total": len(top_papers),
+                    "current_paper": paper.title[:60],
+                    "percent": min(95, percent),
+                })
+
+            # Persist back to SearchRun
+            run.results_json = saved_paper_dicts
+            run.total_results = saved_count
+            run.screening_scores = ["high"] * saved_count
+            await bg_db.commit()
+
+            # Mark job complete
+            job.status = "completed"
+            job.progress = saved_count
+            job.result = {
+                "session_id": str(session_id),
+                "saved_count": saved_count,
+                "skipped_count": skipped_count,
+                "target_count": target_count,
+                "saved_paper_ids": [
+                    p.get("semantic_scholar_id") or p.get("doi") or p.get("arxiv_id") or p.get("title")
+                    for p in saved_paper_dicts
+                ],
+            }
+            job.progress_json = {
+                "phase": "done",
+                "saved": saved_count,
+                "skipped": skipped_count,
+                "total": len(top_papers),
+                "percent": 100,
+            }
+            job.completed_at = datetime.now(UTC).replace(tzinfo=None)
+            await bg_db.commit()
+
+        except Exception as exc:
+            logger.exception("Auto-search job %s failed: %s", job_id, exc)
+            try:
+                if job is not None:
+                    job.status = "failed"
+                    job.error_message = str(exc)[:500]
+                    job.progress_json = {
+                        **(job.progress_json or {}),
+                        "phase": "failed",
+                        "error": str(exc)[:200],
+                    }
+                    job.completed_at = datetime.now(UTC).replace(tzinfo=None)
+                    await bg_db.commit()
+            except Exception:
+                pass
+
+
+# ── Auto-search helpers ─────────────────────────────────────────────────
+
+
+async def _batch_score_papers(
+    papers: list,
+    user: User,
+    update_progress,
+    timeout_seconds: int,
+    start_wall: float,
+) -> list[str]:
+    """Score papers in batches of 25 using the LLM.
+
+    Returns a list of scores (high/medium/low) in the same order as ``papers``.
+    Failed batches fall back to "medium" (don't lose papers entirely).
+    """
+    import time
+
+    if not papers:
+        return []
+
+    provider = get_provider()
+    batch_size = 25
+    batches = [papers[i : i + batch_size] for i in range(0, len(papers), batch_size)]
+    all_scores: list[str] = ["medium"] * len(papers)
+    batches_total = len(batches)
+
+    for batch_idx, batch in enumerate(batches):
+        if time.monotonic() - start_wall > timeout_seconds:
+            break
+
+        papers_json = _papers_to_scoring_json(batch)
+        user_msg = AUTO_SEARCH_SCREEN_USER.format(
+            topic=user_topic_for_user(user),
+            research_question="Not specified",
+            papers_json=papers_json,
+        )
+
+        try:
+            result = await provider.complete_structured(
+                messages=[{"role": "user", "content": user_msg}],
+                system=AUTO_SEARCH_SCREEN_SYSTEM,
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "scores": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "index": {"type": "integer"},
+                                    "score": {"type": "string"},
+                                },
+                                "required": ["index", "score"],
+                            },
+                        },
+                    },
+                    "required": ["scores"],
+                },
+                tool_name="auto_search_screen",
+                max_tokens=2000,
+            )
+            batch_scores = result.get("scores", []) if isinstance(result, dict) else []
+            for entry in batch_scores:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    idx = int(entry.get("index", -1))
+                    score = str(entry.get("score", "medium")).lower()
+                    if score not in ("high", "medium", "low"):
+                        score = "medium"
+                    if 0 <= idx < len(batch):
+                        global_idx = batch_idx * batch_size + idx
+                        if global_idx < len(all_scores):
+                            all_scores[global_idx] = score
+                except (ValueError, TypeError):
+                    continue
+        except Exception as exc:
+            logger.warning(
+                "Batch %d LLM scoring failed (using medium fallback): %s",
+                batch_idx, exc,
+            )
+            # All scores in this batch stay "medium" (default)
+
+        scored_so_far = min((batch_idx + 1) * batch_size, len(papers))
+        percent = 30 + int(30 * scored_so_far / max(1, len(papers)))
+        await update_progress({
+            "phase": "scoring",
+            "batches_completed": batch_idx + 1,
+            "batches_total": batches_total,
+            "papers_scored": scored_so_far,
+            "papers_total": len(papers),
+            "percent": min(60, percent),
+        })
+
+    return all_scores
+
+
+# Public alias so tests can monkeypatch ``app.services.search_session.batch_score_papers``.
+batch_score_papers = _batch_score_papers
+
+
+def _papers_to_scoring_json(papers: list) -> str:
+    """Render a list of RawPaper objects as a compact JSON for the scoring prompt."""
+    import json
+
+    out = []
+    for i, p in enumerate(papers):
+        out.append({
+            "index": i,
+            "title": p.title,
+            "abstract": (p.abstract or "")[:500],
+            "year": p.year,
+            "venue": p.venue or "",
+            "source": p.source_name or "",
+        })
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+def user_topic_for_user(user: User) -> str:
+    """Best-effort: read the user's most-recent project's topic for context.
+
+    Falls back to ``"research project"`` if no project is available.
+    """
+    return getattr(user, "_auto_search_topic", "research project")
+
+
+def _raw_paper_to_dict(paper) -> dict:
+    """Convert a RawPaper to the dict shape stored in SearchRun.results_json."""
+    return {
+        "title": paper.title,
+        "abstract": paper.abstract,
+        "year": paper.year,
+        "venue": paper.venue,
+        "doi": paper.doi,
+        "arxiv_id": paper.arxiv_id,
+        "semantic_scholar_id": paper.semantic_scholar_id,
+        "url": paper.url,
+        "citation_count": paper.citation_count,
+        "authors": paper.authors or [],
+        "source_names": [paper.source_name] if paper.source_name else [],
+        "source_specific": paper.source_specific or {},
+        "can_download": bool(
+            paper.arxiv_id
+            or (paper.source_specific or {}).get("pdf_url")
+            or (paper.source_specific or {}).get("pmc_id")
+        ),
     }

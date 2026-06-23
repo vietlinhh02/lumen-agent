@@ -15,7 +15,7 @@ class PaperSearchRequest(BaseModel):
     query: str = Field(
         ..., description="Natural-language search query", min_length=2, max_length=500
     )
-    limit: int = Field(default=50, description="Max papers to return", ge=1, le=500)
+    limit: int = Field(default=50, description="Max papers to return", ge=1, le=2000)
     year_from: int | None = Field(
         default=None, description="Earliest publication year", ge=1900, le=2100
     )
