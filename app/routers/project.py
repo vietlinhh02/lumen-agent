@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
+from app.schemas.paper import AutoSearchRequest
 from app.schemas.project import (
     ConfirmUploadsRequest,
     DiscardUploadsRequest,
@@ -734,3 +735,50 @@ async def get_paper_full_text(
         chunks=items,
         crawled_markdown=crawled_md,
     )
+
+
+# ── Auto search & save ──────────────────────────────────────────────────
+
+
+@router.post(
+    "/{project_id}/search/auto",
+    status_code=http_status.HTTP_202_ACCEPTED,
+)
+async def auto_search_project(
+    project_id: UUID,
+    body: AutoSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Start an auto-search-and-save background job.
+
+    Fetches up to ~200 papers from each of 4 sources (S2, arXiv, OpenAlex, Exa),
+    LLM-scores all candidates, picks the top N (target_count) most relevant,
+    and auto-saves them into the project.
+
+    Returns ``{job_id, session_id, target_count, status: "running"}`` immediately.
+    The frontend polls ``GET /api/papers/search/jobs/{job_id}`` for progress.
+    """
+    from app.services.search_session import auto_search_and_save
+
+    try:
+        result = await auto_search_and_save(
+            db, user, project_id, body.query, body.target_count,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    if result.get("error") == "Project not found":
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    if result.get("status_code") == 429:
+        raise HTTPException(
+            status_code=http_status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=result["error"],
+        )
+    return result
