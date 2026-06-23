@@ -3,3 +3,4 @@ export { PDFPreviewModal } from "./PDFPreviewModal";
 export { Pagination } from "./Pagination";
 export { LanguageAudit } from "./LanguageAudit";
 export { MathText } from "./MathText";
+export { AutoSearchProgress } from "./AutoSearchProgress";

@@ -1,15 +1,15 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { MagnifyingGlass, Spinner, Sparkle, ClockCounterClockwise, Lightning } from "@phosphor-icons/react";
+import { CaretDown, MagnifyingGlass, Spinner, Sparkle, ClockCounterClockwise, Lightning } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
 import { useSearchStore } from "@/lib/stores/search-store";
 import { apiFetch } from "@/lib/api";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
-import { PaperCard, SkeletonCard, Pagination, LanguageAudit, PDFPreviewModal } from "@/components/search";
+import { AutoSearchProgress, PaperCard, SkeletonCard, Pagination, LanguageAudit, PDFPreviewModal } from "@/components/search";
 import type {
   PaperResult,
 } from "@/lib/types";
@@ -68,6 +68,17 @@ export default function ProjectSearchPage() {
 
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [previewPaper, setPreviewPaper] = useState<PaperResult | null>(null);
+  const [autoSearchMenuOpen, setAutoSearchMenuOpen] = useState(false);
+  const autoSearchMenuRef = useRef<HTMLDivElement>(null);
+
+  // Auto search state from store
+  const isAutoSearching = useSearchStore((s) => s.isAutoSearching);
+  const autoSearchJobId = useSearchStore((s) => s.autoSearchJobId);
+  const autoSearchSessionId = useSearchStore((s) => s.autoSearchSessionId);
+  const autoSearchProgressState = useSearchStore((s) => s.autoSearchProgress);
+  const startAutoSearch = useSearchStore((s) => s.startAutoSearch);
+  const setAutoSearchProgress = useSearchStore((s) => s.setAutoSearchProgress);
+  const clearAutoSearch = useSearchStore((s) => s.clearAutoSearch);
 
   const papers = (sessionData?.papers || []).map((d: SearchPaperRecord) => {
     const sourceSpecific = (d.source_specific || {}) as Record<string, unknown>;
@@ -104,6 +115,81 @@ export default function ProjectSearchPage() {
   const { poll: pollSearch } = useJobPolling({
     onSuccess: () => "Search completed",
   });
+
+  // ── Auto search polling ───────────────────────────────────────────────
+  async function pollAutoSearchJob(jobId: string): Promise<Record<string, unknown> | null> {
+    const maxAttempts = 150;
+    const intervalMs = 2000;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const job = await apiFetch<{
+          status: string;
+          progress_json?: Record<string, unknown> | null;
+          result?: Record<string, unknown>;
+          error_message?: string;
+        }>(`/papers/search/jobs/${jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (job.progress_json) {
+          setAutoSearchProgress(job.progress_json as never);
+        }
+        if (job.status === "completed") {
+          return job.result ?? {};
+        }
+        if (job.status === "failed") {
+          return { __failed: true, error_message: job.error_message };
+        }
+      } catch {
+        // ignore transient polling errors
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return null;
+  }
+
+  useEffect(() => {
+    if (!autoSearchJobId) return;
+    let cancelled = false;
+    (async () => {
+      const result = await pollAutoSearchJob(autoSearchJobId);
+      if (cancelled) return;
+      if (!result) {
+        toast.warning("Auto-search still running — check back later.");
+        return;
+      }
+      if ((result as { __failed?: boolean }).__failed) {
+        const msg = (result as { error_message?: string }).error_message || "Auto-search failed";
+        toast.error(msg);
+        clearAutoSearch();
+        return;
+      }
+      const saved = (result as { saved_count?: number }).saved_count ?? 0;
+      toast.success(`Auto-saved ${saved} papers`);
+      // Refresh sessions list
+      void loadSessions();
+      clearAutoSearch();
+      // Navigate to the new session
+      if (autoSearchSessionId && saved > 0) {
+        router.push(`/projects/${projectId}/search/${autoSearchSessionId}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSearchJobId]);
+
+  // Click-outside handler for auto search dropdown
+  useEffect(() => {
+    if (!autoSearchMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (autoSearchMenuRef.current && !autoSearchMenuRef.current.contains(e.target as Node)) {
+        setAutoSearchMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [autoSearchMenuOpen]);
 
   // Re-sync URL -> store on initial mount so refresh keeps the session.
   useEffect(() => {
@@ -193,6 +279,22 @@ export default function ProjectSearchPage() {
       toast.success("Auto-save complete");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Auto-save failed");
+    }
+  }
+
+  async function handleAutoSearch(targetCount: 25 | 50 | 100) {
+    if (!query.trim() || !projectId) return;
+    setAutoSearchMenuOpen(false);
+    try {
+      await startAutoSearch(query.trim(), projectId, targetCount);
+      toast.info(`Auto-searching for top ${targetCount} papers…`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Auto-search failed";
+      if (msg.includes("429")) {
+        toast.warning("Another auto-search is already running");
+      } else {
+        toast.error(msg);
+      }
     }
   }
 
@@ -341,7 +443,45 @@ export default function ProjectSearchPage() {
           className="focus-ring font-ui h-[44px] rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
           {loading ? <span className="inline-flex items-center gap-2"><Spinner size={14} className="animate-spin" weight="bold" />Searching…</span> : "Search"}
         </button>
+
+        {/* Auto Search dropdown */}
+        <div className="relative" ref={autoSearchMenuRef}>
+          <button
+            disabled={!query.trim() || loading || isAutoSearching}
+            onClick={() => setAutoSearchMenuOpen((v) => !v)}
+            className="focus-ring font-ui h-[44px] inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Sparkle size={14} weight="fill" />
+            {isAutoSearching ? "Auto-searching…" : "Auto Search"}
+            <CaretDown size={12} weight="bold" />
+          </button>
+          {autoSearchMenuOpen && (
+            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-hairline bg-surface-card shadow-lg z-10 overflow-hidden">
+              {([25, 50, 100] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => handleAutoSearch(n)}
+                  className="block w-full text-left px-4 py-2.5 text-[13px] text-ink hover:bg-surface-bone transition-colors"
+                >
+                  Auto Search {n} papers
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Auto search progress */}
+      {(isAutoSearching || autoSearchProgressState || autoSearchJobId) && (
+        <div className="mt-3">
+          <AutoSearchProgress
+            progress={autoSearchProgressState}
+            isDone={!!(autoSearchProgressState && (autoSearchProgressState.phase === "done"))}
+            isFailed={!!(autoSearchProgressState && (autoSearchProgressState.phase === "failed"))}
+            errorMessage={autoSearchProgressState?.error ?? null}
+          />
+        </div>
+      )}
 
       {sessionData && (
         <div className="mt-3 flex items-center gap-3 flex-wrap">
