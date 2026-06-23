@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from typing import cast
 from uuid import UUID
@@ -411,6 +412,13 @@ async def _aggregate_sections(
     """Final pass: weave in conflicts + gaps, ensure smooth transitions.
 
     Reviews generated sections and ensures conflicts/gaps are addressed.
+
+    Reliability notes:
+    - The aggregate prompt serialises ALL sections + conflicts + gaps, so the
+      output JSON is large (~10 sections × full content). We default to
+      16k output tokens and retry with 24k if the first attempt produces
+      truncated JSON (the previous default of 6k routinely produced the
+      "Expecting ',' delimiter" error on long reports).
     """
     if not sections:
         return []
@@ -438,18 +446,33 @@ Research gaps to address (if any):
 
 Return the improved sections as a JSON object with "sections" array."""
 
-    try:
-        result = await provider.complete_structured(
-            messages=[{"role": "user", "content": aggregate_prompt}],
-            system=REVIEW_WRITER_CHUNK_SYSTEM,
-            schema=ReviewOutput.model_json_schema(),
-            tool_name="review_aggregate",
-            max_tokens=6000,
-        )
-        return result.get("sections", sections)  # Fallback to original if failed
-    except Exception as exc:
-        logger.warning("Section aggregation failed: %s", exc)
-        return sections
+    last_error: Exception | None = None
+    max_tokens = 16000
+    for attempt in range(2):
+        try:
+            result = await provider.complete_structured(
+                messages=[{"role": "user", "content": aggregate_prompt}],
+                system=REVIEW_WRITER_CHUNK_SYSTEM,
+                schema=ReviewOutput.model_json_schema(),
+                tool_name="review_aggregate",
+                max_tokens=max_tokens,
+            )
+            return result.get("sections", sections)
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Section aggregation attempt %d failed (max_tokens=%d): %s",
+                attempt + 1,
+                max_tokens,
+                exc,
+            )
+            max_tokens = 24000  # Bump on retry
+
+    logger.warning(
+        "Section aggregation failed after retries, falling back to original sections: %s",
+        last_error,
+    )
+    return sections
 
 
 async def generate_report(
@@ -863,6 +886,69 @@ async def _build_references(db: AsyncSession, cited_paper_ids: set[UUID]) -> lis
     return references
 
 
+_UUID_PATTERN = re.compile(
+    # Bracket-wrapped standard UUID (optionally with a leading space so we
+    # also collapse the gap left behind when we strip the citation).
+    r"\s*\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]",
+    re.IGNORECASE,
+)
+
+
+def _strip_inlined_uuids(
+    text: str, ref_map: dict[str, str]
+) -> tuple[str, int]:
+    """Remove bracket-wrapped paper UUIDs inlined into paragraph text.
+
+    Some LLM generations inline raw paper UUIDs directly into the prose
+    (e.g. "finding X [7feb6873-4492-4a45-8158-6141f03ff4cf]") instead of,
+    or in addition to, populating the ``citation_paper_ids`` array. Those
+    raw IDs then leak into the rendered markdown and confuse readers
+    because they don't map to the numbered ``References`` list.
+
+    Behaviour:
+    - UUID is in ``ref_map`` → strip (the citation is already represented
+      via ``citation_paper_ids`` → ``<sup>[N]</sup>`` at end of paragraph).
+    - UUID is NOT in ``ref_map`` → strip and emit a warning (the LLM
+      hallucinated an ID that isn't part of the project).
+
+    Returns:
+        (cleaned_text, replacements_count)
+    """
+    replacements = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal replacements
+        uuid = match.group(1)
+        if uuid in ref_map:
+            logger.debug(
+                "Stripping inlined UUID %s (already in ref_map)", uuid
+            )
+        else:
+            logger.warning(
+                "Stripping inlined UUID %s not in references (hallucinated)",
+                uuid,
+            )
+        replacements += 1
+        return ""
+
+    cleaned = _UUID_PATTERN.sub(_replace, text)
+    return cleaned, replacements
+
+
+def _count_inlined_uuids(sections: list[dict]) -> int:
+    """Count inlined UUIDs across all sections (used for telemetry).
+
+    Used to measure LLM drift — after ``_strip_inlined_uuids`` post-
+    processing this should always be zero. Emitted as a warning before
+    cleanup so we know how often the LLM misbehaves.
+    """
+    count = 0
+    for section in sections:
+        for para in section.get("paragraphs", []):
+            count += len(_UUID_PATTERN.findall(para.get("text", "")))
+    return count
+
+
 def _build_content_markdown(sections: list[dict], references: list[dict]) -> str:
     """Convert validated sections + references into rich Markdown.
 
@@ -871,10 +957,22 @@ def _build_content_markdown(sections: list[dict], references: list[dict]) -> str
     - Blockquote key findings preserved from LLM output
     - Horizontal rules between sections
     - Structured reference table
+    - Inlined paper UUIDs in paragraph text are stripped (they duplicate the
+      ``citation_paper_ids`` array and confuse readers).
     """
     ref_map: dict[str, str] = {}
     for ref in references:
         ref_map[ref["project_paper_id"]] = ref["citation_label"]
+
+    # Telemetry: warn if the LLM inlined any UUIDs into the prose so we can
+    # measure drift. The post-processing below strips them.
+    inlined_count = _count_inlined_uuids(sections)
+    if inlined_count > 0:
+        logger.warning(
+            "Stripping %d inlined paper UUID(s) from section text "
+            "(LLM should use citation_paper_ids array, not inline UUIDs)",
+            inlined_count,
+        )
 
     parts: list[str] = []
 
@@ -889,7 +987,11 @@ def _build_content_markdown(sections: list[dict], references: list[dict]) -> str
             cited_ids = para.get("citation_paper_ids", [])
             labels = [ref_map.get(str(pid), "[?]") for pid in cited_ids]
 
-            text = para.get("text", "")
+            # Strip inlined UUIDs (those belong in citation_paper_ids, not
+            # in the prose). Skip the call for empty text to keep the log
+            # noise-free.
+            raw_text = para.get("text", "")
+            text, _stripped = _strip_inlined_uuids(raw_text, ref_map)
 
             # Detect if this is a blockquote (starts with **Key finding:** etc.)
             is_blockquote = (
