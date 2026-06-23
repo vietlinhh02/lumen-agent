@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from asyncio import ensure_future
 from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Paper, ProjectPaper, SearchRun, User
+from app.db.models import Paper, Project, ProjectPaper, SearchRun, User
 
 logger = logging.getLogger(__name__)
 
@@ -656,3 +657,93 @@ async def _run_search_job(
                     await bg_db.commit()
             except Exception:
                 pass
+
+
+# ── Auto search & save ──────────────────────────────────────────────────
+
+
+async def auto_search_and_save(
+    db: AsyncSession,
+    user: User,
+    project_id: UUID,
+    query: str,
+    target_count: int,
+) -> dict:
+    """Start an auto-search-and-save background job. Returns job_id immediately.
+
+    Validates project ownership, checks for concurrent jobs, creates a
+    SearchRun + BackgroundJob(job_type="auto_search"), and launches the
+    4-phase worker.
+    """
+    if target_count not in (25, 50, 100):
+        raise ValueError(f"target_count must be 25, 50, or 100 (got {target_count})")
+
+    from sqlalchemy import and_
+
+    from app.db.models import BackgroundJob
+
+    # 1. Verify project ownership
+    project_result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.owner_id == user.id)
+    )
+    project = project_result.scalar_one_or_none()
+    if project is None:
+        return {"error": "Project not found"}
+
+    # 2. Check for concurrent auto_search job for this user
+    running_result = await db.execute(
+        select(BackgroundJob).where(
+            and_(
+                BackgroundJob.user_id == user.id,
+                BackgroundJob.job_type == "auto_search",
+                BackgroundJob.status.in_(("pending", "running")),
+            )
+        )
+    )
+    running = running_result.scalars().first()
+    if running is not None:
+        return {
+            "error": "Another auto-search is already running",
+            "status_code": 429,
+        }
+
+    # 3. Create empty SearchRun
+    run = SearchRun(
+        project_id=project_id,
+        user_query=query,
+        total_results=0,
+        results_json=[],
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    # 4. Create BackgroundJob
+    job = BackgroundJob(
+        job_type="auto_search",
+        project_id=project_id,
+        user_id=user.id,
+        status="pending",
+        total=target_count,
+        progress_json={
+            "phase": "queued",
+            "target_count": target_count,
+        },
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # 5. Launch worker
+    ensure_future(
+        _run_auto_search_job(
+            job.id, run.id, project_id, user.id, query, target_count
+        )
+    )
+
+    return {
+        "job_id": str(job.id),
+        "session_id": str(run.id),
+        "target_count": target_count,
+        "status": "running",
+    }

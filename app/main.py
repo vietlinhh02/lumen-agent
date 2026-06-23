@@ -12,6 +12,7 @@ from app.db.session import engine
 from app.routers.admin import router as admin_router
 from app.routers.agent import router as agent_router
 from app.routers.assistant import router as assistant_router
+from app.routers.audit import router as audit_router
 from app.routers.auth import router as auth_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.gaps import router as gaps_router
@@ -186,7 +187,7 @@ async def lifespan(app: FastAPI):
             text(
                 "ALTER TABLE background_jobs ADD CONSTRAINT ck_background_jobs_type "
                 "CHECK (job_type IN ("
-                "'auto_save', 'normalize', 'enrich', "
+                "'auto_save', 'auto_search', 'normalize', 'enrich', "
                 "'matrix_generate', 'gap_generate', 'conflict_generate', "
                 "'report_generate', 'paper_search'"
                 "))"
@@ -267,6 +268,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(project_router, prefix="/api/projects")
+    app.include_router(audit_router, prefix="/api/projects")
     app.include_router(paper_router, prefix="/api/papers")
     app.include_router(search_session_router, prefix="/api/papers")
     app.include_router(agent_router, prefix="/api/agents")

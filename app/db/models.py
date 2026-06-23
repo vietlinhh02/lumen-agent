@@ -802,7 +802,7 @@ class BackgroundJob(Base):
     __table_args__ = (
         CheckConstraint(
             "job_type IN ("
-            "'auto_save', 'normalize', 'enrich',"
+            "'auto_save', 'auto_search', 'normalize', 'enrich',"
             " 'matrix_generate', 'gap_generate', 'conflict_generate',"
             " 'report_generate', 'paper_search'"
             ")",
