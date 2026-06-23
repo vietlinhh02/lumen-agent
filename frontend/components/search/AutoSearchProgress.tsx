@@ -28,8 +28,19 @@ function phaseIndex(phase: string | undefined): number {
 
 function _phaseSubtext(p: AutoSearchProgressJson): string {
   if (p.phase === "searching") {
-    if (p.papers_found !== undefined) return `${p.papers_found} papers found`;
-    return "Starting…";
+    // Multi-query fan-out: show "queries k/N" + total papers found so far
+    // (deduped across queries).
+    const qPart =
+      p.queries_done !== undefined && p.queries_total !== undefined
+        ? `${p.queries_done}/${p.queries_total} queries · `
+        : "";
+    const papersPart =
+      p.papers_found !== undefined ? `${p.papers_found} unique papers` : "Starting…";
+    const multiMatch =
+      p.multi_match_papers !== undefined && p.multi_match_papers > 0
+        ? ` (${p.multi_match_papers} matched 2+ queries)`
+        : "";
+    return `${qPart}${papersPart}${multiMatch}`;
   }
   if (p.phase === "scoring") {
     if (p.papers_scored !== undefined && p.papers_total !== undefined) {

@@ -581,6 +581,12 @@ export interface AutoSearchProgressJson {
   skipped?: number;
   total?: number;
   current_paper?: string;
+  /** Number of queries the worker is fanning out (Phase 1) */
+  queries_total?: number;
+  /** Number of queries the worker has finished searching (Phase 1) */
+  queries_done?: number;
+  /** Papers that were matched by 2+ queries (robust relevance signal) */
+  multi_match_papers?: number;
   percent: number;
   error?: string;
 }

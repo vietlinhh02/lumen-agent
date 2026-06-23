@@ -6,6 +6,7 @@ high-relevance papers for a project.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from asyncio import ensure_future
@@ -21,7 +22,7 @@ from app.db.models import Paper, Project, ProjectPaper, SearchRun, User
 from app.db.session import async_session_factory
 from app.schemas.paper import PaperSearchRequest
 from app.schemas.project import SavePaperRequest
-from app.services.paper_search import _deduplicate_raw_books, search_and_download
+from app.services.paper_search import search_and_download
 from app.services.project import save_paper_to_project
 
 logger = logging.getLogger(__name__)
@@ -669,9 +670,13 @@ async def _run_search_job(
 # ── Auto search & save ──────────────────────────────────────────────────
 
 
-async def _generate_query_from_project(project) -> str:
-    """Use the LLM to generate a single high-quality search query for the
-    given project. Falls back to the project topic on any LLM error.
+async def _generate_queries_from_project(project) -> list[str]:
+    """Use the LLM to generate multiple high-quality search queries for the
+    given project. Returns 4-6 queries covering different angles
+    (methodology, application, comparative, recent trends).
+
+    Falls back to a single-element list with the project topic on any LLM
+    error or when the LLM returns nothing usable.
     """
     from app.ai.prompts import (
         SEARCH_SUGGEST_SYSTEM,
@@ -680,37 +685,63 @@ async def _generate_query_from_project(project) -> str:
     )
     from app.ai.provider import get_provider
 
-    provider = get_provider()
-    protocol_text = format_protocol_for_prompt(project.review_protocol or {})
-    user_msg = SEARCH_SUGGEST_USER.format(
-        title=project.title or "",
-        topic=project.topic or "",
-        research_question=project.research_question or project.topic or "",
-        protocol_context=protocol_text,
-    )
-    raw = await provider.complete_structured(
-        messages=[{"role": "user", "content": user_msg}],
-        system=SEARCH_SUGGEST_SYSTEM,
-        schema={
-            "type": "object",
-            "properties": {
-                "queries": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "minItems": 4,
-                    "maxItems": 6,
+    fallback = [(project.topic or "").strip()] if (project.topic or "").strip() else []
+
+    try:
+        provider = get_provider()
+        protocol_text = format_protocol_for_prompt(project.review_protocol or {})
+        user_msg = SEARCH_SUGGEST_USER.format(
+            title=project.title or "",
+            topic=project.topic or "",
+            research_question=project.research_question or project.topic or "",
+            protocol_context=protocol_text,
+        )
+        raw = await provider.complete_structured(
+            messages=[{"role": "user", "content": user_msg}],
+            system=SEARCH_SUGGEST_SYSTEM,
+            schema={
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 4,
+                        "maxItems": 6,
+                    },
                 },
+                "required": ["queries"],
             },
-            "required": ["queries"],
-        },
-        tool_name="auto_search_generate_query",
-        max_tokens=800,
-    )
-    queries = raw.get("queries", []) if isinstance(raw, dict) else []
-    # Pick the first one; fall back to topic if empty.
-    if queries and isinstance(queries[0], str) and queries[0].strip():
-        return queries[0].strip()
-    return (project.topic or "").strip()
+            tool_name="auto_search_generate_query",
+            max_tokens=800,
+        )
+        queries = raw.get("queries", []) if isinstance(raw, dict) else []
+        cleaned = [
+            q.strip() for q in queries
+            if isinstance(q, str) and q.strip()
+        ]
+        # Dedupe (case-insensitive) but preserve order
+        seen: set[str] = set()
+        unique: list[str] = []
+        for q in cleaned:
+            key = q.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(q)
+        if unique:
+            return unique[:6]
+    except Exception as exc:
+        logger.warning("Auto-query generation failed, falling back to topic: %s", exc)
+
+    return fallback
+
+
+# Backwards-compatible alias for tests/older callers. Returns the first
+# query as a string (the legacy single-query contract).
+async def _generate_query_from_project(project) -> str:
+    """Deprecated: prefer ``_generate_queries_from_project`` (list of 4-6)."""
+    queries = await _generate_queries_from_project(project)
+    return queries[0] if queries else (project.topic or "").strip()
 
 
 async def auto_search_and_save(
@@ -741,16 +772,22 @@ async def auto_search_and_save(
     if project is None:
         return {"error": "Project not found"}
 
-    # 1b. If no query provided, auto-generate one from the project's topic
-    # + research question + review protocol.
-    effective_query = (query or "").strip()
-    if not effective_query:
+    # 1b. If no query provided, auto-generate a SET of queries from the
+    # project's topic + research question + review protocol. We search
+    # each query and pick the top-scoring papers across the union — this
+    # gives much better angle diversity than a single query (a single
+    # query tends to over-fit to one phrasing and miss relevant papers
+    # that use different terminology).
+    effective_queries: list[str]
+    if (query or "").strip():
+        effective_queries = [(query or "").strip()]
+    else:
         try:
-            effective_query = await _generate_query_from_project(project)
+            effective_queries = await _generate_queries_from_project(project)
         except Exception as exc:
             logger.warning("Auto-query generation failed, falling back to topic: %s", exc)
-            effective_query = (project.topic or "").strip()
-        if not effective_query:
+            effective_queries = [(project.topic or "").strip()] if (project.topic or "").strip() else []
+        if not effective_queries:
             return {
                 "error": (
                     "Cannot auto-search: no query provided and project has no "
@@ -758,7 +795,13 @@ async def auto_search_and_save(
                 ),
                 "status_code": 400,
             }
-        logger.info("Auto-search: generated query '%s' from project", effective_query[:80])
+        logger.info(
+            "Auto-search: generated %d queries from project: %s",
+            len(effective_queries),
+            " | ".join(q[:40] for q in effective_queries),
+        )
+    # Primary query for the SearchRun record / progress display.
+    effective_query = effective_queries[0]   # used only for status payload
 
     # 2. Check for concurrent auto_search job for this user
     running_result = await db.execute(
@@ -804,10 +847,10 @@ async def auto_search_and_save(
     await db.commit()
     await db.refresh(job)
 
-    # 5. Launch worker
+    # 5. Launch worker — pass the full list of queries (not just the first)
     ensure_future(
         _run_auto_search_job(
-            job.id, run.id, project_id, user.id, effective_query, target_count
+            job.id, run.id, project_id, user.id, effective_queries, target_count
         )
     )
 
@@ -829,13 +872,17 @@ async def _run_auto_search_job(
     session_id: UUID,
     project_id: UUID,
     user_id: UUID,
-    query: str,
+    queries: list[str],
     target_count: int,
     timeout_seconds: int = 300,
 ) -> None:
     """4-phase auto-search worker.
 
-    Phase 1 (0-25%):  Fan-out search across all sources, max 200/source
+    Phase 1 (0-25%):  Fan-out search across all sources for EACH query in
+                     the list, then dedupe across queries. A paper that
+                     matches multiple queries is preferred (it gets a
+                     higher boost in scoring) because that signals robust
+                     relevance across phrasings.
     Phase 2 (25-60%): Dedupe + batch LLM score (25/batch)
     Phase 3 (60-65%): Filter score=high, pick top N (fallback to medium)
     Phase 4 (65-100%): Auto-save top N papers (skip duplicates)
@@ -847,6 +894,10 @@ async def _run_auto_search_job(
 
     import time
     from datetime import UTC, datetime
+
+    # Defensive: callers (tests, future code) might still pass a single string.
+    if isinstance(queries, str):
+        queries = [queries]
 
     start_wall = time.monotonic()
     job = None
@@ -881,34 +932,80 @@ async def _run_auto_search_job(
                 job.progress = int(payload.get("percent", job.progress or 0))
                 await bg_db.commit()
 
-            # ── Phase 1: Search all sources in parallel ──────────────────
+            # ── Phase 1: Multi-query search, dedupe across queries ───────
+            #
+            # Each query fans out to all sources in parallel. We then dedupe
+            # by canonical identifier (S2 / arxiv / DOI / title). A paper
+            # that appears for multiple queries gets ``match_count`` bumped
+            # — the dedupe function returns that as a side-channel so we
+            # can use it as a relevance signal later.
+            n_queries = len(queries)
             await _update_progress({
                 "phase": "searching",
-                "current_source": "all",
+                "current_source": f"queries 0/{n_queries}",
                 "papers_found": 0,
+                "queries_total": n_queries,
+                "queries_done": 0,
                 "percent": 5,
             })
 
-            search_req = PaperSearchRequest(
-                query=query, limit=2000, download_pdfs=False
+            # Smaller per-query budget since we now run N of them in parallel.
+            # 200/source was designed for a single query; with 4-6 queries we
+            # would balloon the dedupe + scoring cost, so cap each at 60/source.
+            per_query_cap = 60
+            all_raw: list = []
+            query_search_tasks = []
+            for q in queries:
+                search_req = PaperSearchRequest(
+                    query=q, limit=per_query_cap * 5, download_pdfs=False,
+                )
+                query_search_tasks.append(
+                    search_and_download(search_req, max_per_source=per_query_cap)
+                )
+
+            # Run all queries' searches concurrently (each query itself
+            # fans out across sources internally).
+            per_query_outcomes = await asyncio.gather(
+                *query_search_tasks, return_exceptions=True,
             )
-            outcome = await search_and_download(
-                search_req, max_per_source=200,
-            )
-            all_raw = outcome.raw_papers
+            for idx, outcome in enumerate(per_query_outcomes):
+                if isinstance(outcome, Exception):
+                    logger.warning(
+                        "Query %d/%d search failed: %s",
+                        idx + 1, n_queries, outcome,
+                    )
+                    continue
+                all_raw.extend(outcome.raw_papers)
+                await _update_progress({
+                    "phase": "searching",
+                    "current_source": f"queries {idx + 1}/{n_queries}",
+                    "papers_found": len(all_raw),
+                    "queries_total": n_queries,
+                    "queries_done": idx + 1,
+                    "percent": 5 + int(15 * (idx + 1) / max(1, n_queries)),
+                })
+
+            # Dedupe across all queries. ``_deduplicate_with_match_counts``
+            # also returns a dict: canonical_key -> match_count, which the
+            # downstream score step can use to bump papers that matched
+            # multiple queries.
+            deduped, match_counts = _deduplicate_with_match_counts(all_raw)
 
             await _update_progress({
                 "phase": "searching",
                 "current_source": "done",
-                "papers_found": len(all_raw),
+                "papers_found": len(deduped),
+                "queries_total": n_queries,
+                "queries_done": n_queries,
+                "multi_match_papers": sum(1 for c in match_counts.values() if c > 1),
                 "percent": 25,
             })
 
             if time.monotonic() - start_wall > timeout_seconds:
                 raise TimeoutError("Phase 1 exceeded timeout")
 
-            # ── Phase 2: Dedupe + batch LLM score ─────────────────────────
-            deduped = _deduplicate_raw_books(all_raw)
+            # ── Phase 2: Batch LLM score ──────────────────────────────────
+            # ``deduped`` and ``match_counts`` already come from Phase 1.
 
             batches_total = max(1, (len(deduped) + 24) // 25)
             await _update_progress({
@@ -927,19 +1024,49 @@ async def _run_auto_search_job(
                 raise TimeoutError("Phase 2 exceeded timeout")
 
             # ── Phase 3: Filter + pick top N ──────────────────────────────
-            scored = [
-                (paper, score)
-                for paper, score in zip(deduped, scores, strict=False)
-                if score in ("high", "medium", "low")
-            ]
-            # Sort: high first, then medium, then low; stable by original order
-            priority = {"high": 0, "medium": 1, "low": 2}
-            scored.sort(key=lambda p: priority.get(p[1], 9))
+            #
+            # Build a (paper, score, match_count) triple. match_count comes
+            # from Phase 1 dedupe — a paper that matched across multiple
+            # queries is more robustly relevant, so we apply a small boost:
+            #
+            #   match_count >= 2 AND original_score in ("medium", "low")
+            #     -> bump to "medium" if it was "low", leave "medium" alone
+            #     (we don't bump medium→high to avoid inflating uncertain hits)
+            #
+            # We never OVERRIDE a "high" downward. And we never promote a
+            # "low" to "high" — match_count > 1 only means the paper is
+            # robustly found across phrasings; it doesn't change its
+            # topical relevance judgment from the LLM.
+            def _canonical_key(p) -> str:
+                return (
+                    p.semantic_scholar_id
+                    or p.arxiv_id
+                    or p.doi
+                    or (p.title or "").lower().strip()
+                    or f"_unknown_{id(p)}"
+                )
 
-            high_picks = [(p, s) for p, s in scored if s == "high"][:target_count]
+            scored: list[tuple] = []
+            for paper, raw_score in zip(deduped, scores, strict=False):
+                if raw_score not in ("high", "medium", "low"):
+                    continue
+                mcount = match_counts.get(_canonical_key(paper), 1)
+                effective_score = raw_score
+                if mcount >= 2 and raw_score == "low":
+                    effective_score = "medium"
+                scored.append((paper, effective_score, mcount))
+
+            # Sort: high first, then medium, then low; tiebreak by
+            # match_count desc (multi-query hits win), then by stable order.
+            priority = {"high": 0, "medium": 1, "low": 2}
+            scored.sort(
+                key=lambda t: (priority.get(t[1], 9), -t[2]),
+            )
+
+            high_picks = [(p, s) for p, s, _ in scored if s == "high"][:target_count]
             if len(high_picks) < target_count:
                 remaining = target_count - len(high_picks)
-                medium_picks = [(p, s) for p, s in scored if s == "medium"][:remaining]
+                medium_picks = [(p, s) for p, s, _ in scored if s == "medium"][:remaining]
                 high_picks.extend(medium_picks)
 
             top_papers = [p for p, _ in high_picks[:target_count]]
@@ -1035,6 +1162,12 @@ async def _run_auto_search_job(
                 "saved_count": saved_count,
                 "skipped_count": skipped_count,
                 "target_count": target_count,
+                "queries_used": list(queries),
+                "queries_count": len(queries),
+                "candidates_after_dedupe": len(deduped),
+                "multi_match_papers": sum(
+                    1 for c in match_counts.values() if c > 1
+                ),
                 "saved_paper_ids": [
                     p.get("semantic_scholar_id") or p.get("doi") or p.get("arxiv_id") or p.get("title")
                     for p in saved_paper_dicts
@@ -1045,6 +1178,7 @@ async def _run_auto_search_job(
                 "saved": saved_count,
                 "skipped": skipped_count,
                 "total": len(top_papers),
+                "queries_used": len(queries),
                 "percent": 100,
             }
             job.completed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -1214,3 +1348,45 @@ def _raw_paper_to_dict(paper) -> dict:
             or (paper.source_specific or {}).get("pmc_id")
         ),
     }
+
+
+def _deduplicate_with_match_counts(
+    papers: list,
+) -> tuple[list, dict[str, int]]:
+    """Deduplicate a list of RawPaper objects by strongest identifier AND
+    return how many times each canonical paper was matched across queries.
+
+    Returns:
+        (unique_papers, match_counts) where ``match_counts[key]`` is the
+        number of times a paper with that canonical key appeared in the
+        input list. A ``match_count > 1`` means the paper was found by more
+        than one query — a strong relevance signal (the paper's topic is
+        robust to phrasing).
+
+    Order: preserves first-seen order, which keeps the original ranking
+    stability for downstream scoring.
+    """
+    seen_order: list[str] = []
+    seen_set: set[str] = set()
+    match_counts: dict[str, int] = {}
+    unique: list = []
+
+    for p in papers:
+        key = (
+            p.semantic_scholar_id
+            or p.arxiv_id
+            or p.doi
+            or (p.title or "").lower().strip()
+        )
+        if not key:
+            # No identifiable key at all — keep it standalone with a
+            # synthetic key so we don't accidentally collide.
+            key = f"_unknown_{id(p)}"
+        match_counts[key] = match_counts.get(key, 0) + 1
+        if key in seen_set:
+            continue
+        seen_set.add(key)
+        seen_order.append(key)
+        unique.append(p)
+
+    return unique, match_counts

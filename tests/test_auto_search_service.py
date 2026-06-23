@@ -179,9 +179,11 @@ async def test_run_auto_search_phase1_calls_search_and_download():
                         timeout_seconds=5,
                     )
 
-        # search_and_download was called with max_per_source=200
+        # search_and_download was called with max_per_source=60 (the new
+        # per-query cap; we now run multiple queries in parallel so each
+        # gets a smaller budget to keep total work bounded).
         call_kwargs = mock_search.call_args.kwargs
-        assert call_kwargs.get("max_per_source") == 200
+        assert call_kwargs.get("max_per_source") == 60
 
 
 @pytest.mark.asyncio
@@ -227,25 +229,34 @@ async def test_auto_search_generates_query_when_empty():
         if hasattr(coro, "cr_frame") and coro.cr_frame is not None:
             locals_dict = coro.cr_frame.f_locals
             captured["query"] = locals_dict.get("query")
+            captured["queries"] = locals_dict.get("queries")
             captured["target_count"] = locals_dict.get("target_count")
         return None
 
     with patch("app.services.search_session.ensure_future", side_effect=fake_ensure_future), \
-         patch("app.services.search_session._generate_query_from_project") as mock_gen:
-        mock_gen.return_value = "RAG medical QA retrieval augmented generation"
+         patch("app.services.search_session._generate_queries_from_project") as mock_gen:
+        mock_gen.return_value = [
+            "RAG medical QA retrieval augmented generation",
+            "clinical decision support RAG evaluation",
+        ]
         result = await auto_search_and_save(db, user, project.id, "", 50)
 
     assert result["status"] == "running"
     assert result["query_was_generated"] is True
+    # The primary query returned is the first one
     assert result["query"] == "RAG medical QA retrieval augmented generation"
-    assert captured.get("query") == "RAG medical QA retrieval augmented generation"
+    # The worker received the full list
+    assert captured.get("queries") == [
+        "RAG medical QA retrieval augmented generation",
+        "clinical decision support RAG evaluation",
+    ]
     assert captured.get("target_count") == 50
     assert mock_gen.called
 
 
 @pytest.mark.asyncio
 async def test_auto_search_uses_explicit_query_when_provided():
-    """When the caller provides a non-empty query, _generate_query_from_project
+    """When the caller provides a non-empty query, _generate_queries_from_project
     is NOT called."""
     db = _mock_db()
     project = SimpleNamespace(
@@ -269,9 +280,311 @@ async def test_auto_search_uses_explicit_query_when_provided():
     db.execute = mock_execute
 
     with patch("app.services.search_session.ensure_future"), \
-         patch("app.services.search_session._generate_query_from_project") as mock_gen:
+         patch("app.services.search_session._generate_queries_from_project") as mock_gen:
         result = await auto_search_and_save(db, user, project.id, "explicit query", 50)
 
     assert result["query_was_generated"] is False
     assert result["query"] == "explicit query"
     assert not mock_gen.called
+
+
+# ── Multi-query search tests ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_generate_queries_from_project_returns_list():
+    """``_generate_queries_from_project`` returns 4-6 deduplicated queries
+    (or a single fallback to project.topic on LLM error)."""
+    from app.services.search_session import _generate_queries_from_project
+
+    project = SimpleNamespace(
+        title="Cancer Immunotherapy",
+        topic="non-chemotherapeutic cancer treatments",
+        research_question="How effective is immunotherapy vs chemotherapy?",
+        review_protocol=None,
+    )
+
+    # Mock the LLM to return a realistic 5-query result
+    fake_queries = [
+        "immunotherapy cancer clinical trials efficacy",
+        "CAR T cell therapy tumor clearance mathematical modeling",
+        "non-chemotherapeutic cancer treatment safety adverse events",
+        "radiotherapy immunotherapy synergy combination outcomes",
+        "computational modeling tumor immune dynamics",
+    ]
+    with patch("app.ai.provider.get_provider") as mock_get_provider:
+        provider = MagicMock()
+        provider.complete_structured = AsyncMock(return_value={"queries": fake_queries})
+        mock_get_provider.return_value = provider
+
+        queries = await _generate_queries_from_project(project)
+
+    assert len(queries) == 5
+    assert queries == fake_queries
+
+
+@pytest.mark.asyncio
+async def test_generate_queries_dedupes_case_insensitive():
+    """Duplicate queries (case-insensitive) are removed while preserving order."""
+    from app.services.search_session import _generate_queries_from_project
+
+    project = SimpleNamespace(
+        title="X", topic="topic", research_question=None, review_protocol=None,
+    )
+    with patch("app.ai.provider.get_provider") as mock_get_provider:
+        provider = MagicMock()
+        provider.complete_structured = AsyncMock(return_value={
+            "queries": [
+                "Cancer Immunotherapy",
+                "cancer immunotherapy",  # case-insensitive dup
+                "Targeted Therapy",
+                "Cancer Immunotherapy",  # exact dup
+                "Combination Therapy",
+            ]
+        })
+        mock_get_provider.return_value = provider
+
+        queries = await _generate_queries_from_project(project)
+
+    assert queries == [
+        "Cancer Immunotherapy",
+        "Targeted Therapy",
+        "Combination Therapy",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generate_queries_falls_back_to_topic_on_error():
+    """If the LLM call raises, we fall back to [project.topic] (1 element)."""
+    from app.services.search_session import _generate_queries_from_project
+
+    project = SimpleNamespace(
+        title="X", topic="fallback topic", research_question=None, review_protocol=None,
+    )
+    with patch("app.ai.provider.get_provider") as mock_get_provider:
+        provider = MagicMock()
+        provider.complete_structured = AsyncMock(side_effect=Exception("LLM down"))
+        mock_get_provider.return_value = provider
+
+        queries = await _generate_queries_from_project(project)
+
+    assert queries == ["fallback topic"]
+
+
+@pytest.mark.asyncio
+async def test_generate_queries_empty_topic_returns_empty_list():
+    """If both LLM fails AND project has no topic, return [] so caller can 400."""
+    from app.services.search_session import _generate_queries_from_project
+
+    project = SimpleNamespace(
+        title="X", topic="", research_question=None, review_protocol=None,
+    )
+    with patch("app.ai.provider.get_provider") as mock_get_provider:
+        provider = MagicMock()
+        provider.complete_structured = AsyncMock(side_effect=Exception("LLM down"))
+        mock_get_provider.return_value = provider
+
+        queries = await _generate_queries_from_project(project)
+
+    assert queries == []
+
+
+def test_deduplicate_with_match_counts_returns_count():
+    """A paper appearing in 2 queries gets match_count=2."""
+    from app.services.search_session import _deduplicate_with_match_counts
+
+    p1 = SimpleNamespace(
+        title="Paper A", abstract=None, semantic_scholar_id="ss1",
+        arxiv_id=None, doi=None, source_name="", source_specific={},
+    )
+    p2 = SimpleNamespace(
+        title="Paper B", abstract=None, semantic_scholar_id="ss2",
+        arxiv_id=None, doi=None, source_name="", source_specific={},
+    )
+    papers = [p1, p2, p1, p1, p2]  # p1 x3, p2 x2
+
+    unique, counts = _deduplicate_with_match_counts(papers)
+
+    assert len(unique) == 2
+    assert counts["ss1"] == 3
+    assert counts["ss2"] == 2
+
+
+def test_deduplicate_with_match_counts_falls_back_to_title():
+    """When no S2/arxiv/DOI, dedupe by lowercased title."""
+    from app.services.search_session import _deduplicate_with_match_counts
+
+    p1 = SimpleNamespace(
+        title="Machine Learning in Oncology",
+        abstract=None, semantic_scholar_id=None,
+        arxiv_id=None, doi=None, source_name="", source_specific={},
+    )
+    p2 = SimpleNamespace(
+        title="machine learning in oncology",  # same after lowercase
+        abstract=None, semantic_scholar_id=None,
+        arxiv_id=None, doi=None, source_name="", source_specific={},
+    )
+    p3 = SimpleNamespace(
+        title="Different Paper",
+        abstract=None, semantic_scholar_id=None,
+        arxiv_id=None, doi=None, source_name="", source_specific={},
+    )
+    papers = [p1, p2, p3]
+
+    unique, counts = _deduplicate_with_match_counts(papers)
+
+    assert len(unique) == 2
+    assert counts["machine learning in oncology"] == 2
+    assert counts["different paper"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_auto_search_phase1_runs_multiple_queries_concurrently():
+    """Phase 1 issues one search_and_download call per query (gather'd)."""
+    from app.services.search_session import _run_auto_search_job
+
+    user_id = uuid4()
+    project_id = uuid4()
+    job_id = uuid4()
+    session_id = uuid4()
+
+    job = SimpleNamespace(
+        id=job_id, status="pending", progress=0, total=50,
+        progress_json={"phase": "queued"}, result={}, error_message=None,
+    )
+    run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
+    user = SimpleNamespace(id=user_id)
+
+    with patch("app.services.search_session.async_session_factory") as mock_factory:
+        bg_db = AsyncMock()
+        bg_db.execute = AsyncMock(side_effect=[
+            MagicMock(scalar_one_or_none=MagicMock(return_value=job)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=run)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=user)),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        ])
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        # Track call count for search_and_download
+        search_call_queries: list = []
+
+        async def fake_search(req, max_per_source=None):
+            search_call_queries.append(req.query)
+            # 3 papers per query, all distinct (so 12 total after dedupe)
+            return SimpleNamespace(
+                raw_papers=[
+                    SimpleNamespace(
+                        title=f"Paper {req.query}-{i}",
+                        abstract=None, year=2024, venue=None,
+                        doi=None, arxiv_id=f"{req.query}-{i}",
+                        semantic_scholar_id=None, url=None,
+                        citation_count=0, authors=[],
+                        source_name="arxiv", source_specific={},
+                    )
+                    for i in range(3)
+                ],
+                response=SimpleNamespace(source_diagnostics=[]),
+            )
+
+        with patch("app.services.search_session.search_and_download", side_effect=fake_search), \
+             patch("app.services.search_session.batch_score_papers") as mock_score, \
+             patch("app.services.search_session.save_paper_to_project") as mock_save:
+
+            # All papers score "high" so all 12 are picked (capped at target=50).
+            mock_score.return_value = ["high"] * 12
+            mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
+
+            queries = ["q1", "q2", "q3", "q4"]
+            await _run_auto_search_job(
+                job_id, session_id, project_id, user_id, queries, 50,
+                timeout_seconds=10,
+            )
+
+        # search_and_download was called once per query
+        assert sorted(search_call_queries) == ["q1", "q2", "q3", "q4"]
+
+        # job.result should include queries_used + multi_match_papers
+        assert job.result["queries_count"] == 4
+        assert job.result["queries_used"] == ["q1", "q2", "q3", "q4"]
+        assert job.result["candidates_after_dedupe"] == 12  # all distinct
+
+
+@pytest.mark.asyncio
+async def test_run_auto_search_bumps_low_to_medium_when_multi_match():
+    """A paper scored 'low' but matched by 2+ queries gets promoted to medium."""
+    from app.services.search_session import _run_auto_search_job
+
+    user_id = uuid4()
+    project_id = uuid4()
+    job_id = uuid4()
+    session_id = uuid4()
+
+    job = SimpleNamespace(
+        id=job_id, status="pending", progress=0, total=50,
+        progress_json={"phase": "queued"}, result={}, error_message=None,
+    )
+    run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
+    user = SimpleNamespace(id=user_id)
+
+    with patch("app.services.search_session.async_session_factory") as mock_factory:
+        bg_db = AsyncMock()
+        bg_db.execute = AsyncMock(side_effect=[
+            MagicMock(scalar_one_or_none=MagicMock(return_value=job)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=run)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=user)),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        ])
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        # Two queries, both return the SAME paper (so match_count=2).
+        # All papers score "low" in the LLM.
+        shared = SimpleNamespace(
+            title="Shared paper",
+            abstract=None, year=2024, venue=None,
+            doi=None, arxiv_id="2401.99999",
+            semantic_scholar_id=None, url=None,
+            citation_count=0, authors=[],
+            source_name="arxiv", source_specific={},
+        )
+        other = SimpleNamespace(
+            title="Other paper (only query 1)",
+            abstract=None, year=2024, venue=None,
+            doi=None, arxiv_id="2401.11111",
+            semantic_scholar_id=None, url=None,
+            citation_count=0, authors=[],
+            source_name="arxiv", source_specific={},
+        )
+
+        async def fake_search(req, max_per_source=None):
+            if req.query == "q1":
+                return SimpleNamespace(raw_papers=[shared, other], response=SimpleNamespace(source_diagnostics=[]))
+            return SimpleNamespace(raw_papers=[shared], response=SimpleNamespace(source_diagnostics=[]))
+
+        with patch("app.services.search_session.search_and_download", side_effect=fake_search), \
+             patch("app.services.search_session.batch_score_papers") as mock_score, \
+             patch("app.services.search_session.save_paper_to_project") as mock_save:
+
+            # Both papers scored "low" by LLM
+            mock_score.return_value = ["low", "low"]
+            mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
+
+            await _run_auto_search_job(
+                job_id, session_id, project_id, user_id, ["q1", "q2"], 50,
+                timeout_seconds=10,
+            )
+
+        # The "shared" paper matched both queries → match_count=2 → bumped to medium.
+        # The "other" paper matched only q1 → match_count=1 → stays low.
+        # Only the bumped medium paper is saved (low is filtered out by Phase 3).
+        assert job.result["saved_count"] == 1
+        # job.result records the multi-match signal for debugging.
+        assert job.result["multi_match_papers"] >= 1
