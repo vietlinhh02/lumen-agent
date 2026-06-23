@@ -50,9 +50,9 @@ _CACHE_MAX_SIZE = 100
 _CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
-def _cache_key(query: str, limit: int, year_from: int | None, year_to: int | None) -> str:
-    """Generate a cache key for search parameters."""
-    raw = f"{query}:{limit}:{year_from}:{year_to}"
+def _cache_key(*parts: object) -> str:
+    """Generate a cache key from any combination of parts."""
+    raw = "|".join(str(p) for p in parts)
     return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -110,11 +110,17 @@ class SearchOutcome(NamedTuple):
 # ── primary service function ─────────────────────────────────────────────
 
 
-async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
+async def search_and_download(
+    request: PaperSearchRequest,
+    max_per_source: int | None = None,
+) -> SearchOutcome:
     """Search Semantic Scholar, optionally download PDFs, return structured results.
 
     Args:
         request: Validated search parameters.
+        max_per_source: Override the default per-source fetch cap (default
+            ``min(limit * 2, 100)``). Auto-search passes ``200`` here so the
+            LLM has more candidates to score.
 
     Returns:
         ``SearchOutcome`` with the API response, raw papers, and per-paper
@@ -124,7 +130,9 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
     pdf_dir = Path(settings.paper_pdf_dir)
 
     # ── 0. Check cache first ─────────────────────────────────────────────
-    cache_key = _cache_key(request.query, request.limit, request.year_from, request.year_to)
+    cache_key = _cache_key(
+        f"{request.query}|{request.limit}|{request.year_from}|{request.year_to}|mp={max_per_source}"
+    )
     cached = _get_cached_search(cache_key)
     search_ms: float = 0.0
 
@@ -168,6 +176,7 @@ async def search_and_download(request: PaperSearchRequest) -> SearchOutcome:
             request.limit,
             request.year_from,
             request.year_to,
+            max_per_source=max_per_source,
         )
 
         search_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -429,6 +438,7 @@ async def _search_sources_parallel(
     limit: int,
     year_from: int | None,
     year_to: int | None,
+    max_per_source: int | None = None,
 ) -> tuple[list[RawPaper], list[dict]]:
     """Search all configured sources in parallel with early exit optimization.
 
@@ -472,9 +482,14 @@ async def _search_sources_parallel(
                     )
                 return
 
+            per_source_limit = (
+                max_per_source
+                if max_per_source is not None
+                else min(limit * 2, 100)
+            )
             papers = await source.search(
                 query=src_query,
-                limit=min(limit * 2, 100),  # Fetch extra to account for dedup
+                limit=per_source_limit,
                 year_from=year_from,
                 year_to=year_to,
             )
