@@ -415,7 +415,54 @@ async def test_matrix_extraction_verifier_can_adjust_primary_result():
     row = result["matrix_rows"][0]
     assert row["method"] == "Verified method"
     assert row["key_result"] == "Verified result"
-    assert row["extraction_confidence"] == "medium"
+    # Rewording alone is NOT a quality regression — verifier didn't lower
+    # confidence, so primary's "high" is preserved.
+    assert row["extraction_confidence"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_matrix_extraction_verifier_lowers_confidence_is_respected():
+    """If the verifier explicitly lowers confidence, respect it."""
+    pp_id = uuid4()
+    state = _make_state()
+    db = _mock_db_with_papers([_make_project_paper(pp_id=pp_id, title="Lower Paper")])
+
+    with (
+        patch(
+            "app.agents.nodes.retrieve_paper_evidence",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "app.services.literature_matrix.upsert_rows",
+            new_callable=AsyncMock,
+            return_value=1,
+        ),
+    ):
+        primary_provider = AsyncMock()
+        primary_provider.complete_structured.return_value = {
+            "research_problem": "P", "method": "P", "dataset_or_context": "P",
+            "key_result": "P", "limitation": "P", "contribution": "P",
+            "relevance": "P", "confidence": "high",
+        }
+        verifier_provider = AsyncMock()
+        verifier_provider.complete_structured.return_value = {
+            "research_problem": "V", "method": "V", "dataset_or_context": "V",
+            "key_result": "V", "limitation": "V", "contribution": "V",
+            "relevance": "V", "confidence": "low",
+        }
+
+        with (
+            patch("app.agents.nodes.get_provider", return_value=primary_provider),
+            patch(
+                "app.agents.nodes.get_matrix_verifier_provider",
+                return_value=verifier_provider,
+            ),
+        ):
+            result = await matrix_extraction_node(state, db)
+
+    row = result["matrix_rows"][0]
+    assert row["extraction_confidence"] == "low"
 
 
 @pytest.mark.asyncio

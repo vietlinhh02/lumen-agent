@@ -87,15 +87,13 @@ async def upsert_rows(
         )
         await db.execute(stmt)
 
-        # Sync low confidence to ProjectPaper relevance_label
-        if row.get("extraction_confidence") == "low":
-            from sqlalchemy import update
-            update_stmt = (
-                update(ProjectPaper)
-                .where(ProjectPaper.id == row["project_paper_id"])
-                .values(relevance_label="low")
-            )
-            await db.execute(update_stmt)
+        # NOTE: We intentionally do NOT auto-set ``ProjectPaper.relevance_label``
+        # to "low" here. ``extraction_confidence`` measures extraction quality
+        # (did we manage to fill in the matrix fields?), not topic relevance.
+        # A user-saved paper should not silently flip to "low" because the LLM
+        # had a hard time parsing its abstract. If a paper is genuinely
+        # off-topic, that decision belongs to the user (via the review-protocol
+        # exclusion workflow), not to the matrix extractor.
 
     await db.commit()
     return len(rows)

@@ -245,8 +245,13 @@ from the paper metadata provided.
 Rules:
 - Use only the information given. Do not invent details.
 - If a field cannot be determined from the available text, return "not specified".
-- Set confidence to "high" only if the abstract or title clearly supports all fields.
-- Set confidence to "low" if critical fields like method or result are missing.
+- The "confidence" field measures extraction QUALITY, not topic relevance:
+    * "high"   = the abstract or full-text clearly supports every field.
+    * "medium" = most fields are supported; a couple of fields are "not specified".
+    * "low"    = the text is unusable (truncated, garbled, or wrong language).
+  Do NOT set "low" just because the paper is off-topic — that goes in the
+  "relevance" field instead.
+- Default to "medium" when in doubt.
 - Keep each field concise: 1 to 3 sentences maximum.
 - The relevance field must connect the paper to the specific project topic.
 """
@@ -276,8 +281,13 @@ Rules:
 - Full-text sections provide richer context than the abstract alone — use them
   for method, dataset, key_result, and limitation fields.
 - If a field cannot be determined from the available text, return "not specified".
-- Set confidence to "high" only if the abstract AND sections clearly support all fields.
-- Set confidence to "low" if critical fields like method or result are missing.
+- The "confidence" field measures extraction QUALITY, not topic relevance:
+    * "high"   = abstract + full-text sections clearly support every field.
+    * "medium" = most fields are supported; a couple of fields are "not specified".
+    * "low"    = the text is unusable (truncated, garbled, or wrong language).
+  Do NOT set "low" just because the paper is off-topic — that goes in the
+  "relevance" field instead.
+- Default to "medium" when in doubt.
 - Keep each field concise: 1 to 3 sentences maximum.
 - The relevance field must connect the paper to the specific project topic.
 """

@@ -689,11 +689,23 @@ async def matrix_extraction_node(
                                 "Verifier adjusted matrix extraction for '%s'",
                                 paper.title[:60],
                             )
-                            if (
-                                verified_normalized["extraction_confidence"] == "high"
-                                and normalized != verified_normalized
-                            ):
-                                verified_normalized["extraction_confidence"] = "medium"
+                            # Confidence policy: take the MORE CONSERVATIVE
+                            # of the two. Rewording alone doesn't lower
+                            # confidence (the LLM may legitimately phrase
+                            # things differently); only an explicit
+                            # down-step on the confidence field itself
+                            # propagates.
+                            primary_conf = normalized["extraction_confidence"]
+                            verified_conf = verified_normalized["extraction_confidence"]
+                            conf_rank = {"high": 0, "medium": 1, "low": 2}
+                            if conf_rank.get(verified_conf, 1) > conf_rank.get(primary_conf, 1):
+                                # Verifier is more pessimistic — respect it.
+                                pass
+                            else:
+                                # Verifier did not lower confidence; keep
+                                # primary (rewording alone is not a quality
+                                # regression).
+                                verified_normalized["extraction_confidence"] = primary_conf
                         normalized = verified_normalized
                     except Exception as exc:
                         logger.warning(
