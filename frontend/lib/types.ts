@@ -468,3 +468,117 @@ export type AgentStatus =
   | "stopped"
   | "done"
   | "error";
+
+// ── PRISMA-style project audit (T2) ─────────────────────────────────────
+
+export interface AuditSourceCount {
+  source: string;
+  count: number;
+}
+
+export interface AuditExclusionReason {
+  reason: string;
+  label: string;
+  count: number;
+}
+
+export interface AuditHistogramPoint {
+  key: string;
+  count: number;
+}
+
+export interface AuditTimelinePoint {
+  date: string; // ISO date YYYY-MM-DD
+  count: number;
+}
+
+export interface AuditSearchSessionSummary {
+  id: string;
+  user_query: string;
+  total_results: number;
+  screened_count: number;
+  high_score_count: number;
+  created_at: string;
+}
+
+export interface AuditQualityMetrics {
+  matrix_avg_confidence: number | null;
+  matrix_confidence_breakdown: Record<string, number>;
+  full_text_success_rate: number | null;
+  full_text_breakdown: Record<string, number>;
+  citation_validity_rate: number | null;
+  reports_by_validation: Record<string, number>;
+}
+
+export interface PrismaAuditResponse {
+  project_id: string;
+  project_title: string;
+  project_topic: string;
+  research_question: string | null;
+  generated_at: string;
+  identified_by_source: AuditSourceCount[];
+  records_identified: number;
+  duplicates_removed: number;
+  records_screened: number;
+  records_excluded_screening: number;
+  screening_score_distribution: Record<string, number>;
+  full_text_assessed: number;
+  full_text_not_retrieved: number;
+  records_included: number;
+  records_uncertain: number;
+  records_excluded_final: number;
+  exclusion_reasons: AuditExclusionReason[];
+  matrix_rows: number;
+  reports_generated: number;
+  cited_in_reports: number;
+  protocol_notes: string | null;
+  // ── Enrichment layer ────────────────────────────────────────────────
+  year_distribution: AuditHistogramPoint[];
+  top_venues: AuditHistogramPoint[];
+  year_min: number | null;
+  year_max: number | null;
+  inclusion_timeline: AuditTimelinePoint[];
+  recent_search_sessions: AuditSearchSessionSummary[];
+  quality_metrics: AuditQualityMetrics;
+}
+
+// ── Auto search & save ──────────────────────────────────────────────
+
+export interface AutoSearchRequest {
+  query: string;
+  target_count: 25 | 50 | 100;
+}
+
+export interface AutoSearchResponse {
+  job_id: string;
+  session_id: string;
+  target_count: number;
+  status: "running";
+}
+
+export type AutoSearchPhase =
+  | "queued"
+  | "searching"
+  | "scoring"
+  | "filtering"
+  | "saving"
+  | "done"
+  | "failed";
+
+export interface AutoSearchProgressJson {
+  phase: AutoSearchPhase;
+  target_count?: number;
+  current_source?: string;
+  papers_found?: number;
+  batches_completed?: number;
+  batches_total?: number;
+  papers_scored?: number;
+  papers_total?: number;
+  kept?: number;
+  saved?: number;
+  skipped?: number;
+  total?: number;
+  current_paper?: string;
+  percent: number;
+  error?: string;
+}
