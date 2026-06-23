@@ -90,22 +90,48 @@ function getAccumulatedThought(event: any, allEvents: AssistantEventData[]): str
 /* ── Helper: Parse ReAct Thought & Action ───────────────────────────────────── */
 
 function parseAssistantMessage(content: string) {
+  // Some reasoning models (e.g. MiniMax-M2.7) emit a `` block at the
+  // start of their reply instead of the legacy "Thought:" / "Action:" /
+  // "Observation:" markers. We must strip it BEFORE handing the rest to
+  // ReactMarkdown, otherwise the unknown `` tag is parsed as raw HTML
+  // (rehypeRaw is enabled) and React logs "The tag  is unrecognized".
+  const thinkRegex = /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi;
+  const thinkMatches = [...content.matchAll(thinkRegex)];
+  const thinkText = thinkMatches
+    .map((m) => m[1].trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+  // Also strip any leftover `` opener/closer that wasn't paired
+  // (streaming cut-offs, malformed model output, etc.) so they never
+  // leak into the rendered markdown.
+  const strippedContent = content
+    .replace(thinkRegex, "")
+    .replace(/<\/?think(?:ing)?>/gi, "")
+    .trim();
+
   const thoughtRegex = /(?:^|\n)\s*Thought:\s*([\s\S]*?)(?=(?:\n\s*Action:|\n\s*Observation:|$))/i;
   const actionRegex = /(?:^|\n)\s*Action:\s*([\s\S]*?)(?=(?:\n\s*Observation:|$))/i;
   const observationRegex = /(?:^|\n)\s*Observation:\s*([\s\S]*?)$/i;
 
-  const thoughtMatch = content.match(thoughtRegex);
-  const actionMatch = content.match(actionRegex);
-  const observationMatch = content.match(observationRegex);
+  const thoughtMatch = strippedContent.match(thoughtRegex);
+  const actionMatch = strippedContent.match(actionRegex);
+  const observationMatch = strippedContent.match(observationRegex);
 
-  const hasThoughtAction = !!(thoughtMatch || actionMatch || observationMatch);
+  // Combined "should we show a thought bubble at all?" — either legacy
+  // ReAct markers OR `` reasoning chain.
+  const hasThoughtAction = !!(
+    thinkMatches.length > 0 || thoughtMatch || actionMatch || observationMatch
+  );
 
   if (hasThoughtAction) {
-    const thoughtText = thoughtMatch ? thoughtMatch[1].trim() : "";
+    // Prefer `` content if present (it's the model's actual chain
+    // of thought); otherwise fall back to the legacy "Thought:" line.
+    const thoughtText = thinkText || (thoughtMatch ? thoughtMatch[1].trim() : "");
     const actionText = actionMatch ? actionMatch[1].trim() : "";
     const observationText = observationMatch ? observationMatch[1].trim() : "";
 
-    let cleanContent = content;
+    let cleanContent = strippedContent;
     if (thoughtMatch) cleanContent = cleanContent.replace(thoughtMatch[0], "");
     if (actionMatch) cleanContent = cleanContent.replace(actionMatch[0], "");
     if (observationMatch) cleanContent = cleanContent.replace(observationMatch[0], "");
@@ -125,7 +151,7 @@ function parseAssistantMessage(content: string) {
     thoughtText: "",
     actionText: "",
     observationText: "",
-    cleanContent: content,
+    cleanContent: strippedContent,
   };
 }
 
