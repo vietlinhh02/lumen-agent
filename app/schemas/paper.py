@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # ── Request ──────────────────────────────────────────────────────────────
@@ -171,3 +173,26 @@ class ScreenPapersResponse(BaseModel):
     """Response with relevance scores for each paper (same order as input)."""
 
     scores: list[str] = Field(description="Relevance score per paper: 'high', 'medium', or 'low'")
+
+
+# ── Auto Search & Save ───────────────────────────────────────────────────
+
+
+class AutoSearchRequest(BaseModel):
+    """Request body for the auto-search-and-save endpoint.
+
+    ``target_count`` is constrained to a small set of options so the UI can
+    present a simple dropdown (25 / 50 / 100).
+    """
+
+    query: str = Field(..., min_length=2, max_length=500)
+    target_count: Literal[25, 50, 100] = Field(..., description="Number of papers to save (25, 50, or 100)")
+
+
+class AutoSearchResponse(BaseModel):
+    """Response for POST /api/projects/{id}/search/auto."""
+
+    job_id: str
+    session_id: str
+    target_count: int
+    status: str
