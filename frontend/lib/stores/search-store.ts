@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "./auth-store";
 import { useProjectsStore } from "./projects-store";
 import type {
+  AutoSearchProgressJson,
+  AutoSearchResponse,
   PaperResult,
   SavePaperRequest,
   SavePaperResponse,
@@ -32,6 +34,12 @@ interface SearchState {
   suggestingLabels: boolean;
   savedIds: Set<string>;
   rejectedIds: Set<string>;
+
+  // Auto search state
+  isAutoSearching: boolean;
+  autoSearchJobId: string | null;
+  autoSearchSessionId: string | null;
+  autoSearchProgress: AutoSearchProgressJson | null;
 
   // Actions
   setQuery: (q: string) => void;
@@ -66,6 +74,15 @@ interface SearchState {
   isSaved: (paper: PaperResult) => boolean;
   isRejected: (paper: PaperResult) => boolean;
   reset: () => void;
+
+  // Auto search actions
+  startAutoSearch: (
+    query: string,
+    projectId: string,
+    targetCount: 25 | 50 | 100,
+  ) => Promise<AutoSearchResponse>;
+  setAutoSearchProgress: (p: AutoSearchProgressJson | null) => void;
+  clearAutoSearch: () => void;
 }
 
 function paperKey(paper: PaperResult) {
@@ -88,6 +105,12 @@ const initialState = {
   suggestingLabels: false,
   savedIds: new Set<string>(),
   rejectedIds: new Set<string>(),
+
+  // Auto search
+  isAutoSearching: false,
+  autoSearchJobId: null as string | null,
+  autoSearchSessionId: null as string | null,
+  autoSearchProgress: null as AutoSearchProgressJson | null,
 };
 
 export const useSearchStore = create<SearchState>()((set, get) => ({
@@ -281,6 +304,48 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
     } finally {
       set({ autoSaving: false });
     }
+  },
+
+  async startAutoSearch(query, projectId, targetCount) {
+    const token = useAuthStore.getState().token;
+    if (!token || !projectId) throw new Error("Missing auth or projectId");
+    set({
+      isAutoSearching: true,
+      autoSearchJobId: null,
+      autoSearchSessionId: null,
+      autoSearchProgress: null,
+    });
+    try {
+      const data = await apiFetch<AutoSearchResponse>(
+        `/projects/${projectId}/search/auto`,
+        {
+          method: "POST",
+          body: JSON.stringify({ query, target_count: targetCount }),
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      set({
+        autoSearchJobId: data.job_id,
+        autoSearchSessionId: data.session_id,
+      });
+      return data;
+    } catch (err) {
+      set({ isAutoSearching: false });
+      throw err;
+    }
+  },
+
+  setAutoSearchProgress(p) {
+    set({ autoSearchProgress: p });
+  },
+
+  clearAutoSearch() {
+    set({
+      isAutoSearching: false,
+      autoSearchJobId: null,
+      autoSearchSessionId: null,
+      autoSearchProgress: null,
+    });
   },
 
   async savePaper(paper, projectId) {
