@@ -3,17 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  CaretDown,
-  MagnifyingGlass,
-  Spinner,
-  Sparkle,
-  ClockCounterClockwise,
-  Lightning,
-  Stack,
-  StackSimple,
-  Books,
-} from "@phosphor-icons/react";
+import { CaretDown, MagnifyingGlass, Spinner, Sparkle, ClockCounterClockwise, Lightning } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
 import { useSearchStore } from "@/lib/stores/search-store";
@@ -463,108 +453,24 @@ export default function ProjectSearchPage() {
           <button
             disabled={loading || isAutoSearching || !projectId}
             onClick={() => setAutoSearchMenuOpen((v) => !v)}
-            aria-haspopup="menu"
-            aria-expanded={autoSearchMenuOpen}
-            className="focus-ring font-ui h-[44px] inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-primary to-primary-deep px-5 text-sm font-semibold text-on-primary shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-px active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-sm"
+            className="focus-ring font-ui h-[44px] inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-5 text-sm font-semibold text-primary hover:bg-primary/20 transition-all duration-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Sparkle size={14} weight="fill" />
             {isAutoSearching ? "Auto-searching…" : "Auto Search"}
-            <CaretDown
-              size={12}
-              weight="bold"
-              className={`transition-transform duration-200 ${autoSearchMenuOpen ? "rotate-180" : ""}`}
-            />
+            <CaretDown size={12} weight="bold" />
           </button>
-
           {autoSearchMenuOpen && (
-            <>
-              {/* Click-outside backdrop (in addition to document listener) */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setAutoSearchMenuOpen(false)}
-              />
-              <div
-                role="menu"
-                className="absolute right-0 mt-3 w-[320px] rounded-2xl border border-hairline bg-surface-card shadow-2xl z-20 overflow-hidden animate-slide-down-fade-in"
-                style={{ boxShadow: "0 10px 40px -10px rgba(0,0,0,0.18), 0 2px 6px -1px rgba(0,0,0,0.08)" }}
-              >
-                {/* Header */}
-                <div className="px-4 pt-3.5 pb-2 border-b border-hairline/60 bg-surface-bone/50">
-                  <p className="font-ui text-[11px] font-bold uppercase tracking-wider text-ash">
-                    Auto-search & save
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-charcoal leading-snug">
-                    {query.trim()
-                      ? <>Search using your query, then auto-save the top picks.</>
-                      : <>AI will generate a query from your project topic.</>}
-                  </p>
-                </div>
-
-                {/* Options */}
-                <div className="p-1.5 space-y-0.5">
-                  {([
-                    {
-                      n: 25 as const,
-                      label: "Quick scan",
-                      desc: "~25 papers · fastest",
-                      Icon: Lightning,
-                      iconBg: "bg-amber-50 text-amber-600",
-                    },
-                    {
-                      n: 50 as const,
-                      label: "Standard",
-                      desc: "~50 papers · balanced",
-                      Icon: Stack,
-                      iconBg: "bg-primary/10 text-primary",
-                      recommended: true,
-                    },
-                    {
-                      n: 100 as const,
-                      label: "Comprehensive",
-                      desc: "~100 papers · deepest",
-                      Icon: StackSimple,
-                      iconBg: "bg-violet-50 text-violet-600",
-                    },
-                  ]).map(({ n, label, desc, Icon, iconBg, recommended }) => (
-                    <button
-                      key={n}
-                      role="menuitem"
-                      onClick={() => handleAutoSearch(n)}
-                      className="group flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-150 hover:bg-surface-bone active:scale-[0.98]"
-                    >
-                      <span
-                        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg} transition-transform group-hover:scale-110`}
-                      >
-                        <Icon size={18} weight="duotone" />
-                      </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="flex items-center gap-1.5">
-                          <span className="font-ui text-[13px] font-semibold text-ink">
-                            {label}
-                          </span>
-                          {recommended && (
-                            <span className="font-ui text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                              Recommended
-                            </span>
-                          )}
-                        </span>
-                        <span className="block font-ui text-[11px] text-ash leading-snug mt-0.5">
-                          {desc}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Footer hint */}
-                <div className="px-4 py-2.5 border-t border-hairline/60 bg-surface-bone/40">
-                  <p className="font-ui text-[11px] text-ash leading-snug">
-                    <Sparkle size={10} weight="fill" className="inline mr-1 text-primary" />
-                    Runs 4 phases: search → LLM score → pick top → save. ~30–90s.
-                  </p>
-                </div>
-              </div>
-            </>
+            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-hairline bg-surface-card shadow-lg z-10 overflow-hidden">
+              {([25, 50, 100] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => handleAutoSearch(n)}
+                  className="block w-full text-left px-4 py-2.5 text-[13px] text-ink hover:bg-surface-bone transition-colors"
+                >
+                  Auto Search {n} papers
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>
