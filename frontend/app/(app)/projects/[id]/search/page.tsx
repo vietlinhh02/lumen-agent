@@ -168,9 +168,10 @@ export default function ProjectSearchPage() {
       // Refresh sessions list
       void loadSessions();
       clearAutoSearch();
-      // Navigate to the new session
+      // Navigate to the new session (use query param — the search page
+      // reads `?session=...` rather than a path segment).
       if (autoSearchSessionId && saved > 0) {
-        router.push(`/projects/${projectId}/search/${autoSearchSessionId}`);
+        router.push(`/projects/${projectId}/search?session=${autoSearchSessionId}&page=1`, { scroll: false });
       }
     })();
     return () => {
