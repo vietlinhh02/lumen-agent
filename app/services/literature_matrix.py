@@ -131,3 +131,44 @@ async def delete_row(
     await db.delete(row)
     await db.commit()
     return True
+
+
+async def bulk_delete_by_confidence(
+    db: AsyncSession,
+    project_id: UUID,
+    confidence: str = "low",
+) -> int:
+    """Delete every matrix row in ``project_id`` whose extraction_confidence
+    matches ``confidence``. Returns the number of rows deleted.
+
+    Used by the "Remove Low" quick action so users can clear out rows whose
+    extraction the LLM admitted was poor, before re-generating. Only deletes
+    the matrix row — the underlying saved paper is left in place so the user
+    can re-generate the matrix later.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    stmt = sa_delete(LiteratureMatrixRow).where(
+        LiteratureMatrixRow.project_id == project_id,
+        LiteratureMatrixRow.extraction_confidence == confidence,
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    # SQLAlchemy 2.x: ``result.rowcount`` reflects affected rows.
+    return int(result.rowcount or 0)
+
+
+async def count_by_confidence(
+    db: AsyncSession,
+    project_id: UUID,
+    confidence: str,
+) -> int:
+    """Return the number of matrix rows in ``project_id`` whose
+    extraction_confidence matches ``confidence``."""
+    from sqlalchemy import func
+
+    stmt = select(func.count(LiteratureMatrixRow.id)).where(
+        LiteratureMatrixRow.project_id == project_id,
+        LiteratureMatrixRow.extraction_confidence == confidence,
+    )
+    return int((await db.execute(stmt)).scalar_one() or 0)

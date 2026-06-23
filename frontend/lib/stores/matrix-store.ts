@@ -14,10 +14,12 @@ interface MatrixState {
   loading: boolean;
   generating: boolean;
   selectedProjectId: string;
+  lowCount: number;
 
   // Actions
   setSelectedProjectId: (id: string) => void;
   fetchRows: (projectId: string) => Promise<void>;
+  fetchLowCount: (projectId: string) => Promise<void>;
   generate: (
     projectId: string,
     onPoll?: (jobId: string, total?: number) => Promise<unknown>,
@@ -29,6 +31,7 @@ interface MatrixState {
     value: string,
   ) => Promise<MatrixRowResponse | null>;
   deleteRow: (projectId: string, rowId: string) => Promise<boolean>;
+  bulkDeleteLow: (projectId: string) => Promise<number>;
   reset: () => void;
 }
 
@@ -37,6 +40,7 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
   loading: false,
   generating: false,
   selectedProjectId: "",
+  lowCount: 0,
 
   setSelectedProjectId(id) {
     set({ selectedProjectId: id });
@@ -52,8 +56,25 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
         { headers: { Authorization: `Bearer ${token}` } },
       );
       set({ rows: data.items || [] });
+      // Refresh the low-confidence badge in the same pass so the
+      // "Remove Low" button shows the right count without an extra round-trip.
+      void get().fetchLowCount(projectId);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  async fetchLowCount(projectId) {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    try {
+      const data = await apiFetch<{ count: number }>(
+        `/projects/${projectId}/matrix:low-count`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      set({ lowCount: data.count });
+    } catch {
+      // Non-fatal — keep stale count.
     }
   },
 
@@ -121,7 +142,36 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
     }
   },
 
+  async bulkDeleteLow(projectId) {
+    const token = useAuthStore.getState().token;
+    if (!token) return 0;
+    try {
+      const data = await apiFetch<{ deleted_count: number }>(
+        `/projects/${projectId}/matrix:bulk-delete-low`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      // Refresh both the row list and the low-count badge so the UI stays
+      // consistent (some deleted rows may have been re-counted in lowCount).
+      await get().fetchRows(projectId);
+      return data.deleted_count;
+    } catch {
+      return 0;
+    }
+  },
+
   reset() {
-    set({ rows: [], loading: false, generating: false, selectedProjectId: "" });
+    set({
+      rows: [],
+      loading: false,
+      generating: false,
+      selectedProjectId: "",
+      lowCount: 0,
+    });
   },
 }));

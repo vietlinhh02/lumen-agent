@@ -19,7 +19,12 @@ from app.schemas.matrix import (
     MatrixRowResponse,
     MatrixRowUpdate,
 )
-from app.services.literature_matrix import delete_row, get_by_project
+from app.services.literature_matrix import (
+    bulk_delete_by_confidence,
+    count_by_confidence,
+    delete_row,
+    get_by_project,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +157,45 @@ async def delete_matrix_row(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Matrix row not found",
         )
+
+
+# ── Bulk operations ─────────────────────────────────────────────────────
+
+
+@router.get("/{project_id}/matrix:low-count")
+async def low_confidence_count(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Return how many matrix rows have ``extraction_confidence = 'low'``.
+
+    Used by the matrix page to decide whether to show the "Remove Low" button.
+    """
+    await _verify_project_owner(db, user, project_id)
+    count = await count_by_confidence(db, project_id, "low")
+    return {"count": count}
+
+
+@router.post("/{project_id}/matrix:bulk-delete-low")
+async def bulk_delete_low_confidence(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Delete every matrix row in this project whose extraction_confidence is 'low'.
+
+    Only deletes the matrix row — the underlying saved paper remains so the
+    user can re-generate the matrix later (which will produce a fresh row
+    with potentially higher confidence after better extraction).
+    """
+    await _verify_project_owner(db, user, project_id)
+    deleted = await bulk_delete_by_confidence(db, project_id, "low")
+    logger.info(
+        "User %s bulk-deleted %d low-confidence matrix rows in project %s",
+        user.id, deleted, project_id,
+    )
+    return {"deleted_count": deleted}
 
 
 # ── Generate Matrix Rows (trigger AI extraction) ─────────────────────────
