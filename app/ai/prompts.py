@@ -138,6 +138,29 @@ For each paper, return exactly one score: "high", "medium", or "low".
 """
 
 
+# ── Auto Search Batch Scoring ──────────────────────────────────────────────
+
+
+AUTO_SEARCH_SCREEN_SYSTEM = """\
+You are a paper relevance scorer. Score each paper on a 3-point scale:
+- "high": highly relevant to the research topic, should be saved
+- "medium": somewhat related, marginal relevance
+- "low": not relevant, should be discarded
+
+Output a JSON array. Each element: {"index": <int>, "score": "high"|"medium"|"low", "reason": "<one sentence>"}.
+Indices match the input order. Be strict: most papers should be "medium" or "low"."""
+
+AUTO_SEARCH_SCREEN_USER = """\
+Research topic: {topic}
+Research question: {research_question}
+
+Papers to score (indexed from 0):
+{papers_json}
+
+Output a JSON array of {{index, score, reason}} in the same order.
+"""
+
+
 # ── Research Enrichment / Facets ──────────────────────────────────────────────
 
 FACET_EXTRACTION_SYSTEM = """\
