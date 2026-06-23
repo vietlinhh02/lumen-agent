@@ -63,7 +63,20 @@ export const useReportsStore = create<ReportsState>()((set, get) => ({
   async fetchReports(projectId) {
     const token = useAuthStore.getState().token;
     if (!token) return;
-    set({ loading: true, selectedId: null, detail: null });
+    // Only clear the current selection if we're switching projects. If the
+    // caller is just refreshing the list (e.g. after a successful generate
+    // where the user has already been auto-redirected to the new report),
+    // we MUST keep the selectedId intact — otherwise the auto-selected
+    // report's detail gets wiped out a frame later and the page renders
+    // blank.
+    const state = get();
+    const projectChanged = state.selectedProjectId !== projectId;
+    set({
+      loading: true,
+      ...(projectChanged
+        ? { selectedId: null, detail: null }
+        : {}),
+    });
     try {
       const data = await apiFetch<ReportListResponse>(
         `/projects/${projectId}/reports`,
