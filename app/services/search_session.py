@@ -669,6 +669,50 @@ async def _run_search_job(
 # ── Auto search & save ──────────────────────────────────────────────────
 
 
+async def _generate_query_from_project(project) -> str:
+    """Use the LLM to generate a single high-quality search query for the
+    given project. Falls back to the project topic on any LLM error.
+    """
+    from app.ai.prompts import (
+        SEARCH_SUGGEST_SYSTEM,
+        SEARCH_SUGGEST_USER,
+        format_protocol_for_prompt,
+    )
+    from app.ai.provider import get_provider
+
+    provider = get_provider()
+    protocol_text = format_protocol_for_prompt(project.review_protocol or {})
+    user_msg = SEARCH_SUGGEST_USER.format(
+        title=project.title or "",
+        topic=project.topic or "",
+        research_question=project.research_question or project.topic or "",
+        protocol_context=protocol_text,
+    )
+    raw = await provider.complete_structured(
+        messages=[{"role": "user", "content": user_msg}],
+        system=SEARCH_SUGGEST_SYSTEM,
+        schema={
+            "type": "object",
+            "properties": {
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 4,
+                    "maxItems": 6,
+                },
+            },
+            "required": ["queries"],
+        },
+        tool_name="auto_search_generate_query",
+        max_tokens=800,
+    )
+    queries = raw.get("queries", []) if isinstance(raw, dict) else []
+    # Pick the first one; fall back to topic if empty.
+    if queries and isinstance(queries[0], str) and queries[0].strip():
+        return queries[0].strip()
+    return (project.topic or "").strip()
+
+
 async def auto_search_and_save(
     db: AsyncSession,
     user: User,
@@ -697,6 +741,25 @@ async def auto_search_and_save(
     if project is None:
         return {"error": "Project not found"}
 
+    # 1b. If no query provided, auto-generate one from the project's topic
+    # + research question + review protocol.
+    effective_query = (query or "").strip()
+    if not effective_query:
+        try:
+            effective_query = await _generate_query_from_project(project)
+        except Exception as exc:
+            logger.warning("Auto-query generation failed, falling back to topic: %s", exc)
+            effective_query = (project.topic or "").strip()
+        if not effective_query:
+            return {
+                "error": (
+                    "Cannot auto-search: no query provided and project has no "
+                    "topic. Please enter a search query."
+                ),
+                "status_code": 400,
+            }
+        logger.info("Auto-search: generated query '%s' from project", effective_query[:80])
+
     # 2. Check for concurrent auto_search job for this user
     running_result = await db.execute(
         select(BackgroundJob).where(
@@ -717,7 +780,7 @@ async def auto_search_and_save(
     # 3. Create empty SearchRun
     run = SearchRun(
         project_id=project_id,
-        user_query=query,
+        user_query=effective_query,
         total_results=0,
         results_json=[],
     )
@@ -744,7 +807,7 @@ async def auto_search_and_save(
     # 5. Launch worker
     ensure_future(
         _run_auto_search_job(
-            job.id, run.id, project_id, user.id, query, target_count
+            job.id, run.id, project_id, user.id, effective_query, target_count
         )
     )
 
@@ -752,6 +815,8 @@ async def auto_search_and_save(
         "job_id": str(job.id),
         "session_id": str(run.id),
         "target_count": target_count,
+        "query": effective_query,
+        "query_was_generated": not (query or "").strip(),
         "status": "running",
     }
 

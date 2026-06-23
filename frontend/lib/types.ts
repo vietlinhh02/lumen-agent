@@ -545,7 +545,7 @@ export interface PrismaAuditResponse {
 // ── Auto search & save ──────────────────────────────────────────────
 
 export interface AutoSearchRequest {
-  query: string;
+  query?: string; // optional — backend auto-generates from project if blank
   target_count: 25 | 50 | 100;
 }
 
@@ -554,6 +554,8 @@ export interface AutoSearchResponse {
   session_id: string;
   target_count: number;
   status: "running";
+  query?: string;
+  query_was_generated?: boolean;
 }
 
 export type AutoSearchPhase =

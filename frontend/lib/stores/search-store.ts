@@ -320,7 +320,9 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
         `/projects/${projectId}/search/auto`,
         {
           method: "POST",
-          body: JSON.stringify({ query, target_count: targetCount }),
+          // Send empty string for query — backend will auto-generate from
+          // project topic if blank.
+          body: JSON.stringify({ query: query || "", target_count: targetCount }),
           headers: { Authorization: `Bearer ${token}` },
         },
       );

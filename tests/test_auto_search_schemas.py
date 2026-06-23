@@ -19,11 +19,16 @@ def test_auto_search_request_validates_target_count():
 
 
 def test_auto_search_request_validates_query_length():
+    """Empty / short queries are now allowed — backend will auto-generate
+    one from the project topic. Max length still applies."""
     from pydantic import ValidationError
     import pytest
 
-    with pytest.raises(ValidationError):
-        AutoSearchRequest(query="x", target_count=50)  # too short
+    # Empty / short queries are allowed
+    AutoSearchRequest(query="", target_count=50)
+    AutoSearchRequest(query="x", target_count=50)
+
+    # Too long queries are still rejected
     with pytest.raises(ValidationError):
         AutoSearchRequest(query="x" * 501, target_count=50)  # too long
 

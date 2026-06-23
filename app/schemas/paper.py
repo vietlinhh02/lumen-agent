@@ -181,11 +181,22 @@ class ScreenPapersResponse(BaseModel):
 class AutoSearchRequest(BaseModel):
     """Request body for the auto-search-and-save endpoint.
 
+    ``query`` is optional: if omitted or blank, the backend auto-generates
+    a search query from the project's topic + research question + review
+    protocol using the LLM before kicking off the 4-phase worker.
+
     ``target_count`` is constrained to a small set of options so the UI can
     present a simple dropdown (25 / 50 / 100).
     """
 
-    query: str = Field(..., min_length=2, max_length=500)
+    query: str = Field(
+        default="",
+        description=(
+            "Optional explicit search query. If blank, the backend will "
+            "auto-generate one from the project's topic."
+        ),
+        max_length=500,
+    )
     target_count: Literal[25, 50, 100] = Field(..., description="Number of papers to save (25, 50, or 100)")
 
 
@@ -196,3 +207,5 @@ class AutoSearchResponse(BaseModel):
     session_id: str
     target_count: int
     status: str
+    query: str | None = None
+    query_was_generated: bool = False

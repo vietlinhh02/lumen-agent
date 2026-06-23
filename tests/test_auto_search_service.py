@@ -182,3 +182,96 @@ async def test_run_auto_search_phase1_calls_search_and_download():
         # search_and_download was called with max_per_source=200
         call_kwargs = mock_search.call_args.kwargs
         assert call_kwargs.get("max_per_source") == 200
+
+
+@pytest.mark.asyncio
+async def test_auto_search_generates_query_when_empty():
+    """When the caller provides an empty query, the backend auto-generates
+    one from the project's topic via the LLM."""
+    db = _mock_db()
+    project = SimpleNamespace(
+        id=uuid4(),
+        owner_id=uuid4(),
+        title="Medical RAG",
+        topic="Retrieval-augmented generation for medical QA",
+        research_question="How effective is RAG for clinical decision support?",
+        review_protocol=None,
+    )
+    user = SimpleNamespace(id=uuid4())
+
+    # First call: project lookup. Second call: concurrent-job lookup (none).
+    project_result = MagicMock(scalar_one_or_none=MagicMock(return_value=project))
+    no_running_job = MagicMock()
+    no_running_job.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=None)))
+
+    call_index = {"n": 0}
+
+    async def mock_execute(stmt):
+        call_index["n"] += 1
+        if call_index["n"] == 1:
+            return project_result
+        return no_running_job
+
+    db.execute = mock_execute
+
+    captured: dict = {}
+
+    def fake_ensure_future(coro):
+        # Send None to advance the coroutine so its frame locals get populated
+        try:
+            coro.send(None)
+        except StopIteration:
+            pass
+        except Exception:
+            pass
+        if hasattr(coro, "cr_frame") and coro.cr_frame is not None:
+            locals_dict = coro.cr_frame.f_locals
+            captured["query"] = locals_dict.get("query")
+            captured["target_count"] = locals_dict.get("target_count")
+        return None
+
+    with patch("app.services.search_session.ensure_future", side_effect=fake_ensure_future), \
+         patch("app.services.search_session._generate_query_from_project") as mock_gen:
+        mock_gen.return_value = "RAG medical QA retrieval augmented generation"
+        result = await auto_search_and_save(db, user, project.id, "", 50)
+
+    assert result["status"] == "running"
+    assert result["query_was_generated"] is True
+    assert result["query"] == "RAG medical QA retrieval augmented generation"
+    assert captured.get("query") == "RAG medical QA retrieval augmented generation"
+    assert captured.get("target_count") == 50
+    assert mock_gen.called
+
+
+@pytest.mark.asyncio
+async def test_auto_search_uses_explicit_query_when_provided():
+    """When the caller provides a non-empty query, _generate_query_from_project
+    is NOT called."""
+    db = _mock_db()
+    project = SimpleNamespace(
+        id=uuid4(),
+        owner_id=uuid4(),
+        title="X", topic="X", research_question=None, review_protocol=None,
+    )
+    user = SimpleNamespace(id=uuid4())
+    project_result = MagicMock(scalar_one_or_none=MagicMock(return_value=project))
+    no_running_job = MagicMock()
+    no_running_job.scalars = MagicMock(return_value=MagicMock(first=MagicMock(return_value=None)))
+
+    call_index = {"n": 0}
+
+    async def mock_execute(stmt):
+        call_index["n"] += 1
+        if call_index["n"] == 1:
+            return project_result
+        return no_running_job
+
+    db.execute = mock_execute
+
+    with patch("app.services.search_session.ensure_future"), \
+         patch("app.services.search_session._generate_query_from_project") as mock_gen:
+        result = await auto_search_and_save(db, user, project.id, "explicit query", 50)
+
+    assert result["query_was_generated"] is False
+    assert result["query"] == "explicit query"
+    assert not mock_gen.called
