@@ -681,17 +681,32 @@ def _build_provider_for_model(model: str) -> AIProvider:
     """Build an AI provider for a specific model name."""
     settings = get_settings()
 
-    if model.startswith("claude"):
+    # Normalize for prefix matching (some provider names use mixed case,
+    # e.g. "MiniMax-M2.7" or "minimax-m3").
+    model_lower = model.lower()
+
+    if model_lower.startswith("claude"):
         return AnthropicAdapter(model=model)
 
-    if model.startswith(("deepseek", "mimo")):
+    # MiniMax is served from the same OpenAI-compatible endpoint as DeepSeek
+    # / MiMo (the operator points DEEPSEEK_BASE_URL at api.minimax.io/v1 in
+    # the deployment env), so we route through the OpenAI-compatible
+    # adapter using those credentials.
+    if model_lower.startswith("minimax"):
         return OpenAICompatibleAdapter(
             model=model,
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
         )
 
-    if model.startswith(("gpt", "o1", "o3")):
+    if model_lower.startswith(("deepseek", "mimo")):
+        return OpenAICompatibleAdapter(
+            model=model,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+        )
+
+    if model_lower.startswith(("gpt", "o1", "o3")):
         return OpenAICompatibleAdapter(
             model=model,
             api_key=settings.openai_api_key,
@@ -699,7 +714,7 @@ def _build_provider_for_model(model: str) -> AIProvider:
 
     raise ValueError(
         f"Unsupported model '{model}'. "
-        "Supported prefixes: claude-*, deepseek-*, mimo-*, gpt-*, o1, o3."
+        "Supported prefixes: claude-*, deepseek-*, mimo-*, MiniMax-*, gpt-*, o1, o3."
     )
 
 
@@ -719,6 +734,8 @@ def get_provider() -> AIProvider:
     - ``claude-*``      → AnthropicAdapter
     - ``deepseek-*``    → OpenAICompatibleAdapter (via deepseek_base_url)
     - ``mimo-*``        → OpenAICompatibleAdapter (via deepseek_base_url)
+    - ``MiniMax-*``     → OpenAICompatibleAdapter (via deepseek_base_url —
+                          operator points the base URL at api.minimax.io/v1)
     - ``gpt-*``         → OpenAICompatibleAdapter (via standard OpenAI)
     - ``o1`` / ``o3``   → OpenAICompatibleAdapter
     """

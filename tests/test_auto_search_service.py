@@ -457,16 +457,31 @@ async def test_run_auto_search_phase1_runs_multiple_queries_concurrently():
 
     with patch("app.services.search_session.async_session_factory") as mock_factory:
         bg_db = AsyncMock()
-        bg_db.execute = AsyncMock(side_effect=[
-            MagicMock(scalar_one_or_none=MagicMock(return_value=job)),
-            MagicMock(scalar_one_or_none=MagicMock(return_value=run)),
-            MagicMock(scalar_one_or_none=MagicMock(return_value=user)),
-            MagicMock(),
-            MagicMock(),
-            MagicMock(),
-            MagicMock(),
-            MagicMock(),
-        ])
+        # Use a function-based side_effect so we don't run out of responses
+        # during the long Phase 4 loop (12 papers each triggers a few
+        # ``execute`` calls).
+        execute_calls = {"n": 0}
+
+        def make_execute_result(*, with_scalar=False, scalar_value=None):
+            result = MagicMock()
+            if with_scalar:
+                result.scalar_one_or_none = MagicMock(return_value=scalar_value)
+            return result
+
+        async def mock_execute(stmt):
+            execute_calls["n"] += 1
+            n = execute_calls["n"]
+            if n == 1:
+                return make_execute_result(with_scalar=True, scalar_value=job)
+            if n == 2:
+                return make_execute_result(with_scalar=True, scalar_value=run)
+            if n == 3:
+                return make_execute_result(with_scalar=True, scalar_value=user)
+            # All subsequent calls (progress_json updates, run commit, etc.)
+            # return a bare MagicMock — no specific return needed.
+            return MagicMock()
+
+        bg_db.execute = mock_execute
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
 
