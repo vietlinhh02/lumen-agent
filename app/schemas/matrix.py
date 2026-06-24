@@ -20,6 +20,9 @@ class MatrixRowResponse(BaseModel):
     limitation: str | None = None
     contribution: str | None = None
     relevance: str | None = None
+    # T4: project-defined typed field values keyed by schema ``key``.
+    # Backwards-compatible: omitted rows return an empty dict.
+    custom_fields: dict = Field(default_factory=dict)
     extraction_confidence: str = "medium"
     created_by: str = "ai"
     updated_at: datetime | None = None
@@ -39,6 +42,9 @@ class MatrixRowUpdate(BaseModel):
     limitation: str | None = None
     contribution: str | None = None
     relevance: str | None = None
+    # T4: replace custom field values. Keys not in the project's schema
+    # are silently ignored at the API layer.
+    custom_fields: dict | None = None
     extraction_confidence: str | None = Field(default=None, pattern="^(low|medium|high)$")
 
 

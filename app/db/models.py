@@ -463,6 +463,12 @@ class LiteratureMatrixRow(Base):
     limitation: Mapped[str | None] = mapped_column(Text, nullable=True)
     contribution: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Project-defined typed field values. The seven fixed columns above stay
+    # for backwards compatibility and btree-indexed sort/filter; new
+    # domain-specific fields land here keyed by their schema ``key``.
+    custom_fields: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     content_hash: Mapped[str | None] = mapped_column(String(16), nullable=True)
     extraction_confidence: Mapped[str] = mapped_column(
         String(16), nullable=False, default="medium", server_default="medium"
@@ -1180,6 +1186,62 @@ class Claim(Base):
         ),
         Index("ix_claims_project", "project_id"),
         Index("ix_claims_project_type", "project_id", "claim_type"),
+    )
+
+
+# ── T4: Custom Extraction Schema Builder ──────────────────────────────────
+#
+# The project-level extraction schema lets each literature review define
+# its own typed fields (e.g. PICO for clinical reviews, model/benchmark
+# for ML benchmark reviews). The schema itself is versioned JSONB; the
+# actual values land in ``LiteratureMatrixRow.custom_fields`` so the
+# seven fixed columns can keep their btree-indexed fast paths for
+# backwards compatibility.
+
+
+class ProjectExtractionSchema(Base):
+    """Per-project extraction schema definition.
+
+    Stores an ordered list of fields keyed by ``key``. The seven default
+    fields (``research_problem``, ``method``, ``dataset_or_context``,
+    ``key_result``, ``limitation``, ``contribution``, ``relevance``) are
+    immutable system-default entries that cannot be removed — only hidden.
+    All other fields are project-defined.
+    """
+
+    __tablename__ = "project_extraction_schemas"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    # Ordered list of {key, label, type, description, required, enum_values?}
+    fields: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    # Schema version — bumped each time the project overwrites its schema.
+    # Lets us warn about schema drift when matrix rows were extracted under
+    # an older version than the current one.
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "version >= 1", name="ck_project_extraction_schemas_version"
+        ),
     )
 
 
