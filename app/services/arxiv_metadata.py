@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 import httpx
 
@@ -134,7 +134,7 @@ async def fetch_arxiv_authors(arxiv_id: str) -> list[dict[str, str]]:
                 follow_redirects=True, timeout=_ARXIV_TIMEOUT_SECONDS
             ) as client:
                 response = await client.get(url)
-        except (httpx.HTTPError, asyncio.TimeoutError) as exc:
+        except (TimeoutError, httpx.HTTPError) as exc:
             logger.warning("arXiv abstract fetch failed for %s: %s", arxiv_id, exc)
             return []
 

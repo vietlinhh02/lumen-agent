@@ -751,7 +751,7 @@ async def test_matrix_extraction_rows_are_json_serializable():
 async def test_matrix_max_papers_setting_is_honored(monkeypatch):
     """Matrix extraction must process up to ``settings.matrix_max_papers``
     papers (default 100), not silently cap at 20."""
-    from app.core.config import Settings, get_settings
+    from app.core.config import Settings
 
     # Override setting to a known value
     test_settings = Settings(matrix_max_papers=42)

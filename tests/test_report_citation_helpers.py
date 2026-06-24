@@ -126,7 +126,7 @@ def test_strip_parenthesised_uuid():
     assert UUID_IN_REFS not in cleaned
     assert UUID_HALLUCINATED not in cleaned
     # The post-processor also collapses the double-space artefact.
-    assert "Surveys of the field note this trajectory and other sources both agree." == cleaned
+    assert cleaned == "Surveys of the field note this trajectory and other sources both agree."
     # The trailing comma before the close paren is cleaned up.
     assert ",)" not in cleaned
 
@@ -1106,7 +1106,6 @@ def test_audit_claim_grounding_handles_empty_inputs():
 def test_audit_claim_grounding_records_at_most_five_examples():
     pid = UUID(UUID_IN_REFS)
     # Generate a paragraph with many fabricated large numbers.
-    fake_numbers = " ".join(f"value{i}" for i in range(20))  # 20 placeholders
     text = " ".join(f"fabricated{n} {1000 + n}" for n in range(20))
     sections = [
         {
