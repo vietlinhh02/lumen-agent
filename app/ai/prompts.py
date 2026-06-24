@@ -325,6 +325,92 @@ Extract the literature matrix row for this paper.
 """
 
 
+# ── T4: Custom Extraction Schema prompts ────────────────────────────────────
+#
+# Used by:
+# - ``app/routers/extraction_schema.py`` (suggest endpoint)
+# - ``app/agents/nodes.py`` (matrix_extraction_node with custom schema)
+
+
+EXTRACTION_SCHEMA_SUGGEST_SYSTEM = """\
+You are a systematic-review methodology consultant. Given a project topic,
+research question, and a small set of sample abstracts, you suggest typed
+extraction fields that would capture the most review-relevant evidence
+beyond the seven universal fields (research_problem, method,
+dataset_or_context, key_result, limitation, contribution, relevance).
+
+Rules:
+- Suggest at most {max_fields} fields. Quality over quantity.
+- Each field must have a stable snake_case ``key`` (e.g. sample_size, p_value,
+  intervention, follow_up_months).
+- Prefer well-typed fields (``number``, ``enum``, ``multi_select``) over
+  free text when the answer is naturally constrained.
+- For enum / multi_select, supply a tight enum_values list (3-8 items).
+- Never invent a field whose answer is not visible in the abstracts.
+- Output a JSON object with shape:
+    {{"fields": [{{"key": ..., "label": ..., "type": ...,
+                   "description": ..., "required": false,
+                   "enum_values": null | [...]}}]}}
+  Do NOT include the seven reserved keys (they are added automatically).
+- Respond with JSON only. No prose, no markdown fences.
+"""
+
+
+EXTRACTION_SCHEMA_SUGGEST_USER = """\
+Project topic: {project_topic}
+Research question: {research_question}
+Sample abstracts:
+{abstracts_block}
+
+Reserved keys (already in the schema, do NOT suggest again): {reserved_keys}
+
+Suggest up to {max_fields} typed extraction fields that would help this
+review capture domain-specific evidence.
+"""
+
+
+MATRIX_EXTRACTION_CHUNK_SYSTEM_CUSTOM = """\
+You are a systematic literature review assistant. Extract structured information
+from the paper metadata and relevant full-text sections provided.
+
+This project uses a CUSTOM extraction schema. In addition to the seven
+universal fields below, you must fill in the project-defined custom fields
+with values that match their declared type.
+
+UNIVERSAL FIELDS (always present, type=text, free text 1-3 sentences):
+- research_problem: what problem the paper addresses.
+- method: main method or approach used.
+- dataset_or_context: dataset, domain, or study setting.
+- key_result: main finding or contribution.
+- limitation: stated or inferred limitation.
+- contribution: what the paper uniquely adds to the field.
+- relevance: why this paper matters to the project topic.
+
+PROJECT CUSTOM FIELDS (use the schema below — match the declared type):
+{schema_block}
+
+CONFIDENCE:
+- "high"   = abstract + full-text sections clearly support every field.
+- "medium" = most fields supported; a couple are "not specified".
+- "low"    = the text is unusable (truncated, garbled, wrong language).
+  Do NOT set "low" just because the paper is off-topic — that goes in
+  the "relevance" field instead.
+- Default to "medium" when in doubt.
+
+OUTPUT FORMAT:
+- For universal fields, return strings (or "not specified").
+- For custom fields, return the typed value:
+    * number → a JSON number, or null if unknown.
+    * boolean → true/false, or null if unknown.
+    * enum → one of the declared enum_values, or null if unknown.
+    * multi_select → JSON array of enum_values, or [] if unknown.
+    * text/quote/citation → a JSON string, or "not specified".
+- If a field cannot be determined from the available text, use the
+  matching "unknown" placeholder for its type (null for number/boolean/
+  enum, [] for multi_select, "not specified" for text).
+"""
+
+
 # ── Gap Analysis ──────────────────────────────────────────────────────────────
 
 GAP_ANALYSIS_SYSTEM = """\

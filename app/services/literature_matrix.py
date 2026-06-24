@@ -46,6 +46,8 @@ async def upsert_rows(
         - project_paper_id: UUID
         - research_problem, method, dataset_or_context, key_result,
           limitation, contribution, relevance: str | None
+        - custom_fields: dict (T4 — project-defined typed field values,
+          keyed by schema ``key``). May be empty.
         - content_hash: str | None
         - extraction_confidence: str ('high', 'medium', 'low')
     """
@@ -65,6 +67,7 @@ async def upsert_rows(
                 limitation=row.get("limitation"),
                 contribution=row.get("contribution"),
                 relevance=row.get("relevance"),
+                custom_fields=row.get("custom_fields") or {},
                 content_hash=row.get("content_hash"),
                 extraction_confidence=row.get("extraction_confidence", "medium"),
                 created_by="ai",
@@ -79,6 +82,7 @@ async def upsert_rows(
                     "limitation": row.get("limitation"),
                     "contribution": row.get("contribution"),
                     "relevance": row.get("relevance"),
+                    "custom_fields": row.get("custom_fields") or {},
                     "content_hash": row.get("content_hash"),
                     "extraction_confidence": row.get("extraction_confidence", "medium"),
                     "created_by": "ai",

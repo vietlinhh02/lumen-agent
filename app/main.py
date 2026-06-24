@@ -16,6 +16,7 @@ from app.routers.audit import router as audit_router
 from app.routers.auth import router as auth_router
 from app.routers.claims import router as claims_router
 from app.routers.conflicts import router as conflicts_router
+from app.routers.extraction_schema import router as extraction_schema_router
 from app.routers.gaps import router as gaps_router
 from app.routers.health import router as health_router
 from app.routers.knowledge_graph import router as knowledge_graph_router
@@ -194,6 +195,27 @@ async def lifespan(app: FastAPI):
                 "))"
             )
         )
+        # T4: Custom Extraction Schema — add the custom_fields JSONB column
+        # to literature_matrix_rows. ``Base.metadata.create_all`` already
+        # created the project_extraction_schemas table; we still defensively
+        # ensure the column is present for hand-migrated databases.
+        await conn.execute(
+            text(
+                "ALTER TABLE literature_matrix_rows "
+                "ADD COLUMN IF NOT EXISTS custom_fields JSONB NOT NULL DEFAULT '{}'"
+            )
+        )
+        # GIN index on (project_id, custom_fields) for project-scoped
+        # filter/aggregate queries over typed custom-field values.
+        try:
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_matrix_rows_custom_fields_gin "
+                    "ON literature_matrix_rows USING gin (custom_fields jsonb_path_ops)"
+                )
+            )
+        except Exception as exc:
+            logger.warning("GIN index on custom_fields skipped: %s", exc)
         await conn.execute(
             text("ALTER TABLE background_jobs ADD COLUMN IF NOT EXISTS progress_json JSONB")
         )
@@ -276,6 +298,7 @@ def create_app() -> FastAPI:
     app.include_router(matrix_router, prefix="/api/projects")
     app.include_router(gaps_router, prefix="/api/projects")
     app.include_router(conflicts_router, prefix="/api/projects")
+    app.include_router(extraction_schema_router, prefix="/api/projects")
     app.include_router(claims_router, prefix="/api/projects")
     app.include_router(reports_router, prefix="/api/projects")
     app.include_router(admin_router, prefix="/api/admin")

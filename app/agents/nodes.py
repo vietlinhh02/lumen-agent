@@ -21,6 +21,7 @@ from app.ai.prompts import (
     GAP_ANALYSIS_CHUNK_SYSTEM,
     GAP_ANALYSIS_CHUNK_USER,
     MATRIX_EXTRACTION_CHUNK_SYSTEM,
+    MATRIX_EXTRACTION_CHUNK_SYSTEM_CUSTOM,
     MATRIX_EXTRACTION_CHUNK_USER,
     QUERY_PLANNER_SYSTEM,
     QUERY_PLANNER_USER,
@@ -34,6 +35,11 @@ from app.ai.structured_outputs import (
     MatrixRowOutput,
     QueryPlanOutput,
     ReviewOutput,
+)
+from app.services.extraction_schema import (
+    build_extraction_json_schema,
+    coerce_custom_value,
+    get_effective_schema,
 )
 from app.services.gap_detection import upsert_gaps
 from app.services.hybrid_retrieval import (
@@ -493,8 +499,30 @@ def _rows_to_json_safe(rows: list[dict]) -> list[dict]:
     return [{k: str(v) if isinstance(v, UUID) else v for k, v in row.items()} for row in rows]
 
 
+def _render_schema_block(fields) -> str:
+    """Render the project's extraction schema as a readable prompt block."""
+    if not fields:
+        return "(no custom fields defined)"
+    lines: list[str] = []
+    for f in fields:
+        type_label = f.type
+        extra = ""
+        if f.type in ("enum", "multi_select") and f.enum_values:
+            extra = f"  enum_values = {f.enum_values}"
+        elif f.description:
+            extra = f"  ({f.description})"
+        req = " [required]" if f.required else ""
+        lines.append(f"- {f.key} ({f.label}, type={type_label}){req}{extra}")
+    return "\n".join(lines)
+
+
 def _normalize_matrix_extraction(result: dict[str, Any]) -> dict[str, Any]:
-    """Normalize matrix extraction output into persisted row fields."""
+    """Normalize matrix extraction output into persisted row fields.
+
+    The seven reserved keys are pulled out as top-level columns. Custom
+    project-defined fields land in the ``custom_fields`` dict with type
+    coercion applied per the schema. Unknown keys are silently ignored.
+    """
     confidence = result.get("confidence", result.get("extraction_confidence", "medium"))
     if confidence not in _VALID_CONFIDENCE:
         confidence = "medium"
@@ -518,6 +546,7 @@ async def _verify_matrix_extraction(
     chunk_context: str,
     primary_result: dict[str, Any],
     protocol_text: str | None = None,
+    custom_schema: dict | None = None,
 ) -> dict[str, Any]:
     """Ask the verifier model to confirm or correct one matrix extraction."""
     protocol_block = protocol_text or "Not provided"
@@ -537,10 +566,11 @@ Existing extraction:
 Evidence:
 {chunk_context or "No full-text sections available."}
 """
+    schema = custom_schema if custom_schema is not None else MatrixRowOutput.model_json_schema()
     return await verifier_provider.complete_structured(
         messages=[{"role": "user", "content": verify_prompt}],
         system=_MATRIX_VERIFICATION_SYSTEM,
-        schema=MatrixRowOutput.model_json_schema(),
+        schema=schema,
         tool_name="matrix_verify",
         max_tokens=_COLLABORATIVE_MATRIX_MAX_TOKENS,
     )
@@ -577,6 +607,36 @@ async def matrix_extraction_node(
     # Render protocol once for all per-paper calls so the extraction prompt
     # can use inclusion/exclusion + population + outcome to ground each row.
     protocol_text = format_protocol_for_prompt(state.review_protocol)
+
+    # T4: load the project's effective extraction schema (defaults + custom).
+    # Used both to build the LLM JSON-schema and to coerce the response
+    # into ``custom_fields``. Falls back to the seven system defaults on
+    # any failure (e.g. mock DBs in tests, transient DB errors) so a broken
+    # schema never blocks a matrix run.
+    schema_fields = None
+    try:
+        effective_schema = await get_effective_schema(db, state.project_id)
+        schema_fields = effective_schema.fields
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "Could not load extraction schema for project %s: %s",
+            state.project_id, exc,
+        )
+    if not schema_fields:
+        from app.services.extraction_schema import default_fields as _default_fields
+        schema_fields = _default_fields()
+    use_custom_schema = any(
+        f.key not in ("research_problem", "method", "dataset_or_context",
+                      "key_result", "limitation", "contribution", "relevance")
+        for f in schema_fields
+    )
+    schema_json = build_extraction_json_schema(schema_fields) if use_custom_schema else None
+    schema_block = _render_schema_block(schema_fields)
+    system_prompt = (
+        MATRIX_EXTRACTION_CHUNK_SYSTEM_CUSTOM.format(schema_block=schema_block)
+        if use_custom_schema
+        else MATRIX_EXTRACTION_CHUNK_SYSTEM
+    )
 
     # 1. Load saved project_papers with existing matrix rows for cache checks.
     stmt = (
@@ -675,14 +735,35 @@ async def matrix_extraction_node(
                     venue=paper.venue or "not specified",
                     chunk_context=chunk_context,
                 )
-                primary_result = await provider.complete_structured(
-                    messages=[{"role": "user", "content": user_msg}],
-                    system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
-                    schema=MatrixRowOutput.model_json_schema(),
-                    tool_name="matrix_row",
-                    max_tokens=32768,
-                )
+                if use_custom_schema and schema_json is not None:
+                    primary_result = await provider.complete_structured(
+                        messages=[{"role": "user", "content": user_msg}],
+                        system=system_prompt,
+                        schema=schema_json,
+                        tool_name="matrix_row",
+                        max_tokens=32768,
+                    )
+                else:
+                    primary_result = await provider.complete_structured(
+                        messages=[{"role": "user", "content": user_msg}],
+                        system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
+                        schema=MatrixRowOutput.model_json_schema(),
+                        tool_name="matrix_row",
+                        max_tokens=32768,
+                    )
                 normalized = _normalize_matrix_extraction(primary_result)
+                # T4: pull out typed custom-field values per the schema.
+                custom_fields: dict = {}
+                if use_custom_schema:
+                    for f in schema_fields:
+                        if f.key in (
+                            "research_problem", "method", "dataset_or_context",
+                            "key_result", "limitation", "contribution", "relevance",
+                        ):
+                            continue
+                        coerced = coerce_custom_value(f, primary_result.get(f.key))
+                        if coerced is not None and coerced != "" and coerced != []:
+                            custom_fields[f.key] = coerced
                 if verifier_provider is not None:
                     try:
                         verified_result = await _verify_matrix_extraction(
@@ -692,6 +773,7 @@ async def matrix_extraction_node(
                             chunk_context=chunk_context,
                             primary_result=primary_result,
                             protocol_text=protocol_text,
+                            custom_schema=schema_json,
                         )
                         verified_normalized = _normalize_matrix_extraction(verified_result)
                         if verified_normalized != normalized:
@@ -732,6 +814,7 @@ async def matrix_extraction_node(
                     "limitation": normalized["limitation"],
                     "contribution": normalized["contribution"],
                     "relevance": normalized["relevance"],
+                    "custom_fields": custom_fields,
                     "content_hash": content_hash,
                     "extraction_confidence": normalized["extraction_confidence"],
                 }
