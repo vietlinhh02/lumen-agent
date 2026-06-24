@@ -10,7 +10,6 @@ from app.db.models import (
     ClaimEvidence,
     ConflictingFinding,
     LiteratureMatrixRow,
-    Project,
 )
 from app.services.claim_synthesis import (
     lift_claims_from_conflicts,

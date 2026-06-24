@@ -16,7 +16,6 @@ from app.core.security import get_current_user
 from app.db.models import (
     BackgroundJob,
     Claim,
-    ClaimEvidence,
     LiteratureMatrixRow,
     Paper,
     Project,
