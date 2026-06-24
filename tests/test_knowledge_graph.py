@@ -89,9 +89,10 @@ async def test_retrieve_project_evidence_embeds_graph_expanded_query():
             return_value="limitations RAG PubMedQA",
         ),
         patch("app.services.hybrid_retrieval.encode_text", return_value=[0.1] * 2000) as encode,
-        patch("app.core.config.get_settings") as settings,
+        patch("app.services.hybrid_retrieval.get_settings") as settings,
     ):
         settings.return_value.reranker_top_n = 10
+        settings.return_value.embedding_provider = "openai"
         await retrieve_project_evidence(db, uuid4(), "limitations", use_reranker=False)
 
-    encode.assert_called_once_with("limitations RAG PubMedQA")
+    encode.assert_called_once_with("limitations RAG PubMedQA", task=None)
