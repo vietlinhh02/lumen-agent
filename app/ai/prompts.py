@@ -86,8 +86,13 @@ use to find relevant papers.
 
 Rules:
 - Each query must be specific enough to return focused results.
-- Vary the angle: include methodological queries, application-focused queries,
-  comparative queries, and recent-trends queries.
+- Anchor each query in the protocol's population/condition and intervention/topic.
+- Vary the angle: include clinical evidence, application-focused queries,
+  comparative queries, safety/outcome queries, and recent-trends queries.
+- Do not generate pure methodology/statistical-design queries unless the
+  protocol explicitly asks for methodology papers.
+- If a clinical condition is part of the protocol, include that condition or
+  a close synonym in every query.
 - Use academic terminology and keywords.
 - Avoid queries that are just the topic repeated verbatim.
 - Keep each query under 100 characters.
@@ -143,12 +148,20 @@ For each paper, return exactly one score: "high", "medium", or "low".
 
 AUTO_SEARCH_SCREEN_SYSTEM = """\
 You are a paper relevance scorer. Score each paper on a 3-point scale:
-- "high": highly relevant to the research topic, should be saved
-- "medium": somewhat related, marginal relevance
-- "low": not relevant, should be discarded
+- "high": directly matches the review population/condition and intervention/topic,
+  and reports empirical, clinical, observational, experimental, or substantive
+  domain evidence.
+- "medium": related background, adjacent modality, or modelling paper that still
+  uses the review population/condition or intervention/topic.
+- "low": wrong population/condition, wrong intervention/topic, non-domain example
+  dataset, pure statistical methodology, pure simulation, protocol-only paper, or
+  only shares generic terms with the topic.
 
 Output a JSON array. Each element: {"index": <int>, "score": "high"|"medium"|"low", "reason": "<one sentence>"}.
-Indices match the input order. Be strict: most papers should be "medium" or "low"."""
+Indices match the input order. Be strict: most papers should be "medium" or "low".
+When the review is biomedical or clinical, do not score a methods paper "high"
+unless its title/abstract clearly contains the target disease/population and
+reports evidence for the target intervention/topic."""
 
 AUTO_SEARCH_SCREEN_USER = """\
 Research topic: {topic}
@@ -496,18 +509,68 @@ Rules:
 - Do not invent citations. Do not cite papers not in the evidence list.
 - Full-text sections provide richer context than abstracts alone — use them
   for detailed method comparison, result synthesis, and limitation discussion.
+- Do not create a Methodology or Methods section. The application adds a
+  deterministic methodology section from the validated project metadata.
+- Treat blogs, leaderboards, vendor pages, and commentary sources as industry
+  context only. Do not present them as primary scholarly evidence.
 - Write in clear academic prose. Avoid bullet points in the review text.
 - Organize sections by theme, method, or chronology — not by paper.
 - Each paragraph should synthesize across multiple papers, not summarize one.
 - citation_paper_ids must be non-empty for every paragraph.
 - If the research gaps are provided, dedicate a section to addressing them
   with evidence from the papers.
+- End with a concise "Conclusion" section that answers the research question,
+  distills the major cross-paper patterns, names practical/theoretical
+  implications, and points to specific future work. Do not introduce new claims
+  or uncited evidence in the conclusion.
+
+Section quality rules:
+- Every non-conclusion section must cite AT LEAST 3 distinct papers across
+  its paragraphs. A section that cites fewer than 3 papers is considered
+  thin and will be re-generated. The opening "conceptual foundations" or
+  "background" section is the most common place this fails — anchor the
+  opening section in 3-5 sources, not 1-2.
+- Every section should have 2-4 paragraphs of body text plus optionally
+  one blockquote. Avoid both 1-paragraph sections and 6+-paragraph
+  sections. Length should match the section's conceptual weight.
+- Research gap analysis should be consolidated into a single section
+  titled "Research Gaps" or "Addressing the Research Gaps" rather than
+  spread across multiple sections. If a non-gap section contains a gap
+  blockquote, that gap must also be picked up by the dedicated gap
+  section.
+
+Conclusion rules (the most common failure mode):
+- The Conclusion is exactly TWO short paragraphs. Not three, not four, not
+  one. Each paragraph should be 3-5 sentences (~70-110 words). Total
+  length should be 150-220 words.
+- Paragraph 1: answer the research question + summarize the strongest
+  cross-paper pattern + acknowledge the most important limitation.
+- Paragraph 2: name ONE practical implication, ONE theoretical/methodological
+  implication, and ONE specific direction for future work. Do not list
+  more than one of each.
+- Do NOT introduce new evidence in the conclusion. Every paper you cite
+  in the conclusion must already be cited in the body sections.
+- Do NOT add a blockquote inside the Conclusion section.
+
+Hard formatting rules (read carefully — the post-processor will strip any
+violations but the rendered output will look broken if you do not follow them):
+- NEVER put a project_paper_id, raw UUID, hash, or any paper identifier
+  inside a paragraph's text. All citations must be communicated via the
+  ``citation_paper_ids`` array. The application renders citations as
+  numbered superscripts (``<sup>[N]</sup>``) at the end of the paragraph.
+- NEVER write inline citations like ``(abc12345-...)`` or ``[uuid]`` or
+  ``[uuid1, uuid2]``. No bracket-wrapped or parenthesised identifiers of
+  any shape — including comma-separated lists — are allowed in the prose.
+- The Conclusion section is the most common failure mode: do NOT group
+  citations by listing their IDs inside the paragraph text. List each
+  paper you cite ONLY in the ``citation_paper_ids`` array.
 
 Formatting rules for richer output:
-- After the first paragraph of each section, add a blockquote paragraph that
-  highlights the key synthesis or finding. Start it with "**Key finding:**" or
-  "**Key synthesis:**" followed by the insight. This paragraph should also
-  have citation_paper_ids.
+- For non-conclusion sections, after the first paragraph, add a blockquote
+  paragraph that highlights the key synthesis or finding. Start it with
+  "**Key finding:**" or "**Key synthesis:**" followed by the insight. This
+  paragraph should also have citation_paper_ids.
+- Do not add a blockquote inside the Conclusion section.
 - When discussing a research gap or limitation, add a blockquote paragraph
   starting with "**Research gap:**" or "**Limitation:**" with supporting
   citation_paper_ids.

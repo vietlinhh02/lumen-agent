@@ -240,6 +240,11 @@ reflect product impact and how much existing app data each feature can reuse.
 - Priority: P0.
 - Outcome: defensible search, screen, include, and exclude flow.
 - References: CAN-SR, JARVIS, Consensus.
+- Status: **shipped (2026-06-22)** — read-only audit endpoint + project
+  workspace tab + Markdown/CSV export. Implementation: `app/routers/audit.py`,
+  `app/services/audit.py`, `app/schemas/audit.py`, frontend page
+  `frontend/app/(app)/projects/[id]/audit/page.tsx`, tests
+  `tests/test_prisma_audit.py`.
 
 ### T3: Full-Text Evidence Viewer With Quote Anchors
 

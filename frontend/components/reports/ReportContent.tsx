@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { List } from "@phosphor-icons/react";
-import { extractText } from "@/lib/markdown";
+import { extractText, normalizeMarkdownForDisplay } from "@/lib/markdown";
 import type { TocEntry, ParsedSection } from "@/lib/markdown";
 import type { ReportDetailResponse } from "@/lib/types";
 
@@ -178,7 +178,7 @@ export function ReportContent({
                     },
                   }}
                 >
-                  {section.content}
+                  {normalizeMarkdownForDisplay(section.content)}
                 </ReactMarkdown>
               </div>
             </div>

@@ -174,6 +174,7 @@ async def _run_report_job(
                     "report_id": result.get("id"),
                     "validation_status": result.get("validation_status"),
                     "total_citations": result.get("citation_audit", {}).get("total_citations", 0),
+                    "claim_audit": result.get("claim_audit", {}),
                 }
             job.completed_at = datetime.now(UTC).replace(tzinfo=None)
             await bg_db.commit()

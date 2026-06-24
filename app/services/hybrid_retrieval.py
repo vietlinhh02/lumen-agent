@@ -17,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.embeddings import encode_text
 from app.db.models import Paper, PaperChunk, ProjectPaper
 
@@ -88,8 +89,6 @@ async def retrieve_project_evidence(
     When ``use_reranker`` is True (default), retrieves ``reranker_top_n``
     candidates first, reranks with the cross-encoder, then returns top-K.
     """
-    from app.core.config import get_settings
-
     settings = get_settings()
 
     if not query.strip():
@@ -98,7 +97,14 @@ async def retrieve_project_evidence(
     retrieval_query = await _expand_query_with_graph(db, project_id, query)
     query_tokens = _tokens(retrieval_query)
 
-    query_embedding = await encode_text(retrieval_query)
+    # Use Jina's retrieval.query LoRA adapter for search queries (no-op for
+    # other providers since they ignore the ``task`` kwarg).
+    query_task = (
+        settings.jina_embedding_task_query
+        if settings.embedding_provider.lower() == "jina"
+        else None
+    )
+    query_embedding = await encode_text(retrieval_query, task=query_task)
     if not query_embedding or all(v == 0.0 for v in query_embedding):
         logger.warning("Query produced zero embedding, falling back to keyword-only")
         return await _keyword_only_fallback(db, project_id, query_tokens, limit, content_types)
@@ -212,7 +218,14 @@ async def retrieve_paper_evidence(
     if not query.strip():
         return []
 
-    query_embedding = await encode_text(query)
+    # Use Jina's retrieval.query LoRA adapter for search queries.
+    settings = get_settings()
+    query_task = (
+        settings.jina_embedding_task_query
+        if settings.embedding_provider.lower() == "jina"
+        else None
+    )
+    query_embedding = await encode_text(query, task=query_task)
     if not query_embedding or all(v == 0.0 for v in query_embedding):
         return []
 

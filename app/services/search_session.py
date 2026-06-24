@@ -11,6 +11,8 @@ import contextlib
 import logging
 from asyncio import ensure_future
 from pathlib import Path
+from time import monotonic
+from typing import Literal, TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -26,6 +28,8 @@ from app.services.paper_search import search_and_download
 from app.services.project import save_paper_to_project
 
 logger = logging.getLogger(__name__)
+
+_MAX_AUTO_SEARCH_SCORE_CANDIDATES = 180
 
 
 async def create_search_session(
@@ -850,7 +854,13 @@ async def auto_search_and_save(
     # 5. Launch worker — pass the full list of queries (not just the first)
     ensure_future(
         _run_auto_search_job(
-            job.id, run.id, project_id, user.id, effective_queries, target_count
+            job.id,
+            run.id,
+            project_id,
+            user.id,
+            effective_queries,
+            target_count,
+            timeout_seconds=_auto_search_timeout_seconds(target_count),
         )
     )
 
@@ -872,7 +882,7 @@ async def _run_auto_search_job(
     session_id: UUID,
     project_id: UUID,
     user_id: UUID,
-    queries: list[str],
+    queries: list[str] | str,
     target_count: int,
     timeout_seconds: int = 300,
 ) -> None:
@@ -892,14 +902,13 @@ async def _run_auto_search_job(
     """
     from app.db.models import BackgroundJob
 
-    import time
     from datetime import UTC, datetime
 
     # Defensive: callers (tests, future code) might still pass a single string.
     if isinstance(queries, str):
         queries = [queries]
 
-    start_wall = time.monotonic()
+    start_wall = monotonic()
     job = None
 
     async with async_session_factory() as bg_db:
@@ -921,9 +930,11 @@ async def _run_auto_search_job(
             run = run_result.scalar_one_or_none()
             user_result = await bg_db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()
-            if run is None or user is None:
+            project_result = await bg_db.execute(select(Project).where(Project.id == project_id))
+            project = project_result.scalar_one_or_none()
+            if run is None or user is None or project is None:
                 job.status = "failed"
-                job.error_message = "Session or user not found"
+                job.error_message = "Session, user, or project not found"
                 await bg_db.commit()
                 return
 
@@ -969,7 +980,7 @@ async def _run_auto_search_job(
                 *query_search_tasks, return_exceptions=True,
             )
             for idx, outcome in enumerate(per_query_outcomes):
-                if isinstance(outcome, Exception):
+                if isinstance(outcome, BaseException):
                     logger.warning(
                         "Query %d/%d search failed: %s",
                         idx + 1, n_queries, outcome,
@@ -1001,27 +1012,47 @@ async def _run_auto_search_job(
                 "percent": 25,
             })
 
-            if time.monotonic() - start_wall > timeout_seconds:
+            if monotonic() - start_wall > timeout_seconds:
                 raise TimeoutError("Phase 1 exceeded timeout")
 
             # ── Phase 2: Batch LLM score ──────────────────────────────────
             # ``deduped`` and ``match_counts`` already come from Phase 1.
 
-            batches_total = max(1, (len(deduped) + 24) // 25)
+            score_limit = _auto_search_score_candidate_limit(target_count)
+            candidates_to_score = _rank_auto_search_candidates(
+                deduped,
+                match_counts,
+                queries,
+                score_limit,
+            )
+            batches_total = max(1, (len(candidates_to_score) + 24) // 25)
             await _update_progress({
                 "phase": "scoring",
                 "batches_total": batches_total,
                 "papers_scored": 0,
-                "papers_total": len(deduped),
+                "papers_total": len(candidates_to_score),
+                "candidate_pool_total": len(deduped),
+                "candidate_pool_scored": len(candidates_to_score),
                 "percent": 30,
             })
 
-            scores: list[str] = await _batch_score_papers(
-                deduped, user, _update_progress, timeout_seconds, start_wall,
+            scores: list[str] = await batch_score_papers(
+                candidates_to_score,
+                project.topic or "research project",
+                project.research_question or "Not specified",
+                _update_progress,
+                timeout_seconds,
+                start_wall,
             )
 
-            if time.monotonic() - start_wall > timeout_seconds:
-                raise TimeoutError("Phase 2 exceeded timeout")
+            scoring_exceeded_timeout = monotonic() - start_wall > timeout_seconds
+            if scoring_exceeded_timeout:
+                logger.warning(
+                    "Auto-search job %s exceeded scoring budget; continuing "
+                    "with %d scored/defaulted candidates",
+                    job_id,
+                    len(candidates_to_score),
+                )
 
             # ── Phase 3: Filter + pick top N ──────────────────────────────
             #
@@ -1037,36 +1068,45 @@ async def _run_auto_search_job(
             # "low" to "high" — match_count > 1 only means the paper is
             # robustly found across phrasings; it doesn't change its
             # topical relevance judgment from the LLM.
-            def _canonical_key(p) -> str:
-                return (
-                    p.semantic_scholar_id
-                    or p.arxiv_id
-                    or p.doi
-                    or (p.title or "").lower().strip()
-                    or f"_unknown_{id(p)}"
-                )
-
+            eligibility_signals = {
+                "off_topic_condition": 0,
+                "methodology_only": 0,
+                "clinical_or_domain_evidence": 0,
+                "neutral": 0,
+            }
             scored: list[tuple] = []
-            for paper, raw_score in zip(deduped, scores, strict=False):
+            for paper, raw_score in zip(candidates_to_score, scores, strict=False):
                 if raw_score not in ("high", "medium", "low"):
                     continue
-                mcount = match_counts.get(_canonical_key(paper), 1)
+                mcount = match_counts.get(_canonical_paper_key(paper), 1)
                 effective_score = raw_score
-                if mcount >= 2 and raw_score == "low":
+                eligibility = _score_auto_search_eligibility(paper, queries)
+                eligibility_signals[eligibility["category"]] += 1
+                if eligibility["category"] == "off_topic_condition":
+                    effective_score = "low"
+                elif eligibility["category"] == "methodology_only":
+                    effective_score = "medium" if raw_score == "high" else "low"
+                if (
+                    mcount >= 2
+                    and raw_score == "low"
+                    and eligibility["category"] == "neutral"
+                ):
                     effective_score = "medium"
-                scored.append((paper, effective_score, mcount))
+                scored.append((paper, effective_score, mcount, eligibility["boost"]))
 
             # Sort: high first, then medium, then low; tiebreak by
-            # match_count desc (multi-query hits win), then by stable order.
+            # evidence signal + match_count desc, then by stable order.
             priority = {"high": 0, "medium": 1, "low": 2}
             scored.sort(
-                key=lambda t: (priority.get(t[1], 9), -t[2]),
+                key=lambda t: (priority.get(t[1], 9), -t[3], -t[2]),
             )
 
-            high_picks = [(p, s) for p, s, _ in scored if s == "high"][:target_count]
+            high_picks = [(p, s) for p, s, _, _ in scored if s == "high"][:target_count]
             if len(high_picks) < target_count:
                 remaining = target_count - len(high_picks)
-                medium_picks = [(p, s) for p, s, _ in scored if s == "medium"][:remaining]
+                medium_picks = [
+                    (p, s) for p, s, _, _ in scored if s == "medium"
+                ][:remaining]
                 high_picks.extend(medium_picks)
 
             top_papers = [p for p, _ in high_picks[:target_count]]
@@ -1092,7 +1132,10 @@ async def _run_auto_search_job(
             saved_paper_dicts: list[dict] = []
 
             for idx, paper in enumerate(top_papers):
-                if time.monotonic() - start_wall > timeout_seconds:
+                if (
+                    not scoring_exceeded_timeout
+                    and monotonic() - start_wall > timeout_seconds
+                ):
                     raise TimeoutError("Phase 4 exceeded timeout")
 
                 paper_dict = _raw_paper_to_dict(paper)
@@ -1165,6 +1208,8 @@ async def _run_auto_search_job(
                 "queries_used": list(queries),
                 "queries_count": len(queries),
                 "candidates_after_dedupe": len(deduped),
+                "candidates_scored": len(candidates_to_score),
+                "eligibility_signals": eligibility_signals,
                 "multi_match_papers": sum(
                     1 for c in match_counts.values() if c > 1
                 ),
@@ -1206,7 +1251,8 @@ async def _run_auto_search_job(
 
 async def _batch_score_papers(
     papers: list,
-    user: User,
+    topic: str,
+    research_question: str,
     update_progress,
     timeout_seconds: int,
     start_wall: float,
@@ -1216,8 +1262,6 @@ async def _batch_score_papers(
     Returns a list of scores (high/medium/low) in the same order as ``papers``.
     Failed batches fall back to "medium" (don't lose papers entirely).
     """
-    import time
-
     if not papers:
         return []
 
@@ -1228,13 +1272,13 @@ async def _batch_score_papers(
     batches_total = len(batches)
 
     for batch_idx, batch in enumerate(batches):
-        if time.monotonic() - start_wall > timeout_seconds:
+        if monotonic() - start_wall > timeout_seconds:
             break
 
         papers_json = _papers_to_scoring_json(batch)
         user_msg = AUTO_SEARCH_SCREEN_USER.format(
-            topic=user_topic_for_user(user),
-            research_question="Not specified",
+            topic=topic,
+            research_question=research_question,
             papers_json=papers_json,
         )
 
@@ -1319,14 +1363,6 @@ def _papers_to_scoring_json(papers: list) -> str:
     return json.dumps(out, ensure_ascii=False, indent=2)
 
 
-def user_topic_for_user(user: User) -> str:
-    """Best-effort: read the user's most-recent project's topic for context.
-
-    Falls back to ``"research project"`` if no project is available.
-    """
-    return getattr(user, "_auto_search_topic", "research project")
-
-
 def _raw_paper_to_dict(paper) -> dict:
     """Convert a RawPaper to the dict shape stored in SearchRun.results_json."""
     return {
@@ -1348,6 +1384,160 @@ def _raw_paper_to_dict(paper) -> dict:
             or (paper.source_specific or {}).get("pmc_id")
         ),
     }
+
+
+def _auto_search_timeout_seconds(target_count: int) -> int:
+    """Return a wall-clock budget that scales with the requested corpus size."""
+    if target_count <= 25:
+        return 300
+    if target_count <= 50:
+        return 600
+    return 900
+
+
+def _auto_search_score_candidate_limit(target_count: int) -> int:
+    """Bound LLM scoring work while keeping enough candidates for fallback."""
+    return min(_MAX_AUTO_SEARCH_SCORE_CANDIDATES, max(target_count * 3, target_count + 50))
+
+
+def _canonical_paper_key(paper) -> str:
+    """Return the strongest stable identifier for a raw paper-like object."""
+    return (
+        paper.semantic_scholar_id
+        or paper.arxiv_id
+        or paper.doi
+        or (paper.title or "").lower().strip()
+        or f"_unknown_{id(paper)}"
+    )
+
+
+def _rank_auto_search_candidates(
+    papers: list,
+    match_counts: dict[str, int],
+    queries: list[str],
+    limit: int,
+) -> list:
+    """Pre-rank candidates before expensive LLM scoring.
+
+    Auto-search can retrieve hundreds of candidates across multiple queries.
+    Scoring all of them is slow and was the cause of 50-paper jobs timing out.
+    This keeps the LLM focused on candidates with obvious eligibility signals,
+    then multi-query agreement, citation count, and recency.
+    """
+    category_rank = {
+        "clinical_or_domain_evidence": 0,
+        "neutral": 1,
+        "methodology_only": 2,
+        "off_topic_condition": 3,
+    }
+
+    def sort_key(paper) -> tuple[int, int, int, int, int]:
+        signal = _score_auto_search_eligibility(paper, queries)
+        key = _canonical_paper_key(paper)
+        return (
+            category_rank[signal["category"]],
+            -signal["boost"],
+            -match_counts.get(key, 1),
+            -(getattr(paper, "citation_count", None) or 0),
+            -(getattr(paper, "year", None) or 0),
+        )
+
+    return sorted(papers, key=sort_key)[:limit]
+
+
+_CANCER_TERMS = (
+    "cancer", "oncolog", "tumor", "tumour", "neoplasm", "carcinoma",
+    "sarcoma", "melanoma", "leukemia", "leukaemia", "lymphoma", "myeloma",
+    "glioblastoma", "astrocytoma", "glioma", "malignan", "breast cancer",
+    "lung cancer", "colorectal", "nsclc",
+)
+
+_CLINICAL_EVIDENCE_TERMS = (
+    "clinical trial", "randomized", "randomised", "cohort", "case-control",
+    "observational", "patients with", "survival", "overall survival",
+    "progression-free", "response rate", "adverse event", "toxicity",
+    "safety", "tumor volume", "tumour volume", "cell viability",
+    "xenograft", "in vivo", "in vitro", "phase 1", "phase 2",
+    "phase i", "phase ii", "advanced solid tumors", "refractory",
+)
+
+_OUTCOME_TERMS = (
+    "survival", "overall survival", "progression-free", "response rate",
+    "adverse event", "toxicity", "safety", "tumor volume", "tumour volume",
+    "cell viability",
+)
+
+_INTERVENTION_TERMS = (
+    "immunotherapy", "car-t", "car t", "checkpoint inhibitor", "pd-1",
+    "pd-l1", "ctla-4", "radiotherapy", "photodynamic", "oncolytic",
+    "virotherapy", "ablation", "targeted therapy", "biomarker",
+    "natural compound", "herbal", "non-chemotherapeutic",
+)
+
+_METHODOLOGY_ONLY_TERMS = (
+    "statistical method", "statistical methodology", "trial design",
+    "study design", "matched-pair", "matched pair", "covariate adjustment",
+    "estimand", "sample size", "power calculation", "simulation study",
+    "monte carlo", "randomization procedure", "randomisation procedure",
+    "mathematical model", "mathematical modelling", "mathematical modeling",
+    "computational model", "travelling waves", "phenotype-structured",
+)
+
+
+def _paper_text(paper) -> str:
+    """Return searchable lowercase metadata text for an auto-search candidate."""
+    source_specific = getattr(paper, "source_specific", None) or {}
+    fields = source_specific.get("fields_of_study") or []
+    if isinstance(fields, list):
+        fields_text = " ".join(str(field) for field in fields)
+    else:
+        fields_text = str(fields)
+    parts = [
+        getattr(paper, "title", "") or "",
+        getattr(paper, "abstract", "") or "",
+        getattr(paper, "venue", "") or "",
+        fields_text,
+    ]
+    return " ".join(parts).lower()
+
+
+def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term in text for term in terms)
+
+
+class _EligibilitySignal(TypedDict):
+    category: Literal[
+        "off_topic_condition",
+        "methodology_only",
+        "clinical_or_domain_evidence",
+        "neutral",
+    ]
+    boost: int
+
+
+def _score_auto_search_eligibility(paper, queries: list[str]) -> _EligibilitySignal:
+    """Classify whether a search candidate satisfies obvious topic constraints.
+
+    This is a deterministic guardrail layered after LLM scoring. It mirrors the
+    systematic-review workflow: search broadly, then screen titles/abstracts
+    against eligibility criteria before saving papers to the corpus.
+    """
+    query_text = " ".join(queries).lower()
+    paper_text = _paper_text(paper)
+    requires_cancer = _contains_any(query_text, _CANCER_TERMS)
+    has_cancer = _contains_any(paper_text, _CANCER_TERMS)
+    has_methodology = _contains_any(paper_text, _METHODOLOGY_ONLY_TERMS)
+    has_evidence = _contains_any(paper_text, _CLINICAL_EVIDENCE_TERMS)
+    has_intervention = _contains_any(paper_text, _INTERVENTION_TERMS)
+    has_outcomes = _contains_any(paper_text, _OUTCOME_TERMS)
+
+    if requires_cancer and not (has_cancer or has_intervention):
+        return {"category": "off_topic_condition", "boost": 0}
+    if has_methodology and not has_outcomes:
+        return {"category": "methodology_only", "boost": 0}
+    if has_evidence or has_intervention:
+        return {"category": "clinical_or_domain_evidence", "boost": 1}
+    return {"category": "neutral", "boost": 0}
 
 
 def _deduplicate_with_match_counts(
@@ -1372,16 +1562,7 @@ def _deduplicate_with_match_counts(
     unique: list = []
 
     for p in papers:
-        key = (
-            p.semantic_scholar_id
-            or p.arxiv_id
-            or p.doi
-            or (p.title or "").lower().strip()
-        )
-        if not key:
-            # No identifiable key at all — keep it standalone with a
-            # synthetic key so we don't accidentally collide.
-            key = f"_unknown_{id(p)}"
+        key = _canonical_paper_key(p)
         match_counts[key] = match_counts.get(key, 0) + 1
         if key in seen_set:
             continue

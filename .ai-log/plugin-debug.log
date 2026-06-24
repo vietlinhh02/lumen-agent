@@ -470,3 +470,29 @@
 [2026-06-19T02:17:48.391Z] chat.message: role=user, content length=3
 [2026-06-19T02:17:48.391Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
 [2026-06-19T02:17:48.391Z] spawned successfully
+[2026-06-23T02:42:28.911Z] Plugin module loaded
+[2026-06-23T02:42:28.922Z] Plugin init called, directory=/home/eddiesngu/Desktop/VinUni/C2-App-053
+[2026-06-23T02:42:38.780Z] chat.message fired
+[2026-06-23T02:42:38.780Z] chat.message: role=user, content length=334
+[2026-06-23T02:42:38.780Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T02:42:38.781Z] spawned successfully
+[2026-06-23T02:43:44.269Z] chat.message fired
+[2026-06-23T02:43:44.269Z] chat.message: role=user, content length=1991
+[2026-06-23T02:43:44.269Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T02:43:44.270Z] spawned successfully
+[2026-06-23T02:52:25.896Z] chat.message fired
+[2026-06-23T02:52:25.896Z] chat.message: role=user, content length=10
+[2026-06-23T02:52:25.896Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T02:52:25.896Z] spawned successfully
+[2026-06-23T02:59:17.489Z] chat.message fired
+[2026-06-23T02:59:17.489Z] chat.message: role=user, content length=30
+[2026-06-23T02:59:17.489Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T02:59:17.490Z] spawned successfully
+[2026-06-23T04:25:45.121Z] chat.message fired
+[2026-06-23T04:25:45.121Z] chat.message: role=user, content length=12
+[2026-06-23T04:25:45.121Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T04:25:45.121Z] spawned successfully
+[2026-06-23T04:34:49.200Z] chat.message fired
+[2026-06-23T04:34:49.200Z] chat.message: role=user, content length=12
+[2026-06-23T04:34:49.200Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-23T04:34:49.201Z] spawned successfully

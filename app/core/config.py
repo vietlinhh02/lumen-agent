@@ -56,15 +56,36 @@ class Settings(BaseSettings):
     # with concurrency=8 (one LLM call per paper, plus optional verification).
     matrix_max_papers: int = 100
 
-    # Embeddings (NVIDIA Nemotron via OpenRouter API)
+    # Embeddings
     openrouter_api_key: str = ""
     embedding_provider: str = "openrouter"
     embedding_model: str = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
     embedding_dimension: int = 2000  # pgvector HNSW limit; API returns 2048, truncated to 2000
     embedding_base_url: str = "https://openrouter.ai/api/v1"
+    gemini_embedding_model: str = "gemini-embedding-001"
+    gemini_embedding_dimension: int = 768  # Gemini output dim; padded to `embedding_dimension` for pgvector
+    gemini_embedding_requests_per_minute: int = 100
+    gemini_embedding_tokens_per_minute: int = 30_000
 
-    # Reranker (NVIDIA Nemotron via OpenRouter /v1/rerank)
-    reranker_model: str = "nvidia/llama-nemotron-rerank-vl-1b-v2:free"
+    # Jina AI (https://jina.ai/api-dashboard/embedding)
+    # Used by both the embedding service (provider="jina") and the reranker
+    # service (auto-preferred when set). Embeddings use Matryoshka MRL so
+    # `jina_embedding_dimension` can be smaller than the model's native dim.
+    jina_api_key: str = ""
+    jina_embedding_url: str = "https://api.jina.ai/v1/embeddings"
+    jina_embedding_model: str = "jina-embeddings-v3"
+    jina_embedding_dimension: int = 1024  # MRL dim: 32/64/128/256/512/768/1024
+    jina_embedding_task_query: str = "retrieval.query"
+    jina_embedding_task_passage: str = "retrieval.passage"
+    jina_embedding_requests_per_minute: int = 100  # free-tier limit
+    jina_rerank_url: str = "https://api.jina.ai/v1/rerank"
+    jina_rerank_model: str = "jina-reranker-v2-base-multilingual"
+    jina_rerank_requests_per_minute: int = 100  # free-tier limit
+
+    # Reranker (OpenRouter /v1/rerank). Nemotron free tier is no longer
+    # available on OpenRouter (404), so we default to Cohere v3.5 which
+    # is the only model we verified works on this endpoint today.
+    reranker_model: str = "cohere/rerank-v3.5"
     reranker_top_n: int = 30
 
     # Exa
@@ -75,6 +96,14 @@ class Settings(BaseSettings):
 
     # Google AI (Gemini / Gemma API)
     google_api_key: str = ""
+
+    # Cohere (used for free-tier rerank via api.cohere.com/v2/rerank).
+    # Kept as a fallback when JINA_API_KEY is not set; Jina is preferred
+    # because its free tier is 10x larger (100 RPM vs 10 RPM).
+    cohere_api_key: str = ""
+    cohere_rerank_model: str = "rerank-english-v3.0"
+    cohere_rerank_url: str = "https://api.cohere.com/v2/rerank"
+    cohere_rerank_requests_per_minute: int = 10  # free trial tier limit
 
     # Paper search defaults
     paper_search_max_results: int = 100

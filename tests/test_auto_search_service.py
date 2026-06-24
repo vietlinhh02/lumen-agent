@@ -438,6 +438,165 @@ def test_deduplicate_with_match_counts_falls_back_to_title():
     assert counts["different paper"] == 1
 
 
+def test_auto_search_eligibility_rejects_non_cancer_methods_paper():
+    from app.services.search_session import _score_auto_search_eligibility
+
+    paper = SimpleNamespace(
+        title="Matched-Pair Designs for Platform Trials",
+        abstract=(
+            "We propose a statistical methodology for covariate adjustment "
+            "using HIV and schizophrenia datasets."
+        ),
+        venue="Statistics in Medicine",
+        source_specific={},
+    )
+
+    signal = _score_auto_search_eligibility(
+        paper,
+        ["non-chemotherapeutic cancer interventions clinical efficacy"],
+    )
+
+    assert signal == {"category": "off_topic_condition", "boost": 0}
+
+
+def test_auto_search_eligibility_penalizes_pure_cancer_methodology():
+    from app.services.search_session import _score_auto_search_eligibility
+
+    paper = SimpleNamespace(
+        title="Sample Size Calculation for Oncology Basket Trials",
+        abstract=(
+            "This simulation study evaluates power calculation methods for "
+            "oncology trial design without patient outcomes."
+        ),
+        venue="Clinical Trials",
+        source_specific={},
+    )
+
+    signal = _score_auto_search_eligibility(
+        paper,
+        ["cancer immunotherapy efficacy safety"],
+    )
+
+    assert signal == {"category": "methodology_only", "boost": 0}
+
+
+def test_auto_search_eligibility_keeps_oncolytic_malignancy_review():
+    from app.services.search_session import _score_auto_search_eligibility
+
+    paper = SimpleNamespace(
+        title=(
+            "Comparative safety and efficacy of oncolytic virotherapy for "
+            "individuals with malignancies"
+        ),
+        abstract="A systematic review of randomized trials and adverse events.",
+        venue="Cancer Medicine",
+        source_specific={},
+    )
+
+    signal = _score_auto_search_eligibility(
+        paper,
+        ["cancer immunotherapy efficacy safety"],
+    )
+
+    assert signal == {"category": "clinical_or_domain_evidence", "boost": 1}
+
+
+def test_auto_search_eligibility_penalizes_cancer_mathematical_model():
+    from app.services.search_session import _score_auto_search_eligibility
+
+    paper = SimpleNamespace(
+        title=(
+            "A Mathematical Model for Chemotherapy, Immunotherapy and "
+            "Virotherapy Treatments of Cancer"
+        ),
+        abstract="We analyze travelling waves in a computational model.",
+        venue="arXiv",
+        source_specific={},
+    )
+
+    signal = _score_auto_search_eligibility(
+        paper,
+        ["cancer immunotherapy efficacy safety"],
+    )
+
+    assert signal == {"category": "methodology_only", "boost": 0}
+
+
+def test_auto_search_eligibility_boosts_cancer_evidence_paper():
+    from app.services.search_session import _score_auto_search_eligibility
+
+    paper = SimpleNamespace(
+        title="CAR T-Cell Therapy in Relapsed Leukemia",
+        abstract=(
+            "A clinical trial reports response rate, overall survival, and "
+            "adverse event outcomes in patients with leukemia."
+        ),
+        venue="Journal of Clinical Oncology",
+        source_specific={},
+    )
+
+    signal = _score_auto_search_eligibility(
+        paper,
+        ["cancer immunotherapy efficacy safety"],
+    )
+
+    assert signal == {"category": "clinical_or_domain_evidence", "boost": 1}
+
+
+def test_auto_search_ranks_and_caps_candidates_before_llm_scoring():
+    from app.services.search_session import (
+        _auto_search_score_candidate_limit,
+        _deduplicate_with_match_counts,
+        _rank_auto_search_candidates,
+    )
+
+    clinical = SimpleNamespace(
+        title="CAR T clinical trial in leukemia",
+        abstract="A clinical trial reports survival and adverse events.",
+        year=2024,
+        citation_count=10,
+        semantic_scholar_id="clinical",
+        arxiv_id=None,
+        doi=None,
+        source_name="exa",
+        source_specific={},
+    )
+    method = SimpleNamespace(
+        title="Mathematical model of cancer immunotherapy",
+        abstract="We analyze a computational model.",
+        year=2026,
+        citation_count=500,
+        semantic_scholar_id="method",
+        arxiv_id=None,
+        doi=None,
+        source_name="arxiv",
+        source_specific={},
+    )
+    off_topic = SimpleNamespace(
+        title="Matched-pair designs using schizophrenia datasets",
+        abstract="Statistical methodology for covariate adjustment.",
+        year=2026,
+        citation_count=900,
+        semantic_scholar_id="off",
+        arxiv_id=None,
+        doi=None,
+        source_name="exa",
+        source_specific={},
+    )
+
+    papers = [off_topic, method, clinical, clinical]
+    unique, match_counts = _deduplicate_with_match_counts(papers)
+    ranked = _rank_auto_search_candidates(
+        unique,
+        match_counts,
+        ["cancer immunotherapy efficacy safety"],
+        limit=2,
+    )
+
+    assert _auto_search_score_candidate_limit(50) == 150
+    assert ranked == [clinical, method]
+
+
 @pytest.mark.asyncio
 async def test_run_auto_search_phase1_runs_multiple_queries_concurrently():
     """Phase 1 issues one search_and_download call per query (gather'd)."""
@@ -603,3 +762,177 @@ async def test_run_auto_search_bumps_low_to_medium_when_multi_match():
         assert job.result["saved_count"] == 1
         # job.result records the multi-match signal for debugging.
         assert job.result["multi_match_papers"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_run_auto_search_caps_scoring_candidates_for_target_50():
+    from app.services.search_session import _run_auto_search_job
+
+    user_id = uuid4()
+    project_id = uuid4()
+    job_id = uuid4()
+    session_id = uuid4()
+
+    job = SimpleNamespace(
+        id=job_id, status="pending", progress=0, total=50,
+        progress_json={"phase": "queued"}, result={}, error_message=None,
+    )
+    run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
+    user = SimpleNamespace(id=user_id)
+    project = SimpleNamespace(
+        id=project_id,
+        topic="cancer immunotherapy efficacy safety",
+        research_question="Which interventions are effective and safe?",
+    )
+
+    with patch("app.services.search_session.async_session_factory") as mock_factory:
+        bg_db = AsyncMock()
+        execute_calls = {"n": 0}
+
+        async def mock_execute(stmt):
+            execute_calls["n"] += 1
+            lookup = {
+                1: job,
+                2: run,
+                3: user,
+                4: project,
+            }.get(execute_calls["n"])
+            if lookup is not None:
+                return MagicMock(scalar_one_or_none=MagicMock(return_value=lookup))
+            return MagicMock()
+
+        bg_db.execute = mock_execute
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        async def fake_search(req, max_per_source=None):
+            return SimpleNamespace(
+                raw_papers=[
+                    SimpleNamespace(
+                        title=f"Clinical cancer immunotherapy paper {i}",
+                        abstract="A clinical trial reports survival and safety.",
+                        year=2024,
+                        venue=None,
+                        doi=None,
+                        arxiv_id=f"2401.{i:05d}",
+                        semantic_scholar_id=None,
+                        url=None,
+                        citation_count=i,
+                        authors=[],
+                        source_name="exa",
+                        source_specific={},
+                    )
+                    for i in range(220)
+                ],
+                response=SimpleNamespace(source_diagnostics=[]),
+            )
+
+        scored_count = {}
+
+        async def fake_score(papers, *args):
+            scored_count["n"] = len(papers)
+            return ["high"] * len(papers)
+
+        with patch("app.services.search_session.search_and_download", side_effect=fake_search), \
+             patch("app.services.search_session.batch_score_papers", side_effect=fake_score), \
+             patch("app.services.search_session.save_paper_to_project") as mock_save:
+            mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
+
+            await _run_auto_search_job(
+                job_id, session_id, project_id, user_id, ["q1"], 50,
+                timeout_seconds=10,
+            )
+
+    assert scored_count["n"] == 150
+    assert job.result["candidates_after_dedupe"] == 220
+    assert job.result["candidates_scored"] == 150
+    assert job.result["saved_count"] == 50
+
+
+@pytest.mark.asyncio
+async def test_run_auto_search_continues_after_phase2_budget_exceeded():
+    from app.services.search_session import _run_auto_search_job
+
+    user_id = uuid4()
+    project_id = uuid4()
+    job_id = uuid4()
+    session_id = uuid4()
+
+    job = SimpleNamespace(
+        id=job_id, status="pending", progress=0, total=1,
+        progress_json={"phase": "queued"}, result={}, error_message=None,
+    )
+    run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
+    user = SimpleNamespace(id=user_id)
+    project = SimpleNamespace(
+        id=project_id,
+        topic="cancer immunotherapy efficacy safety",
+        research_question="Which interventions are effective and safe?",
+    )
+
+    with patch("app.services.search_session.async_session_factory") as mock_factory:
+        bg_db = AsyncMock()
+        execute_calls = {"n": 0}
+
+        async def mock_execute(stmt):
+            execute_calls["n"] += 1
+            lookup = {
+                1: job,
+                2: run,
+                3: user,
+                4: project,
+            }.get(execute_calls["n"])
+            if lookup is not None:
+                return MagicMock(scalar_one_or_none=MagicMock(return_value=lookup))
+            return MagicMock()
+
+        bg_db.execute = mock_execute
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=bg_db)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        paper = SimpleNamespace(
+            title="Clinical cancer immunotherapy paper",
+            abstract="A clinical trial reports survival and safety.",
+            year=2024,
+            venue=None,
+            doi=None,
+            arxiv_id="2401.12345",
+            semantic_scholar_id=None,
+            url=None,
+            citation_count=10,
+            authors=[],
+            source_name="exa",
+            source_specific={},
+        )
+
+        async def fake_search(req, max_per_source=None):
+            return SimpleNamespace(
+                raw_papers=[paper],
+                response=SimpleNamespace(source_diagnostics=[]),
+            )
+
+        async def fake_score(papers, *args):
+            return ["high"] * len(papers)
+
+        monotonic_values = iter([0, 0, 999])
+
+        def fake_monotonic():
+            try:
+                return next(monotonic_values)
+            except StopIteration:
+                return 999
+
+        with patch("app.services.search_session.search_and_download", side_effect=fake_search), \
+             patch("app.services.search_session.batch_score_papers", side_effect=fake_score), \
+             patch("app.services.search_session.save_paper_to_project") as mock_save, \
+             patch("app.services.search_session.monotonic", side_effect=fake_monotonic):
+            mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
+
+            await _run_auto_search_job(
+                job_id, session_id, project_id, user_id, ["q1"], 1,
+                timeout_seconds=10,
+            )
+
+    assert job.status == "completed"
+    assert job.error_message is None
+    assert job.result["saved_count"] == 1

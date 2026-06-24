@@ -27,6 +27,26 @@ class CitationAuditResponse(BaseModel):
     uncited_saved_papers: int
 
 
+class UngroundedClaimExample(BaseModel):
+    claim: str
+    section: str
+    context: str
+    cited_papers: list[str]
+
+
+class ClaimAuditResponse(BaseModel):
+    """Defensive audit that catches the "dâu ông nọ cắm căm bà kia"
+    hallucination pattern: a paper is cited but the number attributed
+    to it is not actually in the paper's retrieved chunks.
+    """
+
+    total_claims: int
+    grounded_claims: int
+    ungrounded_claims: int
+    ungrounded_examples: list[UngroundedClaimExample] = Field(default_factory=list)
+    grounding_rate: float
+
+
 class ReportResponse(BaseModel):
     id: str
     title: str
@@ -34,6 +54,7 @@ class ReportResponse(BaseModel):
     content_markdown: str
     references: list[ReferenceResponse] = Field(default_factory=list)
     citation_audit: CitationAuditResponse
+    claim_audit: ClaimAuditResponse | None = None
 
 
 class ReportListResponse(BaseModel):
@@ -48,4 +69,5 @@ class ReportDetailResponse(BaseModel):
     content_markdown: str
     references: list[ReferenceResponse] = Field(default_factory=list)
     citation_audit: CitationAuditResponse
+    claim_audit: ClaimAuditResponse | None = None
     created_at: str

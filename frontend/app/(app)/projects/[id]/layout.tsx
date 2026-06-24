@@ -19,6 +19,7 @@ import {
   ChatCircle,
   Spinner,
   ClipboardText,
+  FlowArrow,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
@@ -37,6 +38,7 @@ const TABS = [
   { key: "protocol", label: "Protocol", href: "/protocol", icon: ClipboardText, minStep: 1 },
   { key: "papers", label: "Papers", href: "/papers", icon: FileText, minStep: 1 },
   { key: "search", label: "Search", href: "/search", icon: MagnifyingGlass, minStep: 1 },
+  { key: "audit", label: "Audit", href: "/audit", icon: FlowArrow, minStep: 1 },
   { key: "matrix", label: "Matrix", href: "/matrix", icon: Table, minStep: 3 },
   { key: "map", label: "Map", href: "/map", icon: Graph, minStep: 4 },
   { key: "gaps", label: "Gaps", href: "/gaps", icon: Lightbulb, minStep: 4 },
@@ -127,7 +129,6 @@ export default function ProjectWorkspaceLayout({
     useReportsStore.getState().reset();
     useSearchStore.getState().reset();
     useKnowledgeMapStore.getState().reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // Always fetch project + papers for the workspace shell + counts.
