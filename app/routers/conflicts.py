@@ -15,6 +15,7 @@ from app.agents.state import ResearchState
 from app.core.security import get_current_user
 from app.db.models import (
     ConflictingFinding,
+    ConflictingFindingChunk,
     LiteratureMatrixRow,
     Paper,
     Project,
@@ -22,7 +23,12 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
-from app.schemas.conflicts import ConflictListResponse, ConflictResponse
+from app.schemas.conflicts import (
+    ConflictEvidenceResponse,
+    ConflictListResponse,
+    ConflictResponse,
+)
+from app.schemas.evidence import EvidenceChunkResponse
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +179,69 @@ async def list_conflicts(
 
     conflicts = await _load_conflicts(db, pid)
     return ConflictListResponse(items=conflicts, total=len(conflicts))
+
+
+@router.get(
+    "/{project_id}/conflicts/{conflict_id}/evidence",
+    response_model=ConflictEvidenceResponse,
+)
+async def get_conflict_evidence(
+    project_id: str,
+    conflict_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ConflictEvidenceResponse:
+    """Return the persisted chunks behind each side of a conflict.
+
+    Conflicts detected before T3 Phase 2 have no chunks — re-running detection
+    backfills them. Empty sides simply render an empty drawer.
+    """
+    pid = uuid.UUID(project_id)
+    cid = uuid.UUID(conflict_id)
+
+    finding = (
+        await db.execute(
+            select(ConflictingFinding).where(
+                ConflictingFinding.id == cid,
+                ConflictingFinding.project_id == pid,
+            )
+        )
+    ).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Conflict not found"
+        )
+    # Ownership check piggybacks on the project lookup.
+    project = (
+        await db.execute(select(Project).where(Project.id == pid, Project.owner_id == user.id))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    chunks = (
+        await db.execute(
+            select(ConflictingFindingChunk)
+            .where(ConflictingFindingChunk.conflict_id == cid)
+            .order_by(ConflictingFindingChunk.score.desc())
+        )
+    ).scalars().all()
+
+    def _to_item(ch: ConflictingFindingChunk) -> EvidenceChunkResponse:
+        return EvidenceChunkResponse(
+            chunk_id=ch.chunk_id,
+            project_paper_id=ch.project_paper_id,
+            chunk_text=ch.snippet,
+            section_label=ch.section_label,
+            content_type=ch.content_type,
+            score=ch.score,
+        )
+
+    return ConflictEvidenceResponse(
+        paper_a_title=await _get_paper_title(db, finding.paper_a_id),
+        paper_b_title=await _get_paper_title(db, finding.paper_b_id),
+        claim_a=[_to_item(c) for c in chunks if c.polarity == "a"],
+        claim_b=[_to_item(c) for c in chunks if c.polarity == "b"],
+    )
 
 
 async def _load_conflicts(db: AsyncSession, project_id: uuid.UUID) -> list[ConflictResponse]:

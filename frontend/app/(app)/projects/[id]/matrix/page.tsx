@@ -12,6 +12,13 @@ import {
   MatrixEmptyState,
   MatrixStats,
 } from "@/components/matrix";
+import { EvidenceDrawer } from "@/components/evidence";
+import type { EvidenceChunk, EvidenceRatingResponse } from "@/lib/types";
+import {
+  fetchEvidenceRatings,
+  upsertEvidenceRating,
+} from "@/lib/evidence-ratings";
+import { useRatingsStore } from "@/lib/stores/ratings-store";
 
 export default function ProjectMatrixPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,8 +40,27 @@ export default function ProjectMatrixPage() {
   const editRow = useMatrixStore((s) => s.editRow);
   const deleteRow = useMatrixStore((s) => s.deleteRow);
   const bulkDeleteLow = useMatrixStore((s) => s.bulkDeleteLow);
+  const fetchRowEvidence = useMatrixStore((s) => s.fetchRowEvidence);
 
   const [removingLow, setRemovingLow] = useState(false);
+
+  const [evidence, setEvidence] = useState<{
+    open: boolean;
+    title: string | null;
+    rowId: string | null;
+    loading: boolean;
+    error: string | null;
+    items: EvidenceChunk[];
+    ratings: Record<string, EvidenceRatingResponse>;
+  }>({
+    open: false,
+    title: null,
+    rowId: null,
+    loading: false,
+    error: null,
+    items: [],
+    ratings: {},
+  });
 
   useEffect(() => {
     if (projectId) setSelectedProjectId(projectId);
@@ -98,6 +124,67 @@ export default function ProjectMatrixPage() {
     const ok = await deleteRow(projectId, rowId);
     if (ok) toast.success("Row deleted");
     else toast.error("Delete failed");
+  }
+
+  async function handleViewEvidence(rowId: string) {
+    if (!projectId) return;
+    const row = rows.find((r) => r.id === rowId);
+    setEvidence({
+      open: true,
+      title: row?.paper_title ?? null,
+      rowId,
+      loading: true,
+      error: null,
+      items: [],
+      ratings: {},
+    });
+    try {
+      const [data, ratingList] = await Promise.all([
+        fetchRowEvidence(projectId, rowId),
+        fetchEvidenceRatings(projectId, "matrix_row", rowId),
+      ]);
+      const ratings = Object.fromEntries(
+        ratingList.items.map((r) => [r.chunk_id, r]),
+      );
+      setEvidence((prev) => ({
+        ...prev,
+        loading: false,
+        items: data.items,
+        ratings,
+      }));
+    } catch (err) {
+      setEvidence((prev) => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : "Failed to load evidence",
+      }));
+    }
+  }
+
+  async function handleRate(args: {
+    chunkId: string;
+    projectPaperId: string | null;
+    rating: "accepted" | "weak" | "wrong";
+    note: string | null;
+  }) {
+    if (!projectId || !evidence.rowId || !args.projectPaperId) return;
+    try {
+      const saved = await upsertEvidenceRating(projectId, {
+        source_kind: "matrix_row",
+        source_id: evidence.rowId,
+        project_paper_id: args.projectPaperId,
+        chunk_id: args.chunkId,
+        rating: args.rating,
+        note: args.note,
+      });
+      setEvidence((prev) => ({
+        ...prev,
+        ratings: { ...prev.ratings, [args.chunkId]: saved },
+      }));
+      void useRatingsStore.getState().fetchSummary(projectId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save rating");
+    }
   }
 
   async function handleRemoveLow() {
@@ -186,10 +273,30 @@ export default function ProjectMatrixPage() {
           rows={rows}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          onViewEvidence={handleViewEvidence}
         />
       )}
 
       <MatrixStats rows={rows} />
+
+      <EvidenceDrawer
+        open={evidence.open}
+        onClose={() => setEvidence((prev) => ({ ...prev, open: false }))}
+        title={evidence.title}
+        loading={evidence.loading}
+        error={evidence.error}
+        items={evidence.items}
+        rating={
+          evidence.rowId
+            ? {
+                sourceKind: "matrix_row",
+                sourceId: evidence.rowId,
+                ratings: evidence.ratings,
+                onRate: handleRate,
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

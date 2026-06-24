@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CaretDown, CaretUp, Trash } from "@phosphor-icons/react";
+import { CaretDown, CaretUp, Trash, Quotes } from "@phosphor-icons/react";
 import type { MatrixRowResponse, MatrixRowUpdate } from "@/lib/types";
 import { EditableCell } from "./EditableCell";
 import { ConfidenceBadge } from "./ConfidenceBadge";
@@ -32,10 +32,12 @@ function MatrixCard({
   row,
   onEdit,
   onDelete,
+  onViewEvidence,
 }: {
   row: MatrixRowResponse;
   onEdit: (field: string, value: string) => void;
   onDelete: () => void;
+  onViewEvidence: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLowConfidence = row.extraction_confidence === "low";
@@ -81,6 +83,13 @@ function MatrixCard({
             </button>
           )}
           <ConfidenceBadge level={row.extraction_confidence} />
+          <button
+            onClick={onViewEvidence}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ash transition-colors hover:bg-violet-50 hover:text-violet-600"
+            title="View supporting evidence"
+          >
+            <Quotes size={14} weight="bold" />
+          </button>
           {row.created_by === "ai" && !isLowConfidence && (
             <button
               onClick={onDelete}
@@ -124,9 +133,10 @@ interface TableProps {
   rows: MatrixRowResponse[];
   onEdit: (rowId: string, field: string, value: string) => void;
   onDelete: (rowId: string) => void;
+  onViewEvidence: (rowId: string) => void;
 }
 
-export function MatrixTable({ rows, onEdit, onDelete }: TableProps) {
+export function MatrixTable({ rows, onEdit, onDelete, onViewEvidence }: TableProps) {
   return (
     <div className="grid gap-3 sm:gap-4">
       {rows.map((row) => (
@@ -135,6 +145,7 @@ export function MatrixTable({ rows, onEdit, onDelete }: TableProps) {
           row={row}
           onEdit={(field, value) => onEdit(row.id, field, value)}
           onDelete={() => onDelete(row.id)}
+          onViewEvidence={() => onViewEvidence(row.id)}
         />
       ))}
     </div>

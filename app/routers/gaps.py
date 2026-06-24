@@ -23,7 +23,9 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
+from app.schemas.evidence import EvidenceChunkResponse, EvidenceListResponse
 from app.schemas.gaps import GapEvidenceResponse, GapListResponse, GapResponse
+from app.services.hybrid_retrieval import retrieve_paper_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +202,87 @@ async def remove_gap(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Gap not found")
 
     return {"deleted": True}
+
+
+# Map a gap-evidence type to the chunk content types most likely to back it.
+_EVIDENCE_TYPE_CONTENT_TYPES = {
+    "limitation": ["limitation"],
+    "method_gap": ["method"],
+    "result_pattern": ["results", "narrative"],
+    "missing_dataset": ["method", "narrative"],
+}
+
+
+@router.get("/{project_id}/gaps/{gap_id}/evidence", response_model=EvidenceListResponse)
+async def get_gap_evidence(
+    project_id: str,
+    gap_id: str,
+    project_paper_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> EvidenceListResponse:
+    """Return supporting chunks for one paper behind a research gap.
+
+    Live retrieval: derives a query from the gap and filters by the content
+    types aligned to that paper's evidence type. No new table needed.
+    """
+    pid = uuid.UUID(project_id)
+    gid = uuid.UUID(gap_id)
+    ppid = uuid.UUID(project_paper_id)
+
+    project = (
+        await db.execute(select(Project).where(Project.id == pid, Project.owner_id == user.id))
+    ).scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    gap = (
+        await db.execute(
+            select(ResearchGap)
+            .options(selectinload(ResearchGap.evidence_entries))
+            .where(ResearchGap.id == gid, ResearchGap.project_id == pid)
+        )
+    ).scalar_one_or_none()
+    if not gap:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Gap not found")
+
+    # Pick the content-type filter from this paper's evidence type, if present.
+    content_types = None
+    for ev in gap.evidence_entries:
+        if ev.project_paper_id == ppid:
+            content_types = _EVIDENCE_TYPE_CONTENT_TYPES.get(ev.evidence_type)
+            break
+
+    query = " ".join(p for p in (gap.title, gap.description, gap.suggested_direction) if p)
+    chunks = await retrieve_paper_evidence(
+        db, ppid, query, limit=5, content_types=content_types
+    )
+
+    paper_title = await _get_gap_paper_title(db, ppid)
+    items = [
+        EvidenceChunkResponse(
+            chunk_id=c.chunk_id,
+            project_paper_id=c.project_paper_id,
+            chunk_text=c.chunk_text,
+            section_label=c.section_label,
+            content_type=c.content_type,
+            page_start=c.page_start,
+            page_end=c.page_end,
+            score=c.score,
+        )
+        for c in chunks
+    ]
+    return EvidenceListResponse(project_paper_id=ppid, paper_title=paper_title, items=items)
+
+
+async def _get_gap_paper_title(db: AsyncSession, project_paper_id: uuid.UUID) -> str | None:
+    pp = (
+        await db.execute(select(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+    ).scalar_one_or_none()
+    if not pp:
+        return None
+    paper = (await db.execute(select(Paper).where(Paper.id == pp.paper_id))).scalar_one_or_none()
+    return paper.title if paper else None
 
 
 async def _load_gaps_with_evidence(db: AsyncSession, project_id: uuid.UUID) -> list[GapResponse]:

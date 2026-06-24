@@ -8,6 +8,8 @@ import type {
   GapListResponse,
   ConflictResponse,
   ConflictListResponse,
+  EvidenceListResponse,
+  ConflictEvidenceResponse,
 } from "@/lib/types";
 
 type Tab = "gaps" | "conflicts";
@@ -35,6 +37,15 @@ interface GapsState {
   generateGaps: (projectId: string, onPoll?: (jobId: string) => Promise<unknown>) => Promise<void>;
   generateConflicts: (projectId: string, onPoll?: (jobId: string) => Promise<unknown>) => Promise<void>;
   deleteGap: (projectId: string, gapId: string) => Promise<boolean>;
+  fetchGapEvidence: (
+    projectId: string,
+    gapId: string,
+    projectPaperId: string,
+  ) => Promise<EvidenceListResponse>;
+  fetchConflictEvidence: (
+    projectId: string,
+    conflictId: string,
+  ) => Promise<ConflictEvidenceResponse>;
   reset: () => void;
 }
 
@@ -160,6 +171,22 @@ export const useGapsStore = create<GapsState>()((set, get) => ({
     } catch {
       return false;
     }
+  },
+
+  async fetchGapEvidence(projectId, gapId, projectPaperId) {
+    const token = useAuthStore.getState().token;
+    return await apiFetch<EvidenceListResponse>(
+      `/projects/${projectId}/gaps/${gapId}/evidence?project_paper_id=${projectPaperId}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+  },
+
+  async fetchConflictEvidence(projectId, conflictId) {
+    const token = useAuthStore.getState().token;
+    return await apiFetch<ConflictEvidenceResponse>(
+      `/projects/${projectId}/conflicts/${conflictId}/evidence`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
   },
 
   reset() {

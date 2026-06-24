@@ -18,6 +18,9 @@ class ReferenceResponse(BaseModel):
     authors: list[str] = Field(default_factory=list)
     year: int | None = None
     url: str | None = None
+    # T3 Phase 4: served PDF URL when the file exists on disk, so report
+    # citations can open the source PDF. None when no local PDF.
+    pdf_path: str | None = None
 
 
 class CitationAuditResponse(BaseModel):

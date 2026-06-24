@@ -305,6 +305,75 @@ export interface MatrixGenerateResponse {
   skipped_count: number;
 }
 
+// ── Evidence (T3 full-text evidence viewer) ────────────────────────────
+
+export interface EvidenceChunk {
+  chunk_id: string;
+  project_paper_id: string | null;
+  chunk_text: string;
+  section_label: string | null;
+  content_type: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  score: number;
+}
+
+// ── Evidence ratings (T3 Phase 3) ──────────────────────────────────────
+
+export type EvidenceSourceKind =
+  | "matrix_row"
+  | "gap"
+  | "conflict"
+  | "report_paragraph";
+
+export type EvidenceRatingValue = "accepted" | "weak" | "wrong";
+
+export interface EvidenceRatingCreate {
+  source_kind: EvidenceSourceKind;
+  source_id: string;
+  project_paper_id: string;
+  chunk_id: string;
+  rating: EvidenceRatingValue;
+  note?: string | null;
+}
+
+export interface EvidenceRatingResponse {
+  id: string;
+  source_kind: EvidenceSourceKind;
+  source_id: string;
+  project_paper_id: string;
+  chunk_id: string;
+  rating: EvidenceRatingValue;
+  note: string | null;
+  updated_at: string | null;
+}
+
+export interface EvidenceRatingListResponse {
+  items: EvidenceRatingResponse[];
+}
+
+export interface EvidenceRatingSummary {
+  accepted: number;
+  weak: number;
+  wrong: number;
+}
+
+export interface MatrixEvidenceResponse {
+  project_paper_id: string;
+  paper_title: string | null;
+  items: EvidenceChunk[];
+}
+
+// Gap evidence reuses the same per-paper shape as the matrix endpoint.
+export type EvidenceListResponse = MatrixEvidenceResponse;
+
+export interface ConflictEvidenceResponse {
+  paper_a_title: string;
+  paper_b_title: string;
+  claim_a: EvidenceChunk[];
+  claim_b: EvidenceChunk[];
+}
+
 // ── Research Gaps ──────────────────────────────────────────────────────
 
 export interface GapEvidenceResponse {
@@ -396,6 +465,8 @@ export interface ReferenceResponse {
   authors: string[];
   year: number | null;
   url: string | null;
+  /** Served PDF URL when a local file exists; null otherwise. */
+  pdf_path: string | null;
 }
 
 export interface CitationAuditResponse {

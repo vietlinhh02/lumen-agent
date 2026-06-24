@@ -81,6 +81,6 @@ start-app.ps1
 stop-app.ps1
 _bmad
 _bmad-output
-.agent\skills
-.agents\skills
-.claude\skills
+.agent/skills/
+.agents/skills/
+.claude/skills/

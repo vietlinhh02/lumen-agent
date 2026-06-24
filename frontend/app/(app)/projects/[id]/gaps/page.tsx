@@ -1,13 +1,25 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Lightbulb, Warning, ArrowCounterClockwise } from "@phosphor-icons/react";
 import { useGapsStore } from "@/lib/stores/gaps-store";
 import { useJobPolling } from "@/lib/hooks/useJobPolling";
 import { GapCard, ConflictCard } from "@/components/gaps";
-import type { GapResponse, ConflictResponse } from "@/lib/types";
+import { EvidenceDrawer } from "@/components/evidence";
+import type {
+  GapResponse,
+  ConflictResponse,
+  EvidenceChunk,
+  EvidenceRatingResponse,
+  EvidenceSourceKind,
+} from "@/lib/types";
+import {
+  fetchEvidenceRatings,
+  upsertEvidenceRating,
+} from "@/lib/evidence-ratings";
+import { useRatingsStore } from "@/lib/stores/ratings-store";
 
 const confidenceColor = (c: string) => {
   if (c === "high") return "bg-green-50 text-green-700";
@@ -37,6 +49,108 @@ export default function ProjectGapsPage() {
   const generateGaps = useGapsStore((s) => s.generateGaps);
   const generateConflicts = useGapsStore((s) => s.generateConflicts);
   const deleteGap = useGapsStore((s) => s.deleteGap);
+  const fetchGapEvidence = useGapsStore((s) => s.fetchGapEvidence);
+  const fetchConflictEvidence = useGapsStore((s) => s.fetchConflictEvidence);
+
+  const [evidence, setEvidence] = useState<{
+    open: boolean;
+    title: string | null;
+    sourceKind: EvidenceSourceKind;
+    sourceId: string | null;
+    loading: boolean;
+    error: string | null;
+    items: EvidenceChunk[];
+    ratings: Record<string, EvidenceRatingResponse>;
+  }>({
+    open: false,
+    title: null,
+    sourceKind: "gap",
+    sourceId: null,
+    loading: false,
+    error: null,
+    items: [],
+    ratings: {},
+  });
+
+  async function openEvidence(
+    title: string | null,
+    sourceKind: EvidenceSourceKind,
+    sourceId: string,
+    load: () => Promise<EvidenceChunk[]>,
+  ) {
+    setEvidence({
+      open: true,
+      title,
+      sourceKind,
+      sourceId,
+      loading: true,
+      error: null,
+      items: [],
+      ratings: {},
+    });
+    try {
+      const [items, ratingList] = await Promise.all([
+        load(),
+        fetchEvidenceRatings(projectId, sourceKind, sourceId),
+      ]);
+      const ratings = Object.fromEntries(
+        ratingList.items.map((r) => [r.chunk_id, r]),
+      );
+      setEvidence((p) => ({ ...p, loading: false, items, ratings }));
+    } catch (err) {
+      setEvidence((p) => ({
+        ...p,
+        loading: false,
+        error: err instanceof Error ? err.message : "Failed to load evidence",
+      }));
+    }
+  }
+
+  async function handleRate(args: {
+    chunkId: string;
+    projectPaperId: string | null;
+    rating: "accepted" | "weak" | "wrong";
+    note: string | null;
+  }) {
+    if (!projectId || !evidence.sourceId || !args.projectPaperId) return;
+    try {
+      const saved = await upsertEvidenceRating(projectId, {
+        source_kind: evidence.sourceKind,
+        source_id: evidence.sourceId,
+        project_paper_id: args.projectPaperId,
+        chunk_id: args.chunkId,
+        rating: args.rating,
+        note: args.note,
+      });
+      setEvidence((p) => ({
+        ...p,
+        ratings: { ...p.ratings, [args.chunkId]: saved },
+      }));
+      void useRatingsStore.getState().fetchSummary(projectId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save rating");
+    }
+  }
+
+  function handleGapEvidence(gapId: string, projectPaperId: string) {
+    if (!projectId) return;
+    const gap = gaps.find((g) => g.id === gapId);
+    const title = gap?.evidence.find((e) => e.project_paper_id === projectPaperId)?.title ?? null;
+    void openEvidence(title, "gap", gapId, async () => {
+      const data = await fetchGapEvidence(projectId, gapId, projectPaperId);
+      return data.items;
+    });
+  }
+
+  function handleConflictEvidence(conflictId: string, side: "a" | "b") {
+    if (!projectId) return;
+    const conflict = conflicts.find((c) => c.id === conflictId);
+    const title = side === "a" ? conflict?.paper_a_title ?? null : conflict?.paper_b_title ?? null;
+    void openEvidence(title, "conflict", conflictId, async () => {
+      const data = await fetchConflictEvidence(projectId, conflictId);
+      return side === "a" ? data.claim_a : data.claim_b;
+    });
+  }
 
   const { poll: pollGaps } = useJobPolling({
     onSuccess: (result) => `Generated ${(result.gap_count as number) ?? 0} research gaps`,
@@ -127,6 +241,7 @@ export default function ProjectGapsPage() {
           onToggleExpand={toggleGapExpand}
           onGenerate={handleGenerateGaps}
           onDelete={handleDeleteGap}
+          onViewEvidence={handleGapEvidence}
         />
       )}
 
@@ -138,13 +253,33 @@ export default function ProjectGapsPage() {
           expandedId={expandedConflictId}
           onToggleExpand={toggleConflictExpand}
           onGenerate={handleGenerateConflicts}
+          onViewEvidence={handleConflictEvidence}
         />
       )}
+
+      <EvidenceDrawer
+        open={evidence.open}
+        onClose={() => setEvidence((p) => ({ ...p, open: false }))}
+        title={evidence.title}
+        loading={evidence.loading}
+        error={evidence.error}
+        items={evidence.items}
+        rating={
+          evidence.sourceId
+            ? {
+                sourceKind: evidence.sourceKind,
+                sourceId: evidence.sourceId,
+                ratings: evidence.ratings,
+                onRate: handleRate,
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }
 
-function GapsTab({ gaps, loading, generating, expandedId, onToggleExpand, onGenerate, onDelete }: {
+function GapsTab({ gaps, loading, generating, expandedId, onToggleExpand, onGenerate, onDelete, onViewEvidence }: {
   gaps: GapResponse[];
   loading: boolean;
   generating: boolean;
@@ -152,6 +287,7 @@ function GapsTab({ gaps, loading, generating, expandedId, onToggleExpand, onGene
   onToggleExpand: (id: string) => void;
   onGenerate: () => void;
   onDelete: (id: string) => void;
+  onViewEvidence: (gapId: string, projectPaperId: string) => void;
 }) {
   return (
     <>
@@ -203,6 +339,7 @@ function GapsTab({ gaps, loading, generating, expandedId, onToggleExpand, onGene
               expanded={expandedId === gap.id}
               onToggle={() => onToggleExpand(gap.id)}
               onDelete={() => onDelete(gap.id)}
+              onViewEvidence={(ppId) => onViewEvidence(gap.id, ppId)}
               confidenceColor={confidenceColor}
             />
           ))}
@@ -212,13 +349,14 @@ function GapsTab({ gaps, loading, generating, expandedId, onToggleExpand, onGene
   );
 }
 
-function ConflictsTab({ conflicts, loading, generating, expandedId, onToggleExpand, onGenerate }: {
+function ConflictsTab({ conflicts, loading, generating, expandedId, onToggleExpand, onGenerate, onViewEvidence }: {
   conflicts: ConflictResponse[];
   loading: boolean;
   generating: boolean;
   expandedId: string | null;
   onToggleExpand: (id: string) => void;
   onGenerate: () => void;
+  onViewEvidence: (conflictId: string, side: "a" | "b") => void;
 }) {
   return (
     <>
@@ -268,6 +406,7 @@ function ConflictsTab({ conflicts, loading, generating, expandedId, onToggleExpa
               conflict={conflict}
               expanded={expandedId === conflict.id}
               onToggle={() => onToggleExpand(conflict.id)}
+              onViewEvidence={(side) => onViewEvidence(conflict.id, side)}
               confidenceColor={confidenceColor}
             />
           ))}

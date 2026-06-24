@@ -9,16 +9,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.security import get_current_user
 from app.db.models import LiteratureMatrixRow, Project, ProjectPaper, User
 from app.db.session import async_session_factory, get_db
+from app.schemas.evidence import EvidenceChunkResponse
 from app.schemas.matrix import (
+    MatrixEvidenceResponse,
     MatrixGenerateRequest,
     MatrixListResponse,
     MatrixRowResponse,
     MatrixRowUpdate,
 )
+from app.services.hybrid_retrieval import retrieve_paper_evidence
 from app.services.literature_matrix import (
     bulk_delete_by_confidence,
     count_by_confidence,
@@ -159,6 +163,91 @@ async def delete_matrix_row(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Matrix row not found",
         )
+
+
+# ── Evidence for a matrix row (T3 evidence viewer) ───────────────────────
+
+
+def _evidence_query(row: LiteratureMatrixRow, paper_title: str | None) -> str:
+    """Build a retrieval query from the row's claim-bearing fields.
+
+    Falls back to the paper title when every field is empty so the drawer
+    still surfaces representative chunks instead of returning nothing.
+    """
+    parts = [row.research_problem, row.method, row.key_result, row.limitation]
+    query = " ".join(p.strip() for p in parts if p and p.strip())
+    return query or (paper_title or "")
+
+
+@router.get("/{project_id}/matrix/{row_id}/evidence", response_model=MatrixEvidenceResponse)
+async def get_matrix_row_evidence(
+    project_id: UUID,
+    row_id: UUID,
+    limit: int = 5,
+    content_types: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MatrixEvidenceResponse:
+    """Return the top supporting chunks for a matrix row.
+
+    Wraps ``retrieve_paper_evidence`` with a query derived from the row's
+    fields. Read-only: no DB writes, no migration. ``content_types`` is an
+    optional CSV (e.g. ``method,results``) to filter the chunk pool.
+    """
+    await _verify_project_owner(db, user, project_id)
+
+    stmt = (
+        select(LiteratureMatrixRow)
+        .options(
+            selectinload(LiteratureMatrixRow.project_paper).selectinload(ProjectPaper.paper)
+        )
+        .where(
+            LiteratureMatrixRow.id == row_id,
+            LiteratureMatrixRow.project_id == project_id,
+        )
+    )
+    row = (await db.execute(stmt)).scalar_one_or_none()
+    if not row:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Matrix row not found",
+        )
+
+    paper_title = None
+    if row.project_paper and row.project_paper.paper:
+        paper_title = row.project_paper.paper.title
+
+    types_list = (
+        [t.strip() for t in content_types.split(",") if t.strip()]
+        if content_types
+        else None
+    )
+    chunks = await retrieve_paper_evidence(
+        db,
+        row.project_paper_id,
+        _evidence_query(row, paper_title),
+        limit=max(1, min(limit, 20)),
+        content_types=types_list,
+    )
+
+    items = [
+        EvidenceChunkResponse(
+            chunk_id=c.chunk_id,
+            project_paper_id=c.project_paper_id,
+            chunk_text=c.chunk_text,
+            section_label=c.section_label,
+            content_type=c.content_type,
+            page_start=c.page_start,
+            page_end=c.page_end,
+            score=c.score,
+        )
+        for c in chunks
+    ]
+    return MatrixEvidenceResponse(
+        project_paper_id=row.project_paper_id,
+        paper_title=paper_title,
+        items=items,
+    )
 
 
 # ── Bulk operations ─────────────────────────────────────────────────────

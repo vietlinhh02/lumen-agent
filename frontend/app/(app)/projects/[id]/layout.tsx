@@ -21,6 +21,9 @@ import {
   ClipboardText,
   FlowArrow,
   Intersect,
+  Check,
+  Warning,
+  X,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
@@ -32,6 +35,7 @@ import { useReportsStore } from "@/lib/stores/reports-store";
 import { useSearchStore } from "@/lib/stores/search-store";
 import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { useRatingsStore } from "@/lib/stores/ratings-store";
 import { EditProjectModal } from "@/components/EditProjectModal";
 import { DeleteProjectModal } from "@/components/DeleteProjectModal";
 
@@ -111,6 +115,9 @@ export default function ProjectWorkspaceLayout({
   const createSession = useAssistantStore((s) => s.createSession);
   const [startingChat, setStartingChat] = useState(false);
 
+  const ratingSummary = useRatingsStore((s) => s.summary);
+  const fetchRatingSummary = useRatingsStore((s) => s.fetchSummary);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -137,6 +144,7 @@ export default function ProjectWorkspaceLayout({
     useReportsStore.getState().reset();
     useSearchStore.getState().reset();
     useKnowledgeMapStore.getState().reset();
+    useRatingsStore.getState().reset();
   }, [projectId]);
 
   // Always fetch project + papers for the workspace shell + counts.
@@ -151,6 +159,7 @@ export default function ProjectWorkspaceLayout({
     void fetchClaims(projectId).catch(() => undefined);
     void fetchClaimsAggregate(projectId).catch(() => undefined);
     void fetchReports(projectId).catch(() => undefined);
+    void fetchRatingSummary(projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
@@ -291,6 +300,26 @@ export default function ProjectWorkspaceLayout({
               >
                 {project.status === "active" ? "Active" : "Archived"}
               </span>
+              {ratingSummary &&
+                ratingSummary.accepted + ratingSummary.weak + ratingSummary.wrong > 0 && (
+                  <span
+                    className="font-ui inline-flex shrink-0 items-center gap-2 rounded-full bg-surface-bone px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold"
+                    title="Evidence quotes you've rated in this project"
+                  >
+                    <span className="inline-flex items-center gap-0.5 text-green-700">
+                      <Check size={11} weight="bold" />
+                      {ratingSummary.accepted}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 text-amber-700">
+                      <Warning size={11} weight="bold" />
+                      {ratingSummary.weak}
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 text-red-700">
+                      <X size={11} weight="bold" />
+                      {ratingSummary.wrong}
+                    </span>
+                  </span>
+                )}
             </div>
             {project.topic && (
               <p className="mt-1 sm:mt-1.5 text-[12px] sm:text-[14px] leading-[1.45] sm:leading-[1.5] text-charcoal line-clamp-2">

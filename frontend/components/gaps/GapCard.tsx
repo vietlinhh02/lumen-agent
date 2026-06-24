@@ -1,6 +1,6 @@
 "use client";
 
-import { Lightbulb, CaretDown, CaretUp, Trash } from "@phosphor-icons/react";
+import { Lightbulb, CaretDown, CaretUp, Trash, Quotes } from "@phosphor-icons/react";
 import type { GapResponse } from "@/lib/types";
 
 interface Props {
@@ -8,10 +8,11 @@ interface Props {
   expanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onViewEvidence: (projectPaperId: string) => void;
   confidenceColor: (c: string) => string;
 }
 
-export function GapCard({ gap, expanded, onToggle, onDelete, confidenceColor }: Props) {
+export function GapCard({ gap, expanded, onToggle, onDelete, onViewEvidence, confidenceColor }: Props) {
   return (
     <div
       className="rounded-[10px] bg-surface-card transition-shadow hover:shadow-md"
@@ -64,7 +65,17 @@ export function GapCard({ gap, expanded, onToggle, onDelete, confidenceColor }: 
               <div className="space-y-2">
                 {gap.evidence.map((ev) => (
                   <div key={ev.project_paper_id} className="rounded-[8px] bg-surface-bone px-4 py-3">
-                    <p className="font-ui text-sm font-medium text-ink">{ev.title || "Unknown paper"}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-ui text-sm font-medium text-ink min-w-0">{ev.title || "Unknown paper"}</p>
+                      <button
+                        onClick={() => onViewEvidence(ev.project_paper_id)}
+                        className="focus-ring font-ui inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold text-violet-600 hover:bg-violet-50 transition-colors"
+                        title="View supporting evidence"
+                      >
+                        <Quotes size={12} weight="bold" />
+                        Evidence
+                      </button>
+                    </div>
                     <p className="mt-1 text-[12px] text-charcoal">
                       <span className="font-semibold">{ev.evidence_type}:</span> {ev.note}
                     </p>

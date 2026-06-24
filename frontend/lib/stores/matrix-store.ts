@@ -6,6 +6,7 @@ import { useAuthStore } from "./auth-store";
 import type {
   MatrixRowResponse,
   MatrixListResponse,
+  MatrixEvidenceResponse,
 } from "@/lib/types";
 
 interface MatrixState {
@@ -32,6 +33,10 @@ interface MatrixState {
   ) => Promise<MatrixRowResponse | null>;
   deleteRow: (projectId: string, rowId: string) => Promise<boolean>;
   bulkDeleteLow: (projectId: string) => Promise<number>;
+  fetchRowEvidence: (
+    projectId: string,
+    rowId: string,
+  ) => Promise<MatrixEvidenceResponse>;
   reset: () => void;
 }
 
@@ -163,6 +168,14 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
     } catch {
       return 0;
     }
+  },
+
+  async fetchRowEvidence(projectId, rowId) {
+    const token = useAuthStore.getState().token;
+    return await apiFetch<MatrixEvidenceResponse>(
+      `/projects/${projectId}/matrix/${rowId}/evidence?limit=5`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
   },
 
   reset() {

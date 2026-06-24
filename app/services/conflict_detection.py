@@ -16,8 +16,13 @@ from app.ai.prompts import (
     CONTRADICTION_DETECTION_CHUNK_USER,
 )
 from app.ai.provider import get_provider
-from app.db.models import ConflictingFinding, LiteratureMatrixRow, ProjectPaper
-from app.services.hybrid_retrieval import retrieve_paper_evidence
+from app.db.models import (
+    ConflictingFinding,
+    ConflictingFindingChunk,
+    LiteratureMatrixRow,
+    ProjectPaper,
+)
+from app.services.hybrid_retrieval import RetrievedChunk, retrieve_paper_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +83,9 @@ async def _detect_one_group(
     )
 
     # Per-paper retrieval: get top chunks for each paper in the group
-    chunk_context = await _build_group_chunk_context(db, project_id, group, shared_context)
+    chunk_context, chunks_by_paper = await _build_group_chunk_context(
+        db, project_id, group, shared_context
+    )
 
     try:
         user_msg = CONTRADICTION_DETECTION_CHUNK_USER.format(
@@ -163,6 +170,10 @@ async def _detect_one_group(
                 "claim_b": c.get("claim_b"),
                 "possible_explanation": c.get("possible_explanation"),
                 "confidence": confidence,
+                # T3: carry the detector's chunks per side so they can be
+                # persisted with this conflict (stripped before serialization).
+                "_chunks_a": chunks_by_paper.get(pa_id, []),
+                "_chunks_b": chunks_by_paper.get(pb_id, []),
             }
         )
 
@@ -273,14 +284,18 @@ async def _build_group_chunk_context(
     project_id: UUID,
     group: list,
     shared_context: str,
-) -> str:
+) -> tuple[str, dict[UUID, list[RetrievedChunk]]]:
     """Retrieve per-paper chunks for a candidate conflict group.
+
+    Returns the LLM context string plus a map of project_paper_id → retrieved
+    chunks so the caller can persist the evidence behind each conflict.
 
     Builds a context query from shared_context + key_result + limitation +
     "conflicting findings different results" to find relevant evidence.
     """
     parts: list[str] = []
     total_chars = 0
+    chunks_by_paper: dict[UUID, list[RetrievedChunk]] = {}
 
     graph_context = await _build_project_graph_context(db, project_id, shared_context)
     if graph_context != "No knowledge graph context available.":
@@ -310,6 +325,10 @@ async def _build_group_chunk_context(
         if not chunks:
             continue
 
+        # Keep the full retrieved set for persistence, independent of the
+        # char-budget truncation that only bounds the LLM prompt below.
+        chunks_by_paper[pp_id] = chunks
+
         paper_parts: list[str] = []
         for c in chunks:
             label = c.section_label or c.content_type or "section"
@@ -323,7 +342,8 @@ async def _build_group_chunk_context(
             header = f"Paper {str(pp_id)[:8]}:"
             parts.append(header + "\n" + "\n\n".join(paper_parts))
 
-    return "\n\n".join(parts) if parts else "No full-text sections available."
+    context = "\n\n".join(parts) if parts else "No full-text sections available."
+    return context, chunks_by_paper
 
 
 async def _build_project_graph_context(db: AsyncSession, project_id: UUID, query: str) -> str:
@@ -341,9 +361,16 @@ async def _persist_conflicts(
     project_id: UUID,
     conflicts: list[dict],
 ) -> None:
-    """Delete old conflicts for project, insert new ones."""
+    """Delete old conflicts for project, insert new ones with evidence chunks.
+
+    Pops the private ``_chunks_a`` / ``_chunks_b`` keys carried on each conflict
+    dict (so later serialization stays JSON-safe) and writes them as
+    ``ConflictingFindingChunk`` rows keyed by polarity.
+    """
     await db.execute(delete(ConflictingFinding).where(ConflictingFinding.project_id == project_id))
     for c in conflicts:
+        chunks_a = c.pop("_chunks_a", [])
+        chunks_b = c.pop("_chunks_b", [])
         finding = ConflictingFinding(
             project_id=project_id,
             title=c["title"],
@@ -356,6 +383,19 @@ async def _persist_conflicts(
             possible_explanation=c.get("possible_explanation"),
             confidence=c.get("confidence", "medium"),
         )
+        for polarity, chunks in (("a", chunks_a), ("b", chunks_b)):
+            for ch in chunks:
+                finding.evidence_chunks.append(
+                    ConflictingFindingChunk(
+                        project_paper_id=ch.project_paper_id,
+                        polarity=polarity,
+                        chunk_id=ch.chunk_id,
+                        snippet=ch.chunk_text,
+                        content_type=ch.content_type,
+                        section_label=ch.section_label,
+                        score=ch.score,
+                    )
+                )
         db.add(finding)
     await db.commit()
 

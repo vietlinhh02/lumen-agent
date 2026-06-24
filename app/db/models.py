@@ -5,6 +5,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -610,12 +611,57 @@ class ConflictingFinding(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="conflicting_findings")
+    evidence_chunks: Mapped[list["ConflictingFindingChunk"]] = relationship(
+        back_populates="conflict",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     __table_args__ = (
         CheckConstraint(
             "confidence IN ('low', 'medium', 'high')", name="ck_conflicting_findings_confidence"
         ),
         Index("ix_conflicting_findings_project", "project_id"),
+    )
+
+
+class ConflictingFindingChunk(Base):
+    """T3 evidence viewer — top chunks the detector used for each side of a
+    conflict, persisted at detection time so the UI can show the receipts."""
+
+    __tablename__ = "conflicting_finding_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    conflict_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conflicting_findings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_papers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # 'a' → supports claim_a / paper_a, 'b' → supports claim_b / paper_b.
+    polarity: Mapped[str] = mapped_column(String(1), nullable=False)
+    chunk_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    snippet: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    section_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    conflict: Mapped["ConflictingFinding"] = relationship(back_populates="evidence_chunks")
+
+    __table_args__ = (
+        CheckConstraint("polarity IN ('a', 'b')", name="ck_conflict_chunk_polarity"),
+        Index("ix_conflict_chunks_conflict", "conflict_id"),
     )
 
 
@@ -1283,4 +1329,76 @@ class ClaimEvidence(Base):
         ),
         Index("ix_claim_evidence_claim", "claim_id"),
         Index("ix_claim_evidence_paper", "project_paper_id"),
+    )
+
+
+# ── T3 Phase 3: Evidence Ratings ──────────────────────────────────────────
+#
+# A per-user "accepted / weak / wrong" mark on a single evidence chunk shown
+# in the T3 drawer. Ratings are PRIVATE: every read and the unique key are
+# scoped to ``user_id`` so two reviewers never overwrite each other (shared
+# ratings are deferred to T9 collaboration). One rating per
+# (user, source, chunk); re-rating upserts in place.
+
+
+class EvidenceRating(Base):
+    __tablename__ = "evidence_ratings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Which claim surface the chunk was shown under, and that surface's id
+    # (matrix row id / gap id / conflict id / report paragraph id).
+    source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    project_paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_papers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    rating: Mapped[str] = mapped_column(String(8), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_kind IN ('matrix_row', 'gap', 'conflict', 'report_paragraph')",
+            name="ck_evidence_ratings_source_kind",
+        ),
+        CheckConstraint(
+            "rating IN ('accepted', 'weak', 'wrong')",
+            name="ck_evidence_ratings_rating",
+        ),
+        # One rating per user per chunk per source — re-rating upserts.
+        UniqueConstraint(
+            "user_id",
+            "source_kind",
+            "source_id",
+            "chunk_id",
+            name="uq_evidence_ratings_user_source_chunk",
+        ),
+        Index("ix_evidence_ratings_project_user", "project_id", "user_id"),
+        Index(
+            "ix_evidence_ratings_source",
+            "user_id",
+            "source_kind",
+            "source_id",
+        ),
     )

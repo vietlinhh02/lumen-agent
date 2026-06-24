@@ -16,6 +16,7 @@ from app.routers.audit import router as audit_router
 from app.routers.auth import router as auth_router
 from app.routers.claims import router as claims_router
 from app.routers.conflicts import router as conflicts_router
+from app.routers.evidence_ratings import router as evidence_ratings_router
 from app.routers.extraction_schema import router as extraction_schema_router
 from app.routers.gaps import router as gaps_router
 from app.routers.health import router as health_router
@@ -298,6 +299,7 @@ def create_app() -> FastAPI:
     app.include_router(matrix_router, prefix="/api/projects")
     app.include_router(gaps_router, prefix="/api/projects")
     app.include_router(conflicts_router, prefix="/api/projects")
+    app.include_router(evidence_ratings_router, prefix="/api/projects")
     app.include_router(extraction_schema_router, prefix="/api/projects")
     app.include_router(claims_router, prefix="/api/projects")
     app.include_router(reports_router, prefix="/api/projects")

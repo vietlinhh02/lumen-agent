@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { List } from "@phosphor-icons/react";
 import { extractText, normalizeMarkdownForDisplay } from "@/lib/markdown";
 import type { TocEntry, ParsedSection } from "@/lib/markdown";
-import type { ReportDetailResponse } from "@/lib/types";
+import type { ReportDetailResponse, ReferenceResponse } from "@/lib/types";
+import { CitationPdfModal } from "./CitationPdfModal";
+
+/** Strip brackets/whitespace so "[1]" and "1" (or "[I-1]"/"I-1") compare equal. */
+function normLabel(s: string): string {
+  return s.replace(/[[\]\s]/g, "");
+}
 
 interface Props {
   detail: ReportDetailResponse;
@@ -30,6 +36,32 @@ export function ReportContent({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Record<string, HTMLElement>>({});
+
+  // T3 Phase 4: clickable citations. Map normalized label → reference so a
+  // [1] superscript in the prose can open that paper's source PDF.
+  const refByLabel = useMemo(() => {
+    const map = new Map<string, ReferenceResponse>();
+    for (const ref of detail.references) {
+      map.set(normLabel(ref.citation_label), ref);
+    }
+    return map;
+  }, [detail.references]);
+
+  const [citationPdf, setCitationPdf] = useState<{
+    title: string;
+    label: string;
+    url: string;
+  } | null>(null);
+
+  function openCitation(norm: string) {
+    const ref = refByLabel.get(norm);
+    if (!ref) return;
+    if (ref.pdf_path) {
+      setCitationPdf({ title: ref.title, label: ref.citation_label, url: ref.pdf_path });
+    } else if (ref.url) {
+      window.open(ref.url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -140,11 +172,34 @@ export function ReportContent({
                   rehypePlugins={[rehypeRaw]}
                   components={{
                     sup: ({ children }) => {
-                      const text = typeof children === "string" ? children : "";
+                      const text = extractText(children);
                       const label = text.replace(/[\[\]]/g, "");
+                      const norm = normLabel(text);
+                      const ref = refByLabel.get(norm);
+                      const clickable = !!(ref && (ref.pdf_path || ref.url));
+                      if (!clickable) {
+                        return (
+                          <sup
+                            className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold leading-none mx-0.5 cursor-default"
+                            style={{ verticalAlign: "super" }}
+                          >
+                            {label}
+                          </sup>
+                        );
+                      }
                       return (
                         <sup
-                          className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold leading-none mx-0.5 cursor-default"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openCitation(norm)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openCitation(norm);
+                            }
+                          }}
+                          title={ref?.pdf_path ? "Open source PDF" : "Open source link"}
+                          className="focus-ring inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold leading-none mx-0.5 cursor-pointer hover:bg-primary/25 transition-colors"
                           style={{ verticalAlign: "super" }}
                         >
                           {label}
@@ -188,6 +243,16 @@ export function ReportContent({
 
       {toc.length > 2 && (
         <TocSidebar toc={toc} activeId={activeSection} onSelect={scrollToSection} />
+      )}
+
+      {citationPdf && (
+        <CitationPdfModal
+          open
+          onClose={() => setCitationPdf(null)}
+          title={citationPdf.title}
+          citationLabel={citationPdf.label}
+          pdfUrl={citationPdf.url}
+        />
       )}
     </div>
   );

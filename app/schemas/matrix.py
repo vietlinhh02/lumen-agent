@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.evidence import EvidenceListResponse
+
 
 class MatrixRowResponse(BaseModel):
     id: UUID
@@ -46,6 +48,10 @@ class MatrixRowUpdate(BaseModel):
     # are silently ignored at the API layer.
     custom_fields: dict | None = None
     extraction_confidence: str | None = Field(default=None, pattern="^(low|medium|high)$")
+
+
+# T3 evidence viewer — the matrix endpoint returns the shared evidence shape.
+MatrixEvidenceResponse = EvidenceListResponse
 
 
 class MatrixGenerateRequest(BaseModel):

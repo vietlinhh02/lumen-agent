@@ -937,6 +937,38 @@ async def _validate_citations(
     }
 
 
+def _reference_pdf_path(paper) -> str | None:
+    """Return the served PDF URL for a paper if its file exists on disk.
+
+    Mirrors the ``/api/pdf-files/{filename}`` scheme used by
+    ``ProjectPaperResponse.pdf_path`` so report citations can open the same
+    PDF (T3 Phase 4 clickable citations).
+    """
+    from pathlib import Path
+
+    from app.core.config import get_settings
+    from app.services.pdf_downloader import _make_filename
+    from app.sources.base import RawPaper
+
+    raw = RawPaper(
+        title=paper.title,
+        abstract=paper.abstract,
+        year=paper.year,
+        venue=paper.venue,
+        doi=paper.doi,
+        arxiv_id=paper.arxiv_id,
+        semantic_scholar_id=paper.semantic_scholar_id,
+        url=paper.url,
+        citation_count=paper.citation_count,
+        authors=paper.authors if isinstance(paper.authors, list) else [],
+    )
+    filename = _make_filename(raw)
+    dest = Path(get_settings().paper_pdf_dir) / filename
+    if dest.exists() and dest.stat().st_size > 0:
+        return f"/api/pdf-files/{filename}"
+    return None
+
+
 async def _build_references(db: AsyncSession, cited_paper_ids: set[UUID]) -> list[dict]:
     """Build reference list from DB paper metadata.
 
@@ -1000,6 +1032,7 @@ async def _build_references(db: AsyncSession, cited_paper_ids: set[UUID]) -> lis
                 "authors": authors,
                 "year": paper.year,
                 "url": paper.url,
+                "pdf_path": _reference_pdf_path(paper),
                 "reference_group": _classify_reference_group(paper),
                 "metadata_complete": bool(authors and paper.year),
             }
