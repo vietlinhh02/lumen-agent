@@ -20,12 +20,14 @@ import {
   Spinner,
   ClipboardText,
   FlowArrow,
+  Intersect,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
 import { useMatrixStore } from "@/lib/stores/matrix-store";
 import { useGapsStore } from "@/lib/stores/gaps-store";
+import { useClaimsStore } from "@/lib/stores/claims-store";
 import { useReportsStore } from "@/lib/stores/reports-store";
 import { useSearchStore } from "@/lib/stores/search-store";
 import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
@@ -41,6 +43,7 @@ const TABS = [
   { key: "audit", label: "Audit", href: "/audit", icon: FlowArrow, minStep: 1 },
   { key: "matrix", label: "Matrix", href: "/matrix", icon: Table, minStep: 3 },
   { key: "map", label: "Map", href: "/map", icon: Graph, minStep: 4 },
+  { key: "claims", label: "Claims", href: "/claims", icon: Intersect, minStep: 4 },
   { key: "gaps", label: "Gaps", href: "/gaps", icon: Lightbulb, minStep: 4 },
   { key: "reports", label: "Reports", href: "/reports", icon: PencilLine, minStep: 5 },
 ] as const;
@@ -98,6 +101,10 @@ export default function ProjectWorkspaceLayout({
   const gaps = useGapsStore((s) => s.gaps);
   const conflicts = useGapsStore((s) => s.conflicts);
 
+  const fetchClaims = useClaimsStore((s) => s.fetchClaims);
+  const fetchClaimsAggregate = useClaimsStore((s) => s.fetchAggregate);
+  const claims = useClaimsStore((s) => s.claims);
+
   const fetchReports = useReportsStore((s) => s.fetchReports);
   const reports = useReportsStore((s) => s.reports);
 
@@ -126,6 +133,7 @@ export default function ProjectWorkspaceLayout({
     if (!projectId) return;
     useMatrixStore.getState().reset();
     useGapsStore.getState().reset();
+    useClaimsStore.getState().reset();
     useReportsStore.getState().reset();
     useSearchStore.getState().reset();
     useKnowledgeMapStore.getState().reset();
@@ -140,6 +148,8 @@ export default function ProjectWorkspaceLayout({
     void fetchMatrixRows(projectId).catch(() => undefined);
     void fetchGaps(projectId).catch(() => undefined);
     void fetchConflicts(projectId).catch(() => undefined);
+    void fetchClaims(projectId).catch(() => undefined);
+    void fetchClaimsAggregate(projectId).catch(() => undefined);
     void fetchReports(projectId).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -201,6 +211,7 @@ export default function ProjectWorkspaceLayout({
   const badges: Record<string, number> = {
     papers: currentPapers.length,
     matrix: matrixRows.length,
+    claims: claims.length,
     gaps: gaps.length + conflicts.length,
     reports: reports.length,
   };
@@ -213,9 +224,9 @@ export default function ProjectWorkspaceLayout({
         description: next ? `Next step: ${next.label}` : undefined,
         action: next
           ? {
-              label: "Go",
-              onClick: () => router.push(`${base}${next.href}`),
-            }
+            label: "Go",
+            onClick: () => router.push(`${base}${next.href}`),
+          }
           : undefined,
       });
     } else if (next) {
@@ -273,11 +284,10 @@ export default function ProjectWorkspaceLayout({
                 {project.title}
               </h1>
               <span
-                className={`font-ui shrink-0 rounded-full px-2 sm:px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold ${
-                  project.status === "active"
+                className={`font-ui shrink-0 rounded-full px-2 sm:px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold ${project.status === "active"
                     ? "bg-green-50 text-green-700"
                     : "bg-ash/10 text-ash"
-                }`}
+                  }`}
               >
                 {project.status === "active" ? "Active" : "Archived"}
               </span>
@@ -366,13 +376,12 @@ export default function ProjectWorkspaceLayout({
                 }}
                 title={lockReason ?? undefined}
                 aria-disabled={isLocked}
-                className={`relative flex shrink-0 items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] font-medium transition-colors whitespace-nowrap ${
-                  isActive
+                className={`relative flex shrink-0 items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] font-medium transition-colors whitespace-nowrap ${isActive
                     ? "text-ink"
                     : isLocked
                       ? "text-stone cursor-not-allowed hover:text-stone"
                       : "text-charcoal hover:text-ink"
-                }`}
+                  }`}
               >
                 <Icon size={15} weight={isActive ? "fill" : "regular"} />
                 <span>{t.label}</span>
@@ -382,9 +391,8 @@ export default function ProjectWorkspaceLayout({
                   typeof badge === "number" &&
                   badge > 0 && (
                     <span
-                      className={`ml-1 rounded-full px-1.5 py-0.5 font-ui text-[10px] font-semibold leading-none ${
-                        isActive ? "bg-primary/15 text-primary" : "bg-surface-bone text-ash"
-                      }`}
+                      className={`ml-1 rounded-full px-1.5 py-0.5 font-ui text-[10px] font-semibold leading-none ${isActive ? "bg-primary/15 text-primary" : "bg-surface-bone text-ash"
+                        }`}
                     >
                       {badge}
                     </span>

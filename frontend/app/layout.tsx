@@ -43,6 +43,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={cn("h-full", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
+      suppressHydrationWarning
     >
       <head>
         <link
