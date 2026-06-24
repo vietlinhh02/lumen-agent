@@ -14,6 +14,7 @@ from app.routers.agent import router as agent_router
 from app.routers.assistant import router as assistant_router
 from app.routers.audit import router as audit_router
 from app.routers.auth import router as auth_router
+from app.routers.claims import router as claims_router
 from app.routers.conflicts import router as conflicts_router
 from app.routers.gaps import router as gaps_router
 from app.routers.health import router as health_router
@@ -189,7 +190,7 @@ async def lifespan(app: FastAPI):
                 "CHECK (job_type IN ("
                 "'auto_save', 'auto_search', 'normalize', 'enrich', "
                 "'matrix_generate', 'gap_generate', 'conflict_generate', "
-                "'report_generate', 'paper_search'"
+                "'report_generate', 'paper_search', 'claim_generate'"
                 "))"
             )
         )
@@ -275,6 +276,7 @@ def create_app() -> FastAPI:
     app.include_router(matrix_router, prefix="/api/projects")
     app.include_router(gaps_router, prefix="/api/projects")
     app.include_router(conflicts_router, prefix="/api/projects")
+    app.include_router(claims_router, prefix="/api/projects")
     app.include_router(reports_router, prefix="/api/projects")
     app.include_router(admin_router, prefix="/api/admin")
     app.include_router(knowledge_graph_router, prefix="/api/projects")

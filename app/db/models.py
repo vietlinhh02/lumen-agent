@@ -108,6 +108,9 @@ class Project(Base):
     assistant_sessions: Mapped[list["AssistantSession"]] = relationship(
         back_populates="project", lazy="selectin", cascade="all, delete-orphan"
     )
+    claims: Mapped[list["Claim"]] = relationship(
+        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'archived')", name="ck_projects_status"),
@@ -1109,4 +1112,113 @@ class AssistantPlan(Base):
             "status IN ('in_progress', 'completed', 'failed', 'cancelled')",
             name="ck_assistant_plans_status",
         ),
+    )
+
+
+# ── T7: Claim and Consensus Synthesis ───────────────────────────────────────
+
+
+class Claim(Base):
+    """A first-class claim extracted from the literature matrix or conflict data."""
+
+    __tablename__ = "claims"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    canonical_text: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="support", server_default="support"
+    )
+    support_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    contradict_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    neutral_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    confidence: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="medium", server_default="medium"
+    )
+    field_origin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="matrix", server_default="matrix"
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    project: Mapped["Project"] = relationship(back_populates="claims")
+    evidence_entries: Mapped[list["ClaimEvidence"]] = relationship(
+        back_populates="claim", lazy="selectin", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "claim_type IN ('support', 'contradict', 'mixed', 'weak')",
+            name="ck_claims_claim_type",
+        ),
+        CheckConstraint(
+            "confidence IN ('low', 'medium', 'high')",
+            name="ck_claims_confidence",
+        ),
+        CheckConstraint(
+            "source_type IN ('matrix', 'conflict')",
+            name="ck_claims_source_type",
+        ),
+        CheckConstraint(
+            "field_origin IS NULL OR field_origin IN ('key_result', 'limitation', 'claim_a', 'claim_b')",
+            name="ck_claims_field_origin",
+        ),
+        Index("ix_claims_project", "project_id"),
+        Index("ix_claims_project_type", "project_id", "claim_type"),
+    )
+
+
+class ClaimEvidence(Base):
+    """Links a Claim to a specific paper and snippet that supports/contradicts it."""
+
+    __tablename__ = "claim_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_papers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    polarity: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="support", server_default="support"
+    )
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    claim: Mapped["Claim"] = relationship(back_populates="evidence_entries")
+    project_paper: Mapped["ProjectPaper"] = relationship()
+
+    __table_args__ = (
+        CheckConstraint(
+            "polarity IN ('support', 'contradict', 'neutral')",
+            name="ck_claim_evidence_polarity",
+        ),
+        Index("ix_claim_evidence_claim", "claim_id"),
+        Index("ix_claim_evidence_paper", "project_paper_id"),
     )

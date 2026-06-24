@@ -350,6 +350,42 @@ export interface ConflictListResponse {
   items: ConflictResponse[];
   total: number;
 }
+// -- T7: Claim and Consensus Synthesis
+
+export interface ClaimEvidenceResponse {
+  id: string;
+  project_paper_id: string;
+  paper_title: string;
+  polarity: 'support' | 'contradict' | 'neutral';
+  snippet: string | null;
+}
+
+export interface ClaimResponse {
+  id: string;
+  canonical_text: string;
+  claim_type: 'support' | 'contradict' | 'mixed' | 'weak';
+  support_count: number;
+  contradict_count: number;
+  neutral_count: number;
+  confidence: 'low' | 'medium' | 'high';
+  field_origin: string | null;
+  source_type: 'matrix' | 'conflict';
+  evidence: ClaimEvidenceResponse[];
+}
+
+export interface ClaimListResponse {
+  items: ClaimResponse[];
+  total: number;
+}
+
+export interface ClaimAggregateResponse {
+  support: number;
+  contradict: number;
+  mixed: number;
+  weak: number;
+}
+
+
 
 // ── Review Reports ──────────────────────────────────────────────────────
 
