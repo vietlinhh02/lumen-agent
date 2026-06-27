@@ -5,6 +5,8 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useMemo } from "react";
 import {
   CaretLeft,
+  CaretDown,
+  CaretUp,
   DotsThree,
   PencilSimple,
   Trash,
@@ -21,6 +23,7 @@ import {
   ClipboardText,
   FlowArrow,
   Intersect,
+  ListChecks,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/stores/auth-store";
@@ -36,16 +39,18 @@ import { EditProjectModal } from "@/components/EditProjectModal";
 import { DeleteProjectModal } from "@/components/DeleteProjectModal";
 
 const TABS = [
-  { key: "overview", label: "Overview", href: "", icon: House, minStep: 1 },
-  { key: "protocol", label: "Protocol", href: "/protocol", icon: ClipboardText, minStep: 1 },
-  { key: "papers", label: "Papers", href: "/papers", icon: FileText, minStep: 1 },
-  { key: "search", label: "Search", href: "/search", icon: MagnifyingGlass, minStep: 1 },
-  { key: "audit", label: "Audit", href: "/audit", icon: FlowArrow, minStep: 1 },
-  { key: "matrix", label: "Matrix", href: "/matrix", icon: Table, minStep: 3 },
-  { key: "map", label: "Map", href: "/map", icon: Graph, minStep: 4 },
-  { key: "claims", label: "Claims", href: "/claims", icon: Intersect, minStep: 4 },
-  { key: "gaps", label: "Gaps", href: "/gaps", icon: Lightbulb, minStep: 4 },
-  { key: "reports", label: "Reports", href: "/reports", icon: PencilLine, minStep: 5 },
+  { key: "overview", label: "Overview", href: "", icon: House, minStep: 1, addon: false },
+  { key: "papers", label: "Papers", href: "/papers", icon: FileText, minStep: 1, addon: false },
+  { key: "search", label: "Search", href: "/search", icon: MagnifyingGlass, minStep: 1, addon: false },
+  { key: "matrix", label: "Matrix", href: "/matrix", icon: Table, minStep: 3, addon: false },
+  { key: "map", label: "Map", href: "/map", icon: Graph, minStep: 4, addon: false },
+  { key: "gaps", label: "Gaps", href: "/gaps", icon: Lightbulb, minStep: 4, addon: false },
+  { key: "reports", label: "Reports", href: "/reports", icon: PencilLine, minStep: 5, addon: false },
+  // Add-on tabs: useful but not part of the essential daily workflow.
+  { key: "protocol", label: "Protocol", href: "/protocol", icon: ClipboardText, minStep: 1, addon: true },
+  { key: "schema", label: "Schema", href: "/schema", icon: ListChecks, minStep: 1, addon: true },
+  { key: "audit", label: "Audit", href: "/audit", icon: FlowArrow, minStep: 1, addon: true },
+  { key: "claims", label: "Claims", href: "/claims", icon: Intersect, minStep: 4, addon: true },
 ] as const;
 
 // Step definitions:
@@ -114,6 +119,7 @@ export default function ProjectWorkspaceLayout({
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [userAddonsOpen, setUserAddonsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -168,6 +174,9 @@ export default function ProjectWorkspaceLayout({
     return match?.key ?? "overview";
   })();
 
+  const activeIsAddon = TABS.some((t) => t.key === activeKey && t.addon);
+  const addonsOpen = activeIsAddon || userAddonsOpen;
+
   // Workflow step (mirrors ProjectOverviewPage step logic so tabs reflect
   // the same progress that the hero CTA uses). MUST be declared before
   // any early returns to satisfy the Rules of Hooks.
@@ -179,6 +188,56 @@ export default function ProjectWorkspaceLayout({
     if (currentPapers.length > 0) return 2;
     return 1;
   }, [reports.length, gaps.length, conflicts.length, matrixRows.length, currentPapers.length]);
+
+  const coreTabs = TABS.filter((t) => !t.addon);
+  const addonTabs = TABS.filter((t) => t.addon);
+
+  function renderTabLink(t: (typeof TABS)[number]) {
+    const isActive = t.key === activeKey;
+    const Icon = t.icon;
+    const badge = badges[t.key];
+    const isLocked = workflowStep < t.minStep;
+    const lockReason = isLocked ? lockReasonForTab(t.key, workflowStep, currentPapers.length) : null;
+    return (
+      <Link
+        key={t.key}
+        href={isLocked ? "#" : `${base}${t.href}`}
+        onClick={(e) => {
+          if (isLocked) {
+            e.preventDefault();
+            handleLockedTabClick(t.key, t.minStep);
+          }
+        }}
+        title={lockReason ?? undefined}
+        aria-disabled={isLocked}
+        className={`relative flex shrink-0 items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] font-medium transition-colors whitespace-nowrap ${isActive
+            ? "text-ink"
+            : isLocked
+              ? "text-stone cursor-not-allowed hover:text-stone"
+              : "text-charcoal hover:text-ink"
+          }`}
+      >
+        <Icon size={15} weight={isActive ? "fill" : "regular"} />
+        <span>{t.label}</span>
+        {isLocked ? (
+          <Lock size={10} weight="fill" className="ml-0.5 text-stone sm:hidden" />
+        ) : (
+          typeof badge === "number" &&
+          badge > 0 && (
+            <span
+              className={`ml-1 rounded-full px-1.5 py-0.5 font-ui text-[10px] font-semibold leading-none ${isActive ? "bg-primary/15 text-primary" : "bg-surface-bone text-ash"
+                }`}
+            >
+              {badge}
+            </span>
+          )
+        )}
+        {isActive && (
+          <span className="absolute left-0 right-0 -bottom-px h-[2px] rounded-full bg-primary" />
+        )}
+      </Link>
+    );
+  }
 
   if (loadingProject && !project) {
     return (
@@ -358,52 +417,22 @@ export default function ProjectWorkspaceLayout({
         style={{ borderBottom: "1px solid var(--hairline)" }}
       >
         <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide -mb-px px-4 sm:px-0">
-          {TABS.map((t) => {
-            const isActive = t.key === activeKey;
-            const Icon = t.icon;
-            const badge = badges[t.key];
-            const isLocked = workflowStep < t.minStep;
-            const lockReason = isLocked ? lockReasonForTab(t.key, workflowStep, currentPapers.length) : null;
-            return (
-              <Link
-                key={t.key}
-                href={isLocked ? "#" : `${base}${t.href}`}
-                onClick={(e) => {
-                  if (isLocked) {
-                    e.preventDefault();
-                    handleLockedTabClick(t.key, t.minStep);
-                  }
-                }}
-                title={lockReason ?? undefined}
-                aria-disabled={isLocked}
-                className={`relative flex shrink-0 items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] font-medium transition-colors whitespace-nowrap ${isActive
-                    ? "text-ink"
-                    : isLocked
-                      ? "text-stone cursor-not-allowed hover:text-stone"
-                      : "text-charcoal hover:text-ink"
-                  }`}
+          {coreTabs.map(renderTabLink)}
+
+          {addonTabs.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setUserAddonsOpen((v) => !v)}
+                aria-expanded={addonsOpen}
+                className={`relative flex shrink-0 items-center gap-1 px-2 sm:px-2.5 py-2.5 sm:py-3 font-ui text-[12px] sm:text-[13px] font-medium transition-colors whitespace-nowrap ${addonsOpen ? "text-ink" : "text-charcoal hover:text-ink"}`}
               >
-                <Icon size={15} weight={isActive ? "fill" : "regular"} />
-                <span>{t.label}</span>
-                {isLocked ? (
-                  <Lock size={10} weight="fill" className="ml-0.5 text-stone sm:hidden" />
-                ) : (
-                  typeof badge === "number" &&
-                  badge > 0 && (
-                    <span
-                      className={`ml-1 rounded-full px-1.5 py-0.5 font-ui text-[10px] font-semibold leading-none ${isActive ? "bg-primary/15 text-primary" : "bg-surface-bone text-ash"
-                        }`}
-                    >
-                      {badge}
-                    </span>
-                  )
-                )}
-                {isActive && (
-                  <span className="absolute left-0 right-0 -bottom-px h-[2px] rounded-full bg-primary" />
-                )}
-              </Link>
-            );
-          })}
+                {addonsOpen ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />}
+                <span>More</span>
+              </button>
+              {addonsOpen && addonTabs.map(renderTabLink)}
+            </>
+          )}
         </nav>
       </div>
 
