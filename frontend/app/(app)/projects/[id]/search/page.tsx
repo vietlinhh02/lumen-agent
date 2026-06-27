@@ -505,7 +505,7 @@ export default function ProjectSearchPage() {
               <button onClick={handleAutoSave} disabled={autoSaving}
                 className="font-ui inline-flex items-center gap-1.5 h-[32px] rounded-full bg-green-50 px-4 text-[12px] font-semibold text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50">
                 <Lightning size={13} weight="fill" />
-                {autoSaving ? "Saving…" : `${scores.filter((s) => s === "high").length} high · Auto-save`}
+                {autoSaving ? "Saving…" : `${Math.min(scores.filter((s) => s === "high").length, 25)} high · Auto-save`}
               </button>
             ) : (
               <button onClick={handleScreen} disabled={screening}
