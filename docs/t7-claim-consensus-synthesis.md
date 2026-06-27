@@ -4,7 +4,7 @@
 > Synthesis feature (T7 in `docs/feature-opportunity-research.md`).
 
 Date: 2026-06-24
-Status: **Not started** — research/design phase
+Status: **Implemented** — backend models, REST endpoints, claim synthesis service, and frontend Claims page are in place
 Owner: TBD
 Priority: P1
 Build order: #8 (after T11 Methods & Reproducibility Package)
