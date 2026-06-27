@@ -19,6 +19,7 @@ interface MatrixState {
   generating: boolean;
   selectedProjectId: string;
   lowCount: number;
+  evidenceCache: Record<string, MatrixEvidenceResponse>;
 
   // Actions
   setSelectedProjectId: (id: string) => void;
@@ -41,6 +42,7 @@ interface MatrixState {
     projectId: string,
     rowId: string,
   ) => Promise<MatrixEvidenceResponse>;
+  preloadEvidence: (projectId: string) => void;
   reset: () => void;
 }
 
@@ -51,6 +53,7 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
   generating: false,
   selectedProjectId: "",
   lowCount: 0,
+  evidenceCache: {},
 
   setSelectedProjectId(id) {
     set({ selectedProjectId: id });
@@ -203,11 +206,49 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
   },
 
   async fetchRowEvidence(projectId, rowId) {
+    // Return from cache if available — avoids refetch on every click.
+    const cached = get().evidenceCache[rowId];
+    if (cached) return cached;
+
     const token = useAuthStore.getState().token;
-    return await apiFetch<MatrixEvidenceResponse>(
+    const data = await apiFetch<MatrixEvidenceResponse>(
       `/projects/${projectId}/matrix/${rowId}/evidence?limit=5`,
       { headers: token ? { Authorization: `Bearer ${token}` } : {} },
     );
+    // Store in cache for instant re-open.
+    set((s) => ({ evidenceCache: { ...s.evidenceCache, [rowId]: data } }));
+    return data;
+  },
+
+  preloadEvidence(projectId) {
+    // Prefetch evidence for all rows in the background (fire-and-forget).
+    // Uses small concurrency to avoid hammering the server.
+    const rows = get().rows;
+    const token = useAuthStore.getState().token;
+    if (!token || rows.length === 0) return;
+
+    const cache = get().evidenceCache;
+    const uncached = rows.filter((r) => !cache[r.id]);
+    if (uncached.length === 0) return;
+
+    // Limit concurrency to 3 at a time.
+    const BATCH = 3;
+    let idx = 0;
+    async function fetchNext() {
+      while (idx < uncached.length) {
+        const row = uncached[idx++];
+        try {
+          const data = await apiFetch<MatrixEvidenceResponse>(
+            `/projects/${projectId}/matrix/${row.id}/evidence?limit=5`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          set((s) => ({ evidenceCache: { ...s.evidenceCache, [row.id]: data } }));
+        } catch {
+          // Silent — preload is best-effort.
+        }
+      }
+    }
+    void Promise.all(Array.from({ length: Math.min(BATCH, uncached.length) }, fetchNext));
   },
 
   reset() {

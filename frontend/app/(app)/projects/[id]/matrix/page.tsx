@@ -50,6 +50,7 @@ export default function ProjectMatrixPage() {
   const generating = useMatrixStore((s) => s.generating);
   const lowCount = useMatrixStore((s) => s.lowCount);
   const fetchRows = useMatrixStore((s) => s.fetchRows);
+  const preloadEvidence = useMatrixStore((s) => s.preloadEvidence);
   const fetchSchema = useMatrixStore((s) => s.fetchSchema);
   const generate = useMatrixStore((s) => s.generate);
   const editRow = useMatrixStore((s) => s.editRow);
@@ -100,9 +101,9 @@ export default function ProjectMatrixPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    void fetchRows(projectId).catch(() =>
-      toast.error("Failed to load matrix"),
-    );
+    void fetchRows(projectId)
+      .then(() => preloadEvidence(projectId))
+      .catch(() => toast.error("Failed to load matrix"));
     void fetchSchema(projectId).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -301,7 +302,10 @@ export default function ProjectMatrixPage() {
   ];
 
   return (
-    <div>
+    <div
+      className="transition-[margin] duration-300 ease-in-out"
+      style={{ marginRight: evidence.open ? 496 : 0 }}
+    >
       {/* ── Compact toolbar ──────────────────────────────────────────── */}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
