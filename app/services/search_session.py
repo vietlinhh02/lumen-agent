@@ -336,6 +336,10 @@ async def auto_save_high_papers(
             if can_download:
                 high_count += 1
 
+    # Cap at a maximum of 25 papers
+    if high_count > 25:
+        high_count = 25
+
     if not scores:
         return {"saved": 0, "skipped": len(results), "error": "No screening scores available"}
 
@@ -414,6 +418,11 @@ async def _run_auto_save_job(
             skipped = 0
 
             for i, paper_dict in enumerate(results):
+                # Cap at a maximum of 25 papers
+                if saved >= 25:
+                    skipped += 1
+                    continue
+
                 score = scores[i] if i < len(scores) else "medium"
                 if score != "high":
                     skipped += 1

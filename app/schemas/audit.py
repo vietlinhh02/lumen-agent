@@ -89,6 +89,29 @@ class AuditQualityMetrics(BaseModel):
     reports_by_validation: dict[str, int] = Field(default_factory=dict)
 
 
+class AuditFieldCoverage(BaseModel):
+    """Per-schema-field population coverage for the literature matrix."""
+
+    key: str
+    label: str
+    type: str
+    is_reserved: bool
+    required: bool
+    populated: int
+    rows_total: int
+    coverage_rate: float
+
+
+class AuditExtractionSchema(BaseModel):
+    """Summary of the project's effective extraction schema (T4)."""
+
+    is_default: bool
+    version: int
+    fields_total: int
+    custom_fields_total: int
+    fields: list[AuditFieldCoverage] = Field(default_factory=list)
+
+
 class PrismaAuditResponse(BaseModel):
     """PRISMA-style audit summary for one project.
 
@@ -149,3 +172,7 @@ class PrismaAuditResponse(BaseModel):
 
     # Quality signals across AI features.
     quality_metrics: AuditQualityMetrics = Field(default_factory=AuditQualityMetrics)
+
+    # T4: per-field coverage of the project's effective extraction schema.
+    extraction_schema: AuditExtractionSchema | None = None
+PrismaAuditResponse.model_rebuild()

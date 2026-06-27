@@ -67,9 +67,7 @@ def _one_result(row):
 
 
 def _quality_row(total=0, high=0, medium=0, low=0, avg_score=None):
-    return SimpleNamespace(
-        total=total, high=high, medium=medium, low=low, avg_score=avg_score
-    )
+    return SimpleNamespace(total=total, high=high, medium=medium, low=low, avg_score=avg_score)
 
 
 def _make_project(project_id, owner_id):
@@ -86,9 +84,7 @@ def _make_project(project_id, owner_id):
 @pytest.mark.asyncio
 async def test_build_project_audit_returns_none_for_missing_project():
     db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=_scalar_one_or_none(None)
-    )
+    db.execute = AsyncMock(return_value=_scalar_one_or_none(None))
     user = _make_user()
     result = await build_project_audit(db, user, uuid4())
     assert result is None
@@ -105,7 +101,10 @@ async def test_build_project_audit_aggregates_counts():
     # search_runs: one run with diagnostics across 2 sources and 5 screening scores
     search_runs_rows = [
         (
-            [{"source": "semantic_scholar", "result_count": 80}, {"source": "openalex", "result_count": 70}],
+            [
+                {"source": "semantic_scholar", "result_count": 80},
+                {"source": "openalex", "result_count": 70},
+            ],
             ["high", "high", "medium", "low", "high"],
         )
     ]
@@ -137,6 +136,7 @@ async def test_build_project_audit_aggregates_counts():
             _all_result(saved_meta_rows),  # saved paper metadata
             _scalar_result(2),  # matrix row count
             _one_result(quality),  # matrix quality breakdown
+            _all_result([]),  # T4 matrix rows for coverage (empty in test)
             _scalar_result(2),  # gaps (unused in response)
             _scalar_result(1),  # reports count
             _all_result(report_validation_rows),  # reports by validation_status
@@ -211,7 +211,12 @@ async def test_build_project_audit_aggregates_counts():
     assert q.matrix_avg_confidence == 2.5
     assert q.matrix_confidence_breakdown == {"high": 1, "medium": 1, "low": 0}
     assert q.full_text_success_rate == 0.5  # 1 of 2 decided
-    assert q.full_text_breakdown == {"completed": 1, "raw_extracted": 0, "failed": 1, "ocr_required": 0}
+    assert q.full_text_breakdown == {
+        "completed": 1,
+        "raw_extracted": 0,
+        "failed": 1,
+        "ocr_required": 0,
+    }
     assert q.citation_validity_rate == 1.0  # 1 valid / 1 decided
     assert q.reports_by_validation == {"valid": 1, "invalid": 0, "pending": 0}
 
@@ -300,7 +305,12 @@ async def test_build_project_audit_empty_project_is_valid():
     assert q.matrix_avg_confidence is None
     assert q.full_text_success_rate is None
     assert q.citation_validity_rate is None
-    assert q.full_text_breakdown == {"completed": 0, "raw_extracted": 0, "failed": 0, "ocr_required": 0}
+    assert q.full_text_breakdown == {
+        "completed": 0,
+        "raw_extracted": 0,
+        "failed": 0,
+        "ocr_required": 0,
+    }
 
 
 def test_markdown_export_contains_all_stages():
@@ -405,7 +415,12 @@ def test_markdown_export_contains_enrichment_sections():
             matrix_avg_confidence=2.5,
             matrix_confidence_breakdown={"high": 6, "medium": 3, "low": 1},
             full_text_success_rate=1.0,
-            full_text_breakdown={"completed": 10, "failed": 0, "raw_extracted": 0, "ocr_required": 0},
+            full_text_breakdown={
+                "completed": 10,
+                "failed": 0,
+                "raw_extracted": 0,
+                "ocr_required": 0,
+            },
             citation_validity_rate=0.5,
             reports_by_validation={"valid": 1, "invalid": 1, "pending": 0},
         ),
@@ -536,9 +551,7 @@ async def test_build_project_audit_venue_limit_is_respected():
 
     # Build TOP_VENUES_LIMIT + 3 venues to verify trimming.
     extra = TOP_VENUES_LIMIT + 3
-    saved_meta_rows = [
-        (2024, f"Venue {i:02d}", datetime(2026, 6, 20)) for i in range(extra)
-    ]
+    saved_meta_rows = [(2024, f"Venue {i:02d}", datetime(2026, 6, 20)) for i in range(extra)]
 
     db = MagicMock()
     db.execute = _Counter(

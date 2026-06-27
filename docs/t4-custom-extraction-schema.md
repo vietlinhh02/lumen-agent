@@ -4,7 +4,7 @@
 > Builder (T4 in `docs/feature-opportunity-research.md`).
 
 Date: 2026-06-24
-Status: **Not started** — research/design phase
+Status: **Implemented** — backend models, REST endpoints, AI extraction, and frontend UI are in place
 Owner: TBD
 Priority: P1
 Build order: #6 (after T1 Review Protocol & Screening Criteria)

@@ -3,7 +3,9 @@
 import { create } from "zustand";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "./auth-store";
+import { getExtractionSchema } from "@/lib/api/extraction-schema";
 import type {
+  ExtractionSchemaResponse,
   MatrixRowResponse,
   MatrixListResponse,
   MatrixEvidenceResponse,
@@ -12,6 +14,7 @@ import type {
 interface MatrixState {
   // State
   rows: MatrixRowResponse[];
+  schema: ExtractionSchemaResponse | null;
   loading: boolean;
   generating: boolean;
   selectedProjectId: string;
@@ -20,6 +23,7 @@ interface MatrixState {
   // Actions
   setSelectedProjectId: (id: string) => void;
   fetchRows: (projectId: string) => Promise<void>;
+  fetchSchema: (projectId: string) => Promise<void>;
   fetchLowCount: (projectId: string) => Promise<void>;
   generate: (
     projectId: string,
@@ -29,7 +33,7 @@ interface MatrixState {
     projectId: string,
     rowId: string,
     field: string,
-    value: string,
+    value: string | number | boolean | string[] | null,
   ) => Promise<MatrixRowResponse | null>;
   deleteRow: (projectId: string, rowId: string) => Promise<boolean>;
   bulkDeleteLow: (projectId: string) => Promise<number>;
@@ -42,6 +46,7 @@ interface MatrixState {
 
 export const useMatrixStore = create<MatrixState>()((set, get) => ({
   rows: [],
+  schema: null,
   loading: false,
   generating: false,
   selectedProjectId: "",
@@ -60,12 +65,23 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
         `/projects/${projectId}/matrix`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      set({ rows: data.items || [] });
+      set({ rows: data.items || [], schema: data.schema ?? null });
       // Refresh the low-confidence badge in the same pass so the
       // "Remove Low" button shows the right count without an extra round-trip.
       void get().fetchLowCount(projectId);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  async fetchSchema(projectId) {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    try {
+      const schema = await getExtractionSchema(token, projectId);
+      set({ schema });
+    } catch {
+      // Non-fatal — keep the prior schema on transient errors.
     }
   },
 
@@ -111,6 +127,22 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
   async editRow(projectId, rowId, field, value) {
     const token = useAuthStore.getState().token;
     if (!token) return null;
+    // For T4 custom fields, merge into custom_fields rather than sending
+    // a top-level field. Reserved fields continue to use the top-level
+    // patch path so existing edits keep working.
+    const isReservedField = [
+      "research_problem",
+      "method",
+      "dataset_or_context",
+      "key_result",
+      "limitation",
+      "contribution",
+      "relevance",
+      "extraction_confidence",
+    ].includes(field);
+    const body: Record<string, unknown> = isReservedField
+      ? { [field]: value }
+      : { custom_fields: { [field]: value } };
     try {
       const updated = await apiFetch<MatrixRowResponse>(
         `/projects/${projectId}/matrix/${rowId}`,
@@ -120,7 +152,7 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ [field]: value }),
+          body: JSON.stringify(body),
         },
       );
       set({
@@ -181,6 +213,7 @@ export const useMatrixStore = create<MatrixState>()((set, get) => ({
   reset() {
     set({
       rows: [],
+      schema: null,
       loading: false,
       generating: false,
       selectedProjectId: "",

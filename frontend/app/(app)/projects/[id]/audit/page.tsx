@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ClipboardText,
@@ -167,7 +168,11 @@ export default function ProjectAuditPage() {
           No audit data available.
         </div>
       ) : (
-        <PrismaFlow audit={audit} reportsCount={reports.length} />
+        <PrismaFlow
+          audit={audit}
+          reportsCount={reports.length}
+          projectId={projectId}
+        />
       )}
     </div>
   );
@@ -176,9 +181,11 @@ export default function ProjectAuditPage() {
 function PrismaFlow({
   audit,
   reportsCount,
+  projectId,
 }: {
   audit: PrismaAuditResponse;
   reportsCount: number;
+  projectId: string;
 }) {
   const afterDedupe = Math.max(audit.records_identified - audit.duplicates_removed, 0);
   const afterScreening = Math.max(afterDedupe - audit.records_excluded_screening, 0);
@@ -194,7 +201,7 @@ function PrismaFlow({
   const stages: Array<{
     key: string;
     title: string;
-    icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold"; className?: string }>;
+    icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold" | "duotone"; className?: string }>;
     color: string;
     rows: Array<{ label: string; value: number; emphasis?: boolean }>;
   }> = [
@@ -318,6 +325,13 @@ function PrismaFlow({
           )}
 
           <QualityMetrics metrics={audit.quality_metrics} />
+
+          {audit.extraction_schema && (
+            <SchemaCoverage
+              schema={audit.extraction_schema}
+              projectId={projectId}
+            />
+          )}
         </>
       )}
 
@@ -406,7 +420,7 @@ function FlowStage({
 }: {
   stage: {
     title: string;
-    icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold"; className?: string }>;
+    icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold" | "duotone"; className?: string }>;
     color: string;
     rows: Array<{ label: string; value: number; emphasis?: boolean }>;
   };
@@ -505,11 +519,15 @@ function EmptyState() {
 
 function SectionCard({
   title,
+  subtitle,
   icon: Icon,
+  actions,
   children,
 }: {
   title: string;
-  icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold"; className?: string }>;
+  subtitle?: string;
+  icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold" | "duotone" | undefined; className?: string }>;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -517,10 +535,20 @@ function SectionCard({
       className="rounded-[14px] bg-surface-card p-4"
       style={{ border: "1px solid var(--hairline)" }}
     >
-      <h3 className="font-ui mb-3 text-[11px] font-semibold uppercase tracking-wider text-ash">
-        <Icon size={12} className="mr-1 inline" weight="fill" />
-        {title}
-      </h3>
+      <header className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="font-ui flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-ash">
+            <Icon size={12} className="inline" weight="fill" />
+            {title}
+          </h3>
+          {subtitle && (
+            <p className="mt-0.5 font-ui text-[11px] text-charcoal">
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {actions}
+      </header>
       {children}
     </section>
   );
@@ -729,6 +757,84 @@ function QualityMetrics({
           </div>
         ))}
       </div>
+    </SectionCard>
+  );
+}
+
+function SchemaCoverage({
+  schema,
+  projectId,
+}: {
+  schema: PrismaAuditResponse["extraction_schema"];
+  projectId: string;
+}) {
+  if (!schema) return null;
+  return (
+    <SectionCard
+      title="Extraction schema coverage"
+      subtitle={
+        schema.is_default
+          ? `Seven system-default fields — no custom fields defined.`
+          : `${schema.fields_total} field${schema.fields_total === 1 ? "" : "s"} (${schema.custom_fields_total} custom) — schema v${schema.version}.`
+      }
+      icon={ClipboardText}
+      actions={
+        <Link
+          href={`/projects/${projectId}/schema`}
+          className="font-ui inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-on-primary hover:bg-primary-deep"
+        >
+          Edit schema
+        </Link>
+      }
+    >
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {schema.fields.map((f) => {
+          const rate = f.coverage_rate;
+          const tone =
+            rate >= 0.8
+              ? "bg-green-500"
+              : rate >= 0.5
+                ? "bg-amber-500"
+                : "bg-red-500";
+          return (
+            <li
+              key={f.key}
+              className="rounded-[12px] border border-hairline bg-canvas p-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-ui text-[12px] font-semibold text-ink">
+                    {f.label}
+                    {!f.is_reserved && (
+                      <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-primary">
+                        custom
+                      </span>
+                    )}
+                    {f.required && (
+                      <span className="ml-1 text-red-600">*</span>
+                    )}
+                  </p>
+                  <p className="font-mono text-[10px] text-ash">
+                    {f.key} · {f.type}
+                  </p>
+                </div>
+                <p className="font-mono text-[12px] text-charcoal">
+                  {f.populated}/{f.rows_total}
+                </p>
+              </div>
+              <div className="mt-2 h-1.5 w-full rounded-full bg-surface-bone">
+                <div
+                  className={`h-full rounded-full ${tone}`}
+                  style={{ width: `${Math.round(rate * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 font-ui text-[10px] text-ash">
+                {Math.round(rate * 100)}% populated
+              </p>
+            </li>
+          );
+        })}
+      </ul>
     </SectionCard>
   );
 }
