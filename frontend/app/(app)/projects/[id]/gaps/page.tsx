@@ -203,7 +203,10 @@ export default function ProjectGapsPage() {
   }
 
   return (
-    <div>
+    <div
+      className="transition-[margin] duration-300 ease-in-out"
+      style={{ marginRight: evidence.open ? 496 : 0 }}
+    >
       <div className="mb-4">
         <h2 className="font-display text-[22px] font-bold leading-[1.0] text-ink">
           Research Gaps & Conflicts

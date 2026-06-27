@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Quotes, Spinner, Warning, Check } from "@phosphor-icons/react";
 import type {
   EvidenceChunk,
@@ -60,49 +61,35 @@ export function EvidenceDrawer({
 
   if (!open) return null;
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Supporting evidence"
-      className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm animate-fade-in"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+  return createPortal(
+    <>
+      {/* Side panel — starts below the fixed tab nav */}
       <div
-        className="flex h-full w-full max-w-[460px] flex-col bg-surface-card shadow-2xl animate-slide-in-right"
-        style={{ borderLeft: "1px solid var(--hairline)" }}
+        role="dialog"
+        aria-modal="false"
+        aria-label="Supporting evidence"
+        className="fixed right-3 bottom-3 z-[9999] flex w-full max-w-[480px] flex-col bg-surface-card rounded-[16px]"
+        style={{ border: "1px solid var(--hairline)", top: "72px" }}
       >
         {/* Header */}
         <div
-          className="flex shrink-0 items-start gap-3 px-5 py-4"
+          className="flex shrink-0 items-center justify-between gap-3 px-4 py-3"
           style={{ borderBottom: "1px solid var(--hairline)" }}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-violet-600">
-            <Quotes size={18} weight="fill" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-ui text-[15px] font-semibold leading-[1.3] text-ink">
-              Supporting evidence
-            </h2>
-            {title && (
-              <p className="mt-0.5 line-clamp-2 text-[12px] text-ash">
-                <MathText text={title} />
-              </p>
-            )}
-          </div>
+          <h3 className="font-ui text-[14px] font-semibold text-ink truncate">
+            {title || "Supporting Evidence"}
+          </h3>
           <button
             onClick={onClose}
-            title="Close (Esc)"
-            className="focus-ring flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full text-charcoal hover:bg-surface-bone hover:text-ink transition-colors"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-charcoal hover:bg-surface-bone hover:text-ink transition-colors"
+            aria-label="Close"
           >
             <X size={16} weight="bold" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        {/* Body — independent scroll, contained */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 scrollbar-hide" style={{ maxHeight: "calc(100vh - 124px)" }}>
           {loading && (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-ash">
               <Spinner size={24} className="animate-spin" weight="bold" />
@@ -182,7 +169,7 @@ export function EvidenceDrawer({
 
         {/* Footer */}
         <div
-          className="flex shrink-0 items-center justify-between gap-3 px-5 py-3 text-[11px] text-ash"
+          className="flex shrink-0 items-center justify-between gap-3 px-4 py-2 text-[11px] text-ash"
           style={{ borderTop: "1px solid var(--hairline)" }}
         >
           <span className="font-ui">
@@ -193,7 +180,8 @@ export function EvidenceDrawer({
           <span className="font-ui">Press Esc to close</span>
         </div>
       </div>
-    </div>
+    </>,
+    document.body,
   );
 }
 
@@ -201,11 +189,12 @@ const RATING_BUTTONS: {
   value: EvidenceRatingValue;
   label: string;
   Icon: typeof Check;
+  base: string;
   active: string;
 }[] = [
-  { value: "accepted", label: "Accept", Icon: Check, active: "bg-green-50 text-green-700 ring-1 ring-green-200" },
-  { value: "weak", label: "Weak", Icon: Warning, active: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" },
-  { value: "wrong", label: "Wrong", Icon: X, active: "bg-red-50 text-red-700 ring-1 ring-red-200" },
+  { value: "accepted", label: "Accept", Icon: Check, base: "text-green-600 hover:bg-green-50", active: "bg-green-50 text-green-700 ring-1 ring-green-200" },
+  { value: "weak", label: "Weak", Icon: Warning, base: "text-amber-600 hover:bg-amber-50", active: "bg-amber-50 text-amber-700 ring-1 ring-amber-200" },
+  { value: "wrong", label: "Wrong", Icon: X, base: "text-red-500 hover:bg-red-50", active: "bg-red-50 text-red-700 ring-1 ring-red-200" },
 ];
 
 /**
@@ -250,12 +239,12 @@ function RatingControls({
         <span className="font-ui mr-1 text-[10px] font-semibold uppercase tracking-wide text-stone">
           Relevant?
         </span>
-        {RATING_BUTTONS.map(({ value: v, label, Icon, active }) => (
+        {RATING_BUTTONS.map(({ value: v, label, Icon, base, active }) => (
           <button
             key={v}
             onClick={() => choose(v)}
             className={`focus-ring font-ui inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-              value === v ? active : "text-charcoal hover:bg-surface-bone"
+              value === v ? active : base
             }`}
           >
             <Icon size={12} weight="bold" />
