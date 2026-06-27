@@ -29,6 +29,8 @@ from app.db.models import (
 from app.schemas.audit import (
     EXCLUSION_REASON_LABELS,
     AuditExclusionReason,
+    AuditExtractionSchema,
+    AuditFieldCoverage,
     AuditHistogramPoint,
     AuditQualityMetrics,
     AuditSearchSessionSummary,
@@ -36,6 +38,7 @@ from app.schemas.audit import (
     AuditTimelinePoint,
     PrismaAuditResponse,
 )
+from app.services.literature_matrix import field_coverage
 from app.services.project import VALID_EXCLUSION_REASONS
 
 logger = logging.getLogger(__name__)
@@ -135,10 +138,14 @@ async def build_project_audit(
         .join(ProjectPaper, LiteratureMatrixRow.project_paper_id == ProjectPaper.id)
         .where(ProjectPaper.project_id == project_id)
     )
-
-    gap_count_stmt = select(func.count(ResearchGap.id)).where(
-        ResearchGap.project_id == project_id
+    # T4: load every matrix row once so we can compute per-field coverage.
+    matrix_rows_for_coverage_stmt = (
+        select(LiteratureMatrixRow)
+        .join(ProjectPaper, LiteratureMatrixRow.project_paper_id == ProjectPaper.id)
+        .where(ProjectPaper.project_id == project_id)
     )
+
+    gap_count_stmt = select(func.count(ResearchGap.id)).where(ResearchGap.project_id == project_id)
     report_count_stmt = select(func.count(ReviewReport.id)).where(
         ReviewReport.project_id == project_id
     )
@@ -161,6 +168,7 @@ async def build_project_audit(
         saved_meta,
         matrix_count,
         matrix_quality,
+        matrix_rows_for_coverage,
         gap_count,
         report_count,
         report_validation,
@@ -173,6 +181,7 @@ async def build_project_audit(
         db.execute(saved_meta_stmt),
         db.execute(matrix_count_stmt),
         db.execute(matrix_quality_stmt),
+        db.execute(matrix_rows_for_coverage_stmt),
         db.execute(gap_count_stmt),
         db.execute(report_count_stmt),
         db.execute(report_validation_stmt),
@@ -252,9 +261,7 @@ async def build_project_audit(
             label=EXCLUSION_REASON_LABELS.get(reason, reason),
             count=count,
         )
-        for reason, count in sorted(
-            exclusion_counts.items(), key=lambda kv: kv[1], reverse=True
-        )
+        for reason, count in sorted(exclusion_counts.items(), key=lambda kv: kv[1], reverse=True)
         if count > 0
     ]
 
@@ -272,6 +279,57 @@ async def build_project_audit(
         full_text_counts=full_text_counts,
         report_validation=report_validation,
     )
+
+    # T4: per-field coverage from the effective extraction schema.
+    from typing import cast
+
+    from app.services.extraction_schema import get_effective_schema
+
+    extraction_schema: AuditExtractionSchema | None = None
+    try:
+        eff_schema = await get_effective_schema(db, project_id)
+        raw_rows = cast(
+            list[LiteratureMatrixRow],
+            list(matrix_rows_for_coverage.scalars().all()),
+        )
+        coverage = field_coverage(raw_rows, eff_schema.fields)
+        field_breakdown: list[AuditFieldCoverage] = [
+            AuditFieldCoverage(
+                key=f["key"],
+                label=f["label"],
+                type=f["type"],
+                is_reserved=f["is_reserved"],
+                required=f["required"],
+                populated=f["populated"],
+                rows_total=f["rows_total"],
+                coverage_rate=f["coverage_rate"],
+            )
+            for f in coverage.get("fields", [])
+        ]
+        extraction_schema = AuditExtractionSchema(
+            is_default=eff_schema.is_default,
+            version=eff_schema.version,
+            fields_total=len(eff_schema.fields),
+            custom_fields_total=sum(
+                1
+                for f in eff_schema.fields
+                if f.key
+                not in {
+                    "research_problem",
+                    "method",
+                    "dataset_or_context",
+                    "key_result",
+                    "limitation",
+                    "contribution",
+                    "relevance",
+                }
+            ),
+            fields=field_breakdown,
+        )
+    except Exception as exc:
+        # Non-fatal: a transient schema-read failure should not blank the
+        # rest of the audit.
+        logger.warning("Could not compute T4 extraction-schema coverage: %s", exc)
 
     return PrismaAuditResponse(
         project_id=project.id,
@@ -302,6 +360,7 @@ async def build_project_audit(
         inclusion_timeline=inclusion_timeline,
         recent_search_sessions=recent_session_summaries,
         quality_metrics=quality_metrics,
+        extraction_schema=extraction_schema,
     )
 
 
@@ -310,9 +369,7 @@ async def build_project_audit(
 
 def _build_coverage(
     saved_meta_result,
-) -> tuple[
-    list[AuditHistogramPoint], int | None, int | None, list[AuditHistogramPoint]
-]:
+) -> tuple[list[AuditHistogramPoint], int | None, int | None, list[AuditHistogramPoint]]:
     """Year + venue distributions for the saved corpus.
 
     Papers missing year/venue are skipped silently (no synthetic "unknown"
@@ -357,11 +414,7 @@ def _build_inclusion_timeline(saved_meta_result) -> list[AuditTimelinePoint]:
     sorted_dates = sorted(date_counter)
     end_date = date.fromisoformat(sorted_dates[-1])
     cutoff = (end_date - timedelta(days=TIMELINE_DAY_WINDOW - 1)).isoformat()
-    return [
-        AuditTimelinePoint(date=d, count=date_counter[d])
-        for d in sorted_dates
-        if d >= cutoff
-    ]
+    return [AuditTimelinePoint(date=d, count=date_counter[d]) for d in sorted_dates if d >= cutoff]
 
 
 def _build_recent_sessions(recent_sessions_result) -> list[AuditSearchSessionSummary]:
@@ -400,9 +453,7 @@ def _build_quality_metrics(
         "medium": int(row.medium or 0),
         "low": int(row.low or 0),
     }
-    matrix_avg_confidence = (
-        round(float(row.avg_score), 2) if row.avg_score is not None else None
-    )
+    matrix_avg_confidence = round(float(row.avg_score), 2) if row.avg_score is not None else None
 
     full_text_success = sum(full_text_counts.get(s, 0) for s in FULL_TEXT_SUCCESS)
     full_text_failure = sum(full_text_counts.get(s, 0) for s in FULL_TEXT_FAILURE)
@@ -418,9 +469,7 @@ def _build_quality_metrics(
     invalid_reports = by_validation.get("invalid", 0)
     pending_reports = by_validation.get("pending", 0)
     decided = valid_reports + invalid_reports
-    citation_validity_rate = (
-        round(valid_reports / decided, 3) if decided else None
-    )
+    citation_validity_rate = round(valid_reports / decided, 3) if decided else None
 
     return AuditQualityMetrics(
         matrix_avg_confidence=matrix_avg_confidence,
@@ -464,7 +513,9 @@ def render_audit_markdown(audit: PrismaAuditResponse) -> str:
     lines.append("")
     lines.append("| Stage | Records |")
     lines.append("| --- | ---: |")
-    lines.append(f"| Records after deduplication | {max(audit.records_identified - audit.duplicates_removed, 0)} |")
+    lines.append(
+        f"| Records after deduplication | {max(audit.records_identified - audit.duplicates_removed, 0)} |"
+    )
     lines.append(f"| Duplicates removed | {audit.duplicates_removed} |")
     lines.append(f"| Records screened | {audit.records_screened} |")
     lines.append(f"| Records excluded at screening | {audit.records_excluded_screening} |")
@@ -476,9 +527,7 @@ def render_audit_markdown(audit: PrismaAuditResponse) -> str:
         lines.append("| --- | ---: |")
         for score in ("high", "medium", "low"):
             if score in audit.screening_score_distribution:
-                lines.append(
-                    f"| {score} | {audit.screening_score_distribution[score]} |"
-                )
+                lines.append(f"| {score} | {audit.screening_score_distribution[score]} |")
     lines.append("")
     lines.append("## Eligibility — full-text retrieval")
     lines.append("")
@@ -568,13 +617,9 @@ def render_audit_markdown(audit: PrismaAuditResponse) -> str:
         lines.append("| Signal | Value |")
         lines.append("| --- | ---: |")
         if q.matrix_avg_confidence is not None:
-            lines.append(
-                f"| Matrix extraction confidence (avg, 1–3) | {q.matrix_avg_confidence} |"
-            )
+            lines.append(f"| Matrix extraction confidence (avg, 1–3) | {q.matrix_avg_confidence} |")
         if any(q.matrix_confidence_breakdown.values()):
-            breakdown = ", ".join(
-                f"{k}={v}" for k, v in q.matrix_confidence_breakdown.items() if v
-            )
+            breakdown = ", ".join(f"{k}={v}" for k, v in q.matrix_confidence_breakdown.items() if v)
             lines.append(f"| Matrix confidence breakdown | {breakdown} |")
         if q.full_text_success_rate is not None:
             lines.append(f"| Full-text success rate | {q.full_text_success_rate:.0%} |")
@@ -592,6 +637,26 @@ def render_audit_markdown(audit: PrismaAuditResponse) -> str:
         lines.append("## Protocol notes")
         lines.append("")
         lines.append(audit.protocol_notes)
+        lines.append("")
+    if audit.extraction_schema and audit.extraction_schema.fields:
+        lines.append("## Extraction schema coverage (T4)")
+        lines.append("")
+        lines.append(
+            f"_{audit.extraction_schema.fields_total} field(s) defined"
+            f" ({audit.extraction_schema.custom_fields_total} custom)."
+            f" Schema {'is the system default' if audit.extraction_schema.is_default else f'version {audit.extraction_schema.version}'}._"
+        )
+        lines.append("")
+        lines.append("| Field | Type | Reserved | Required | Populated | Coverage |")
+        lines.append("| --- | --- | --- | --- | ---: | ---: |")
+        for f in audit.extraction_schema.fields:
+            lines.append(
+                f"| {f.label} (`{f.key}`) | {f.type} | "
+                f"{'yes' if f.is_reserved else 'no'} | "
+                f"{'yes' if f.required else 'no'} | "
+                f"{f.populated} / {f.rows_total} | "
+                f"{f.coverage_rate:.0%} |"
+            )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -632,6 +697,36 @@ def render_audit_csv(audit: PrismaAuditResponse) -> str:
         rows.append(("full_text_status", k, v))
     for k, v in q.reports_by_validation.items():
         rows.append(("report_validation", k, v))
+    if audit.extraction_schema and audit.extraction_schema.fields:
+        rows.append(
+            (
+                "extraction_schema",
+                "fields_total",
+                audit.extraction_schema.fields_total,
+            )
+        )
+        rows.append(
+            (
+                "extraction_schema",
+                "custom_fields_total",
+                audit.extraction_schema.custom_fields_total,
+            )
+        )
+        rows.append(
+            (
+                "extraction_schema",
+                "version",
+                audit.extraction_schema.version,
+            )
+        )
+        for f in audit.extraction_schema.fields:
+            rows.append(
+                (
+                    "extraction_field",
+                    f.key,
+                    f.populated,
+                )
+            )
     body = "\n".join(f"{stage},{label},{count}" for stage, label, count in rows)
     return header + body + "\n"
 
