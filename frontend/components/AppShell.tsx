@@ -57,11 +57,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className={
           isAssistant
             ? "h-screen overflow-hidden ml-0 xl:ml-[56px]"
-            : "h-screen overflow-y-auto pt-[60px] pl-0 xl:pl-[56px] bg-canvas"
+            : "h-[calc(100vh-60px)] mt-[60px] overflow-y-auto pl-0 xl:pl-[56px] bg-canvas scrollbar-hide"
         }
       >
-        {/* pt-[60px] reserves space for the fixed header; xl:pl-[56px] reserves space for the fixed sidebar */}
-        <div className="px-4 sm:px-8 pt-6 pb-12 min-h-full">
+        {/* mt-[60px] reserves space for the fixed header; xl:pl-[56px] reserves space for the fixed sidebar */}
+        <div className="px-4 sm:px-6 pt-6 pb-12 min-h-full">
           {children}
         </div>
       </main>

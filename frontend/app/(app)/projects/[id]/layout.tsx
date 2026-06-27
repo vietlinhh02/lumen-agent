@@ -250,7 +250,7 @@ export default function ProjectWorkspaceLayout({
 
   if (loadingProject && !project) {
     return (
-      <div className="animate-fade-in">
+    <div>
         <div className="mb-8">
           <div className="h-5 w-20 rounded bg-surface-bone animate-pulse" />
           <div className="mt-3 h-10 w-1/2 rounded bg-surface-bone animate-pulse" />
@@ -440,12 +440,12 @@ export default function ProjectWorkspaceLayout({
         </div>
       </div>
 
-      {/* Tab nav */}
+      {/* Tab nav — sticky below the 60px AppShell header */}
       <div
-        className="mb-5 sm:mb-6 sticky top-0 z-10 bg-canvas -mx-4 sm:mx-0"
+        className="sticky top-0 z-50 bg-[var(--canvas)] mb-5 sm:mb-6 -mx-4 sm:-mx-6"
         style={{ borderBottom: "1px solid var(--hairline)" }}
       >
-        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide -mb-px px-4 sm:px-0">
+        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide -mb-px px-4 sm:px-6">
           {coreTabs.map(renderTabLink)}
 
           {addonTabs.length > 0 && (
