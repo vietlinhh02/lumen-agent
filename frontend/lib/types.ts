@@ -279,6 +279,8 @@ export interface MatrixRowResponse {
   limitation: string | null;
   contribution: string | null;
   relevance: string | null;
+  // T4: project-defined typed field values keyed by schema ``key``.
+  custom_fields: Record<string, string | number | boolean | string[] | null>;
   extraction_confidence: string;
   created_by: string;
   updated_at: string | null;
@@ -286,6 +288,7 @@ export interface MatrixRowResponse {
 
 export interface MatrixListResponse {
   items: MatrixRowResponse[];
+  schema: ExtractionSchemaResponse | null;
 }
 
 export interface MatrixRowUpdate {
@@ -296,7 +299,74 @@ export interface MatrixRowUpdate {
   limitation?: string;
   contribution?: string;
   relevance?: string;
+  custom_fields?: Record<string, string | number | boolean | string[] | null>;
   extraction_confidence?: string;
+}
+
+// ── T4: Custom Extraction Schema ──────────────────────────────────────────
+
+export type ExtractionFieldType =
+  | "text"
+  | "number"
+  | "enum"
+  | "multi_select"
+  | "boolean"
+  | "quote"
+  | "citation";
+
+export interface ExtractionField {
+  key: string;
+  label: string;
+  type: ExtractionFieldType;
+  description: string | null;
+  required: boolean;
+  enum_values: string[] | null;
+}
+
+export interface ExtractionSchemaResponse {
+  project_id: string;
+  version: number;
+  fields: ExtractionField[];
+  is_default: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ExtractionSchemaUpdateRequest {
+  fields: ExtractionField[];
+}
+
+export interface ExtractionSchemaSuggestRequest {
+  max_fields?: number;
+  sample_abstracts?: string[] | null;
+}
+
+export interface ExtractionSchemaSuggestResponse {
+  fields: ExtractionField[];
+  rationale: string | null;
+}
+
+export interface MatrixFilterRequest {
+  field: string;
+  op: "eq" | "neq" | "contains" | "gt" | "gte" | "lt" | "lte" | "in";
+  value: string | number | boolean | string[] | null;
+}
+
+export interface MatrixFilterResponse {
+  row_ids: string[];
+  total: number;
+}
+
+export interface MatrixAggregateBucket {
+  key: string;
+  count: number;
+}
+
+export interface MatrixAggregateResponse {
+  field: string;
+  group_by: string | null;
+  buckets: MatrixAggregateBucket[];
+  total: number;
 }
 
 export interface MatrixGenerateResponse {
@@ -546,6 +616,25 @@ export interface AuditQualityMetrics {
   reports_by_validation: Record<string, number>;
 }
 
+export interface AuditFieldCoverage {
+  key: string;
+  label: string;
+  type: string;
+  is_reserved: boolean;
+  required: boolean;
+  populated: number;
+  rows_total: number;
+  coverage_rate: number;
+}
+
+export interface AuditExtractionSchema {
+  is_default: boolean;
+  version: number;
+  fields_total: number;
+  custom_fields_total: number;
+  fields: AuditFieldCoverage[];
+}
+
 export interface PrismaAuditResponse {
   project_id: string;
   project_title: string;
@@ -576,6 +665,8 @@ export interface PrismaAuditResponse {
   inclusion_timeline: AuditTimelinePoint[];
   recent_search_sessions: AuditSearchSessionSummary[];
   quality_metrics: AuditQualityMetrics;
+  // T4: per-field coverage of the project's effective extraction schema.
+  extraction_schema: AuditExtractionSchema | null;
 }
 
 // ── Auto search & save ──────────────────────────────────────────────
