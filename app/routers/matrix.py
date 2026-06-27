@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi import status as http_status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,15 +14,22 @@ from app.core.security import get_current_user
 from app.db.models import LiteratureMatrixRow, Project, ProjectPaper, User
 from app.db.session import async_session_factory, get_db
 from app.schemas.matrix import (
+    MatrixAggregateBucket,
+    MatrixAggregateResponse,
+    MatrixFilterRequest,
+    MatrixFilterResponse,
     MatrixGenerateRequest,
     MatrixListResponse,
     MatrixRowResponse,
     MatrixRowUpdate,
 )
+from app.services.extraction_schema import get_effective_schema
 from app.services.literature_matrix import (
+    aggregate_by_field,
     bulk_delete_by_confidence,
     count_by_confidence,
     delete_row,
+    filter_rows,
     get_by_project,
 )
 
@@ -56,6 +63,9 @@ async def list_matrix_rows(
 ) -> MatrixListResponse:
     await _verify_project_owner(db, user, project_id)
     rows = await get_by_project(db, project_id)
+    # T4: include the effective schema so the frontend can render
+    # column-typed cells without a second round-trip.
+    schema = await get_effective_schema(db, project_id)
 
     items = []
     for row in rows:
@@ -83,7 +93,184 @@ async def list_matrix_rows(
             )
         )
 
-    return MatrixListResponse(items=items)
+    return MatrixListResponse(items=items, extraction_schema=schema)
+
+
+# ── T4: filter & aggregate over typed fields ─────────────────────────────
+
+
+@router.post("/{project_id}/matrix:filter", response_model=MatrixFilterResponse)
+async def filter_matrix_rows(
+    project_id: UUID,
+    body: MatrixFilterRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MatrixFilterResponse:
+    """Return row IDs that match the given predicate."""
+    await _verify_project_owner(db, user, project_id)
+    try:
+        row_ids = await filter_rows(db, project_id, body.field, body.op, body.value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return MatrixFilterResponse(row_ids=row_ids, total=len(row_ids))
+
+
+@router.get(
+    "/{project_id}/matrix:aggregate",
+    response_model=MatrixAggregateResponse,
+)
+async def aggregate_matrix(
+    project_id: UUID,
+    field: str,
+    group_by: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MatrixAggregateResponse:
+    """Bucket matrix rows by ``field`` value (optionally cross-tabulated by
+    ``group_by``). Counts are computed in Python to support both reserved
+    and custom fields uniformly."""
+    await _verify_project_owner(db, user, project_id)
+    try:
+        raw_buckets, total = await aggregate_by_field(db, project_id, field, group_by)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    buckets = [
+        MatrixAggregateBucket(key=key, count=count)
+        for key, count in sorted(raw_buckets.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+    return MatrixAggregateResponse(
+        field=field,
+        group_by=group_by,
+        buckets=buckets,
+        total=total,
+    )
+
+
+# ── Markdown / CSV export (T4: schema-aware) ───────────────────────────────
+
+
+@router.get("/{project_id}/matrix:export.md")
+async def export_matrix_markdown(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Download every matrix row as a Markdown table keyed by the
+    project's effective extraction schema."""
+    from fastapi.responses import PlainTextResponse
+
+
+    await _verify_project_owner(db, user, project_id)
+    rows = await get_by_project(db, project_id)
+    schema = await get_effective_schema(db, project_id)
+
+    headers = [f.label for f in schema.fields]
+    keys = [f.key for f in schema.fields]
+    header_line = "| " + " | ".join(headers) + " |"
+    sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
+    body_lines: list[str] = []
+
+    from app.services.literature_matrix import (
+        RESERVED_FIELD_KEYS as _RESERVED,
+    )
+
+    for row in rows:
+        paper_title = ""
+        if row.project_paper and row.project_paper.paper:
+            paper_title = row.project_paper.paper.title
+        values: list[str] = []
+        for k in keys:
+            if k == "paper_title":
+                values.append(paper_title)
+            elif k in _RESERVED:
+                values.append(str(getattr(row, k, "") or ""))
+            else:
+                v = (row.custom_fields or {}).get(k)
+                if isinstance(v, list):
+                    values.append(", ".join(str(x) for x in v))
+                elif v is None:
+                    values.append("")
+                else:
+                    values.append(str(v))
+        body_lines.append("| " + " | ".join(values) + " |")
+
+    md = (
+        f"# Literature matrix — {len(rows)} row(s)\n\n"
+        + header_line
+        + "\n"
+        + sep_line
+        + "\n"
+        + ("\n".join(body_lines) if body_lines else "")
+        + "\n"
+    )
+    return PlainTextResponse(
+        content=md,
+        media_type="text/markdown",
+        headers={
+            "Content-Disposition": 'attachment; filename="matrix.md"',
+        },
+    )
+
+
+@router.get("/{project_id}/matrix:export.csv")
+async def export_matrix_csv(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Download every matrix row as CSV keyed by the project's effective
+    extraction schema. Values are JSON-encoded for list / number /
+    boolean cells to keep the CSV well-formed."""
+    from fastapi.responses import PlainTextResponse
+
+    await _verify_project_owner(db, user, project_id)
+    rows = await get_by_project(db, project_id)
+    schema = await get_effective_schema(db, project_id)
+
+    import csv
+    import io
+    import json
+
+    from app.services.literature_matrix import (
+        RESERVED_FIELD_KEYS as _RESERVED,
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([f.key for f in schema.fields])
+    for row in rows:
+        paper_title = ""
+        if row.project_paper and row.project_paper.paper:
+            paper_title = row.project_paper.paper.title
+        cells: list[str] = []
+        for f in schema.fields:
+            k = f.key
+            if k == "paper_title":
+                cells.append(paper_title)
+            elif k in _RESERVED:
+                cells.append(str(getattr(row, k, "") or ""))
+            else:
+                v = (row.custom_fields or {}).get(k)
+                if isinstance(v, (list, dict, bool, int, float)):
+                    cells.append(json.dumps(v, ensure_ascii=False))
+                else:
+                    cells.append("" if v is None else str(v))
+        writer.writerow(cells)
+
+    return PlainTextResponse(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="matrix.csv"',
+        },
+    )
 
 
 # ── Update Matrix Row ────────────────────────────────────────────────────
@@ -195,7 +382,9 @@ async def bulk_delete_low_confidence(
     deleted = await bulk_delete_by_confidence(db, project_id, "low")
     logger.info(
         "User %s bulk-deleted %d low-confidence matrix rows in project %s",
-        user.id, deleted, project_id,
+        user.id,
+        deleted,
+        project_id,
     )
     return {"deleted_count": deleted}
 
@@ -275,11 +464,17 @@ async def _run_matrix_job(
 
             # Hydrate protocol from the project so matrix rows can be grounded
             # in inclusion/exclusion + population + outcome criteria.
-            proj_reload = await bg_db.execute(
-                select(Project).where(Project.id == project_id)
-            )
+            proj_reload = await bg_db.execute(select(Project).where(Project.id == project_id))
             proj_row = proj_reload.scalar_one_or_none()
             protocol = (proj_row.review_protocol if proj_row else None) or None
+
+            # T4: snapshot the schema version at the start of the run so
+            # we can warn the user if the schema is edited mid-flight.
+            from app.services.extraction_schema import get_effective_schema
+
+            initial_schema = await get_effective_schema(bg_db, project_id)
+            schema_version_at_start = initial_schema.version
+            schema_is_default_at_start = initial_schema.is_default
 
             state = ResearchState(
                 project_id=project_id,
@@ -304,6 +499,16 @@ async def _run_matrix_job(
 
             result = await matrix_extraction_node(state, bg_db, progress_callback=_update_progress)
 
+            # T4: detect schema drift — if the schema was edited during
+            # the run, future matrix extractions will use a different
+            # shape than the rows we just produced. We surface this in
+            # the job result so the UI can warn the user.
+            final_schema = await get_effective_schema(bg_db, project_id)
+            schema_drifted = (
+                final_schema.version != schema_version_at_start
+                or final_schema.is_default != schema_is_default_at_start
+            )
+
             created = len(result.get("matrix_rows", []))
             job.status = result.get("matrix_status", "failed")
             job.progress = job.total
@@ -315,6 +520,9 @@ async def _run_matrix_job(
             job.result = {
                 "created_count": created,
                 "skipped_count": job.total - created,
+                "schema_version": final_schema.version,
+                "schema_drifted": schema_drifted,
+                "schema_is_default": final_schema.is_default,
             }
             from datetime import UTC, datetime
 
