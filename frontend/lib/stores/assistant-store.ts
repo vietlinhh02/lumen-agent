@@ -308,7 +308,19 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         events: eventsMap,
         messagesBySession: messagesMap,
         loadingSession: false,
+        currentToolArtifact: null,
       });
+
+      // Extract tool artifacts sequentially from historical events
+      // so the most recent valid artifact stays active in the ToolPanel.
+      for (const e of sessionEvents) {
+        if (e.type === "tool") {
+          const toolEvent = e as ToolEvent;
+          if (toolEvent.status === "called" && toolEvent.result) {
+            get()._extractToolArtifact(toolEvent);
+          }
+        }
+      }
     } catch (err) {
       set({
         loadingSession: false,
@@ -857,6 +869,13 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         type: "evidence",
         title: "Evidence Chunks",
         data: result.chunks || result,
+      };
+    } else {
+      // Fallback for all other tools: raw JSON view
+      artifact = {
+        type: event.function,
+        title: event.function.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        data: result,
       };
     }
 

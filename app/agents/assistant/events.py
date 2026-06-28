@@ -100,6 +100,9 @@ class DoneEvent(BaseEvent):
     summary: str | None = Field(
         default=None, description="Optional session summary"
     )
+    usage: dict[str, Any] | None = Field(
+        default=None, description="LLM token usage {input_tokens, output_tokens, model}"
+    )
 
 
 class ErrorEvent(BaseEvent):

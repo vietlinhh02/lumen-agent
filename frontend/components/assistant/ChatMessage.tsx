@@ -22,7 +22,9 @@ import type {
 } from "@/lib/types/assistant";
 import { ThoughtBubble } from "./ThoughtBubble";
 import { IterationPanel } from "./IterationPanel";
-import { Brain, CaretDown, CaretUp } from "@phosphor-icons/react";
+import { Brain, CaretDown, CaretUp, ArrowSquareOut } from "@phosphor-icons/react";
+import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { useUIStore } from "@/lib/stores/ui-store";
 
 interface ChatMessageProps {
   event: AssistantEventData;
@@ -36,7 +38,7 @@ interface ChatMessageProps {
 export function ChatMessage({ event, userName, allEvents, isStreaming, isLastAssistantMessage }: ChatMessageProps) {
   // Handle message events
   if (event.type === "message") {
-    return <MessageBubble event={event as MessageEvent} userName={userName} isStreaming={isStreaming} isLastAssistantMessage={isLastAssistantMessage} />;
+    return <MessageBubble event={event as MessageEvent} userName={userName} allEvents={allEvents} isStreaming={isStreaming} isLastAssistantMessage={isLastAssistantMessage} />;
   }
   
   // Handle thought events - render ThoughtBubble with turn-specific text
@@ -239,11 +241,13 @@ function CollapsibleThoughtAction({
 function MessageBubble({
   event,
   userName,
+  allEvents,
   isStreaming = false,
   isLastAssistantMessage = false,
 }: {
   event: MessageEvent;
   userName: string;
+  allEvents?: AssistantEventData[];
   isStreaming?: boolean;
   isLastAssistantMessage?: boolean;
 }) {
@@ -257,6 +261,35 @@ function MessageBubble({
   
   // For streaming assistant messages, show typing indicator effect
   const showTypingIndicator = isStreaming && !isUser && !event.content.trim();
+
+  // Store methods for tool panel
+  const extractToolArtifact = useAssistantStore((s) => s._extractToolArtifact);
+  const setToolPanelOpen = useUIStore((s) => s.setAssistantToolPanelOpen);
+
+  // Find tool events for this message
+  let toolsForThisMessage: any[] = [];
+  if (!isUser && allEvents) {
+    const msgIndex = allEvents.findIndex(e => e.id === event.id);
+    if (msgIndex !== -1) {
+      let lastUserIndex = -1;
+      for (let i = msgIndex - 1; i >= 0; i--) {
+        if (allEvents[i].type === "message" && (allEvents[i] as any).role === "user") {
+          lastUserIndex = i;
+          break;
+        }
+      }
+      
+      const turnTools = [];
+      for (let i = lastUserIndex + 1; i < msgIndex; i++) {
+        const e = allEvents[i];
+        if (e.type === "tool" && (e as any).status === "called" && (e as any).result) {
+          turnTools.push(e);
+        }
+      }
+      
+      toolsForThisMessage = turnTools;
+    }
+  }
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
@@ -287,6 +320,39 @@ function MessageBubble({
             action={parsed.actionText}
             observation={parsed.observationText}
           />
+        )}
+
+        {toolsForThisMessage.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {toolsForThisMessage.map((tool, idx) => {
+              // Pretty print tool names
+              const nameMap: Record<string, string> = {
+                list_projects: "Projects",
+                search_papers: "Search Results",
+                list_project_papers: "Saved Papers",
+                list_matrix_rows: "Matrix",
+                list_gaps: "Research Gaps",
+                list_conflicts: "Conflicts",
+                get_report: "Report",
+                retrieve_evidence: "Evidence",
+              };
+              const label = nameMap[tool.function] || tool.function.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    extractToolArtifact(tool);
+                    setToolPanelOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded bg-surface-bone/80 px-2.5 py-1.5 font-ui text-xs font-medium text-charcoal hover:bg-surface-bone hover:text-ink transition-colors border border-charcoal/5"
+                >
+                  <ArrowSquareOut size={13} />
+                  View {label}
+                </button>
+              );
+            })}
+          </div>
         )}
 
         {(isUser || parsed?.cleanContent) && (

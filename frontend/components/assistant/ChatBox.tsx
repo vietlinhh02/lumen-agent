@@ -6,6 +6,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
+import { ChatProjectPicker } from "./ChatProjectPicker";
 import { PaperPlaneTilt, Stop } from "@phosphor-icons/react";
 
 interface ChatBoxProps {
@@ -83,15 +84,18 @@ export function ChatBox({ onSend, onStop }: ChatBoxProps) {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-4 pb-3">
-        {/* Character count */}
-        <span
-          className={`font-ui text-xs ${
-            isOverLimit ? "text-red-500" : "text-charcoal/60"
-          }`}
-        >
-          {charCount > 0 && `${charCount}/${MAX_LENGTH}`}
-        </span>
+      <div className="flex items-center justify-between px-4 pb-3 gap-2">
+        {/* Project picker + character count */}
+        <div className="flex items-center gap-2 min-w-0">
+          <ChatProjectPicker />
+          <span
+            className={`font-ui text-xs ${
+              isOverLimit ? "text-red-500" : "text-charcoal/60"
+            }`}
+          >
+            {charCount > 0 && `${charCount}/${MAX_LENGTH}`}
+          </span>
+        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-2">

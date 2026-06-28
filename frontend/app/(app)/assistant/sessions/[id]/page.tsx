@@ -6,7 +6,8 @@
  * - Right: tool panel (slide-in / drawer), toggled from the AppShell header
  *
  * The session list, "New chat" button and "View tool" toggle all live in
- * the AppShell header (see <AssistantHeaderControls />). This page only
+ * the AppShell header (see <AssistantHeaderControls />). The project picker
+ * lives in the chat input area (see <ChatProjectPicker />). This page only
  * renders the chat surface and the right-hand tool panel.
  */
 
@@ -53,9 +54,8 @@ export default function AssistantSessionPage() {
   const [isCreating, setIsCreating] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load sessions (the project picker in the AppShell header also
-  // triggers its own fetchProjects call so the page itself doesn't
-  // need to do it).
+  // Load sessions (the project picker in the chat input triggers its own
+  // fetchProjects call so the page itself doesn't need to do it).
   useEffect(() => {
     if (!token) return;
     void loadSessions();
