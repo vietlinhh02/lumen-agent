@@ -302,13 +302,8 @@ def create_app() -> FastAPI:
             response = await call_next(request)
             _elapsed_ms = round((_time.monotonic() - _start) * 1000, 1)
             logger.info(
-                "request",
-                extra={
-                    "path": request.url.path,
-                    "method": request.method,
-                    "status_code": response.status_code,
-                    "latency_ms": _elapsed_ms,
-                },
+                f"request path={request.url.path} method={request.method} "
+                f"status_code={response.status_code} latency_ms={_elapsed_ms}"
             )
             return response
 
