@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "./auth-store";
 import type { UserProfile, AdminUser } from "@/lib/types";
 
-type SettingsTab = "profile" | "admin";
+type SettingsTab = "profile" | "admin" | "usage";
 
 interface SettingsState {
   // State
@@ -15,6 +15,10 @@ interface SettingsState {
   loadingProfile: boolean;
   users: AdminUser[];
   loadingUsers: boolean;
+  usageReport: any | null;
+  loadingUsage: boolean;
+  evalMetrics: any | null;
+  loadingEval: boolean;
 
   // Actions
   setActiveTab: (t: SettingsTab) => void;
@@ -23,6 +27,8 @@ interface SettingsState {
   fetchUsers: () => Promise<void>;
   toggleUserActive: (userId: string, currentActive: boolean) => Promise<AdminUser | null>;
   changePassword: (current: string, next: string) => Promise<boolean>;
+  fetchUsageReport: (year?: number, month?: number) => Promise<void>;
+  fetchEvalMetrics: () => Promise<void>;
   reset: () => void;
 }
 
@@ -33,6 +39,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   loadingProfile: false,
   users: [],
   loadingUsers: false,
+  usageReport: null,
+  loadingUsage: false,
+  evalMetrics: null,
+  loadingEval: false,
 
   setActiveTab(t) {
     set({ activeTab: t });
@@ -130,6 +140,41 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     }
   },
 
+  async fetchUsageReport(year, month) {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    set({ loadingUsage: true });
+    try {
+      const params = new URLSearchParams();
+      if (year) params.set("year", String(year));
+      if (month) params.set("month", String(month));
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      
+      const data = await apiFetch<any>(`/stats/cost-report${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      set({ usageReport: data });
+    } finally {
+      set({ loadingUsage: false });
+    }
+  },
+
+  async fetchEvalMetrics() {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    set({ loadingEval: true });
+    try {
+      const data = await apiFetch<any>("/stats/eval", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      set({ evalMetrics: data });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      set({ loadingEval: false });
+    }
+  },
+
   reset() {
     set({
       activeTab: "profile",
@@ -138,6 +183,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       loadingProfile: false,
       users: [],
       loadingUsers: false,
+      usageReport: null,
+      loadingUsage: false,
+      evalMetrics: null,
+      loadingEval: false,
     });
   },
 }));

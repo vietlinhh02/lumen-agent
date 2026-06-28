@@ -2,10 +2,10 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { User, Shield } from "@phosphor-icons/react";
+import { User, Shield, ChartLineUp } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
-import { ProfileSection, AdminSection } from "@/components/settings";
+import { ProfileSection, AdminSection, UsageSection } from "@/components/settings";
 
 export default function SettingsPage() {
   const token = useAuth((s) => s.token);
@@ -49,10 +49,21 @@ export default function SettingsPage() {
                 <Shield size={16} />Admin
               </button>
             )}
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab("usage")}
+                className={`font-ui flex items-center gap-2 rounded-[8px] px-4 py-2 text-sm font-semibold transition-colors ${
+                  activeTab === "usage" ? "bg-surface-card text-ink shadow-sm" : "text-charcoal hover:text-ink"
+                }`}
+              >
+                <ChartLineUp size={16} />Usage & Cost
+              </button>
+            )}
           </div>
 
           {activeTab === "profile" && profile && <ProfileSection profile={profile} />}
           {activeTab === "admin" && isAdmin && <AdminSection />}
+          {activeTab === "usage" && isAdmin && <UsageSection />}
         </div>
       </div>
     </div>

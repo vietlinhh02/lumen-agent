@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { Lock, Sun, Moon, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { Lock, Sun, Moon, CheckCircle, XCircle, CaretDown } from "@phosphor-icons/react";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { formatDate } from "@/lib/utils";
@@ -218,6 +218,239 @@ export function AdminSection() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function CustomSelect({ 
+  value, 
+  options, 
+  onChange 
+}: { 
+  value: string | number; 
+  options: { label: string; value: string | number }[]; 
+  onChange: (val: string | number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedLabel = options.find(o => o.value === value)?.label || value;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="focus-ring flex items-center justify-between gap-2 h-[36px] rounded-full bg-surface-bone px-3 font-ui text-[13px] text-ink outline-none min-w-[100px]"
+        style={{ border: "1px solid var(--hairline)" }}
+      >
+        <span>{selectedLabel}</span>
+        <CaretDown size={14} className="text-ash" />
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 w-full rounded-[10px] border border-hairline bg-surface-card shadow-lg z-10 overflow-hidden max-h-[200px] overflow-y-auto">
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+              }}
+              className="block w-full text-left px-3 py-2 text-[13px] text-ink hover:bg-surface-bone transition-colors font-ui"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function UsageSection() {
+  const usageReport = useSettingsStore((s) => s.usageReport);
+  const loadingUsage = useSettingsStore((s) => s.loadingUsage);
+  const fetchUsageReport = useSettingsStore((s) => s.fetchUsageReport);
+  const evalMetrics = useSettingsStore((s) => s.evalMetrics);
+  const fetchEvalMetrics = useSettingsStore((s) => s.fetchEvalMetrics);
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [month, setMonth] = useState<number>(new Date().getMonth() + 1);
+
+  useEffect(() => {
+    fetchUsageReport(year, month);
+    fetchEvalMetrics();
+  }, [fetchUsageReport, fetchEvalMetrics, year, month]);
+
+  const yearOptions = [2025, 2026, 2027].map(y => ({ label: String(y), value: y }));
+  const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1).map(m => ({
+    label: new Date(0, m - 1).toLocaleString('default', { month: 'long' }),
+    value: m
+  }));
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <h2 className="font-ui text-[18px] font-bold text-ink">Usage & Cost</h2>
+        <div className="flex gap-2">
+          <CustomSelect 
+            value={year} 
+            onChange={(val) => setYear(Number(val))} 
+            options={yearOptions} 
+          />
+          <CustomSelect 
+            value={month} 
+            onChange={(val) => setMonth(Number(val))} 
+            options={monthOptions} 
+          />
+        </div>
+      </div>
+
+      {loadingUsage ? (
+        <div className="flex h-32 items-center justify-center">
+          <span className="font-ui text-sm text-ash">Loading usage...</span>
+        </div>
+      ) : !usageReport ? (
+        <div className="flex h-32 items-center justify-center rounded-[12px] bg-surface-card" style={{ border: "1px dashed var(--hairline)" }}>
+          <span className="font-ui text-sm text-ash">No data available</span>
+        </div>
+      ) : (
+        <div className="grid gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-[12px] bg-surface-card p-5 flex flex-col justify-center shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+              <span className="font-ui text-[13px] font-semibold text-charcoal">Total Spent</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="font-display text-[28px] font-bold text-ink">${usageReport.total_usd.toFixed(2)}</span>
+                <span className="font-ui text-[13px] text-ash uppercase">USD</span>
+              </div>
+              <p className="mt-2 font-ui text-[12px] text-charcoal">
+                Projected this month: <strong className="text-ink">${usageReport.projected_monthly_usd.toFixed(2)}</strong>
+              </p>
+            </div>
+            
+            <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+              <span className="font-ui text-[13px] font-semibold text-charcoal mb-3 block">Tokens Processed</span>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="font-ui text-[12px] text-ash mb-0.5">Input</div>
+                  <div className="font-ui text-[16px] font-semibold text-ink">{usageReport.tokens.input.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="font-ui text-[12px] text-ash mb-0.5">Output</div>
+                  <div className="font-ui text-[16px] font-semibold text-ink">{usageReport.tokens.output.toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+              <span className="font-ui text-[13px] font-semibold text-charcoal mb-4 block">Cost by Model</span>
+              <div className="space-y-3">
+                {Object.entries(usageReport.by_model || {}).map(([model, cost]) => (
+                  <div key={model} className="flex justify-between items-center">
+                    <span className="font-ui text-[13px] text-ink">{model}</span>
+                    <span className="font-ui text-[13px] font-semibold text-charcoal">${(cost as number).toFixed(3)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+              <span className="font-ui text-[13px] font-semibold text-charcoal mb-4 block">Cost by Context</span>
+              <div className="space-y-3">
+                {Object.entries(usageReport.by_context || {}).map(([ctx, cost]) => (
+                  <div key={ctx} className="flex justify-between items-center">
+                    <span className="font-ui text-[13px] text-ink capitalize">{ctx.replace(/_/g, ' ')}</span>
+                    <span className="font-ui text-[13px] font-semibold text-charcoal">${(cost as number).toFixed(3)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Evaluation Metrics Section */}
+      <div className="mt-8 flex items-center justify-between">
+        <h2 className="font-ui text-[18px] font-bold text-ink">Evaluation Metrics</h2>
+      </div>
+
+      {!evalMetrics ? (
+        <div className="flex h-32 items-center justify-center rounded-[12px] bg-surface-card" style={{ border: "1px dashed var(--hairline)" }}>
+          <span className="font-ui text-sm text-ash">Evaluation data not available</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          
+          <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+            <span className="font-ui text-[13px] font-semibold text-charcoal mb-1 block">RAG Latency (avg)</span>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="font-display text-[28px] font-bold text-ink">
+                {evalMetrics.rag_injector?.avg_latency_ms ? Math.round(evalMetrics.rag_injector.avg_latency_ms) : 0}ms
+              </span>
+            </div>
+            <div className="mt-2 text-[12px] font-ui flex justify-between items-center">
+              <span className="text-ash">Baseline: <span className="text-charcoal font-semibold">500ms</span></span>
+              {!evalMetrics.rag_injector?.avg_latency_ms ? (
+                <span className="text-ash font-semibold">No data</span>
+              ) : evalMetrics.rag_injector.avg_latency_ms < 500 ? (
+                <span className="text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle size={14}/> Pass</span>
+              ) : (
+                <span className="text-rose-600 font-semibold flex items-center gap-1"><XCircle size={14}/> Fail</span>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+            <span className="font-ui text-[13px] font-semibold text-charcoal mb-1 block">Monthly Spend</span>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="font-display text-[28px] font-bold text-ink">
+                ${usageReport?.projected_monthly_usd?.toFixed(2) || "0.00"}
+              </span>
+            </div>
+            <div className="mt-2 text-[12px] font-ui flex justify-between items-center">
+              <span className="text-ash">Baseline: <span className="text-charcoal font-semibold">$50.00</span></span>
+              {(!usageReport || usageReport.projected_monthly_usd === 0) ? (
+                <span className="text-ash font-semibold">No data</span>
+              ) : usageReport.projected_monthly_usd <= 50 ? (
+                <span className="text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle size={14}/> Pass</span>
+              ) : (
+                <span className="text-rose-600 font-semibold flex items-center gap-1"><XCircle size={14}/> Fail</span>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[12px] bg-surface-card p-5 shadow-sm" style={{ border: "1px solid var(--hairline)" }}>
+            <span className="font-ui text-[13px] font-semibold text-charcoal mb-1 block">Citation Accuracy</span>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="font-display text-[28px] font-bold text-ink">
+                {evalMetrics.citation_guardrail?.pass_rate_pct ? Math.round(evalMetrics.citation_guardrail.pass_rate_pct) : 0}%
+              </span>
+            </div>
+            <div className="mt-2 text-[12px] font-ui flex justify-between items-center">
+              <span className="text-ash">Baseline: <span className="text-charcoal font-semibold">95%</span></span>
+              {evalMetrics.citation_guardrail?.total_checks === 0 ? (
+                <span className="text-ash font-semibold">No data</span>
+              ) : evalMetrics.citation_guardrail?.pass_rate_pct >= 95 ? (
+                <span className="text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle size={14}/> Pass</span>
+              ) : (
+                <span className="text-rose-600 font-semibold flex items-center gap-1"><XCircle size={14}/> Fail</span>
+              )}
+            </div>
+          </div>
+
+        </div>
+      )}
+
     </div>
   );
 }
