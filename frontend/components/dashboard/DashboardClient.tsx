@@ -9,6 +9,7 @@ import { QuickActionsRow } from "./QuickActionsRow";
 import { StatsGrid } from "./StatsGrid";
 import { ProjectsList } from "./ProjectsList";
 import { ActivityFeed } from "./ActivityFeed";
+import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 
 export function DashboardClient() {
   const token = useAuth((s) => s.token);
@@ -36,7 +37,8 @@ export function DashboardClient() {
   }, [activeProject, workflows]);
 
   return (
-    <div>
+    <div data-tour="welcome">
+      <OnboardingTour />
       <div className="mb-5 grid gap-4 sm:mb-8 lg:grid-cols-[1fr_auto] lg:items-start">
         <DashboardHeader stats={stats} runningJobs={0} />
         <StatsGrid stats={stats} />

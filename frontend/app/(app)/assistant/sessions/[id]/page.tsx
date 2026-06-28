@@ -195,6 +195,7 @@ export default function AssistantSessionPage() {
     <div className="relative flex h-full min-h-0">
       {/* Left Collapsible Sessions Panel (desktop only) */}
       <aside
+        data-tour="assistant-sessions"
         className="hidden xl:block w-64 flex-shrink-0 bg-canvas border-r"
         style={{ borderColor: "var(--hairline)" }}
       >
@@ -253,7 +254,7 @@ export default function AssistantSessionPage() {
 
                 {/* Welcome message if no events */}
                 {chatItems.length === 0 && (
-                  <div className="text-center py-12">
+                  <div data-tour="assistant-welcome" className="text-center py-12">
                     <div className="flex justify-center mb-4">
                       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                         <svg
@@ -341,7 +342,7 @@ export default function AssistantSessionPage() {
           style={{ borderColor: "var(--hairline)" }}
         >
           <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
-            <ChatBox onSend={handleSend} onStop={handleStop} />
+            <ChatBox onSend={handleSend} onStop={handleStop} onNewChat={handleNewChat} />
           </div>
         </div>
       </div>

@@ -42,6 +42,7 @@ import { useAssistantStore } from "@/lib/stores/assistant-store";
 import { useRatingsStore } from "@/lib/stores/ratings-store";
 import { EditProjectModal } from "@/components/EditProjectModal";
 import { DeleteProjectModal } from "@/components/DeleteProjectModal";
+import { ProjectOnboardingTour } from "@/components/onboarding/ProjectOnboardingTour";
 
 const TABS = [
   { key: "overview", label: "Overview", href: "", icon: House, minStep: 1, addon: false },
@@ -474,6 +475,7 @@ export default function ProjectWorkspaceLayout({
                 scoped to this project so the user can ask quick Q&A
                 about the project's papers / matrix / gaps. */}
             <button
+              data-tour="project-ask"
               onClick={handleAskAssistant}
               disabled={startingChat}
               className="focus-ring inline-flex h-[28px] sm:h-[32px] items-center gap-1 sm:gap-1.5 rounded-full bg-primary px-2.5 sm:px-3 font-ui text-[11px] sm:text-[12px] font-semibold text-on-primary transition-all hover:bg-primary-deep active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
@@ -524,6 +526,7 @@ export default function ProjectWorkspaceLayout({
 
       {/* Tab nav — sticky below the 60px AppShell header */}
       <div
+        data-tour="project-tabs"
         className="sticky top-0 z-50 bg-[var(--canvas)] mb-5 sm:mb-6 -mx-4 sm:-mx-6"
         style={{ borderBottom: "1px solid var(--hairline)" }}
       >
@@ -566,6 +569,7 @@ export default function ProjectWorkspaceLayout({
           onClose={() => setDeleteOpen(false)}
           onDeleted={async () => {
             const ok = await deleteProject(project.id);
+            setDeleteOpen(false);
             if (ok) router.push("/projects");
           }}
         />

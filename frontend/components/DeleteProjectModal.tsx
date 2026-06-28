@@ -35,6 +35,7 @@ export function DeleteProjectModal({
       });
       toast.success("Project deleted");
       onDeleted();
+      onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete project");
       setIsDeleting(false);

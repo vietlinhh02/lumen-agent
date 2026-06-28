@@ -8,6 +8,7 @@ import { useProjectsStore } from "@/lib/stores/projects-store";
 import { apiFetch } from "@/lib/api";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import type { ProjectCreate } from "@/lib/types";
+import { NewProjectOnboardingTour } from "@/components/onboarding/NewProjectOnboardingTour";
 
 interface GeneratedMeta {
   title: string;
@@ -69,7 +70,8 @@ export default function NewProjectPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[560px]">
+    <div data-tour="new-project-welcome" className="mx-auto max-w-[560px]">
+      <NewProjectOnboardingTour />
       <div className="mb-12 animate-fade-in">
         <Link
           href="/projects"
@@ -89,7 +91,7 @@ export default function NewProjectPage() {
       </div>
 
       {/* ── AI Idea Input ──────────────────────────────────── */}
-      <div className="mb-8 animate-slide-up delay-150">
+      <div data-tour="new-project-idea" className="mb-8 animate-slide-up delay-150">
         <label
           htmlFor="idea"
           className="font-ui mb-1.5 block text-sm font-semibold text-ink"
@@ -137,7 +139,7 @@ export default function NewProjectPage() {
       </div>
 
       {/* ── Form Fields ────────────────────────────────────── */}
-      <form onSubmit={handleSubmit} className="space-y-5 animate-slide-up delay-200">
+      <form data-tour="new-project-form" onSubmit={handleSubmit} className="space-y-5 animate-slide-up delay-200">
         <div>
           <label
             htmlFor="title"

@@ -17,6 +17,7 @@ interface Props {
 export function StatsGrid({ stats }: Props) {
   return (
     <div
+      data-tour="stats-grid"
       className="w-fit rounded-full bg-primary/[0.06] px-3 py-1.5 font-ui text-[11px] sm:text-[12px]"
       style={{ border: "1px solid rgba(234, 40, 4, 0.22)" }}
     >

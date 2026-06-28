@@ -6,6 +6,7 @@ import { User, Shield, ChartLineUp } from "@phosphor-icons/react";
 import { useAuth } from "@/lib/stores/auth-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { ProfileSection, AdminSection, UsageSection } from "@/components/settings";
+import { SettingsOnboardingTour } from "@/components/onboarding/SettingsOnboardingTour";
 
 export default function SettingsPage() {
   const token = useAuth((s) => s.token);
@@ -22,7 +23,8 @@ export default function SettingsPage() {
   }, [token]);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div data-tour="settings-welcome" className="min-h-screen bg-canvas">
+      <SettingsOnboardingTour />
       <div className="px-4 sm:px-6 py-6">
         <div className="flex flex-col gap-6">
           <div>
@@ -30,7 +32,7 @@ export default function SettingsPage() {
             <p className="mt-2 text-sm text-charcoal">Manage your account and application preferences.</p>
           </div>
 
-          <div className="flex gap-1 rounded-[10px] bg-surface-bone p-1 w-fit">
+          <div data-tour="settings-tabs" className="flex gap-1 rounded-[10px] bg-surface-bone p-1 w-fit">
             <button
               onClick={() => setActiveTab("profile")}
               className={`font-ui flex items-center gap-2 rounded-[8px] px-4 py-2 text-sm font-semibold transition-colors ${
@@ -61,9 +63,11 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {activeTab === "profile" && profile && <ProfileSection profile={profile} />}
-          {activeTab === "admin" && isAdmin && <AdminSection />}
-          {activeTab === "usage" && isAdmin && <UsageSection />}
+          <div data-tour="settings-content">
+            {activeTab === "profile" && profile && <ProfileSection profile={profile} />}
+            {activeTab === "admin" && isAdmin && <AdminSection />}
+            {activeTab === "usage" && isAdmin && <UsageSection />}
+          </div>
         </div>
       </div>
     </div>

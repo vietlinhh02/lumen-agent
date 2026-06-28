@@ -30,7 +30,7 @@ async def test_auto_search_rejects_invalid_target_count():
     # Mock the project lookup
     db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=project))
 
-    for bad in (5, 75, 150, 200):
+    for bad in (10, 50, 75, 150, 200):
         with pytest.raises(ValueError):
             await auto_search_and_save(db, user, project.id, "test query", bad)
 
@@ -41,7 +41,7 @@ async def test_auto_search_returns_404_for_missing_project():
     db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
 
     user = SimpleNamespace(id=uuid4())
-    result = await auto_search_and_save(db, user, uuid4(), "query", 50)
+    result = await auto_search_and_save(db, user, uuid4(), "query", 25)
     assert result == {"error": "Project not found"}
 
 
@@ -70,10 +70,10 @@ async def test_auto_search_creates_job_and_run():
     db.execute = mock_execute
 
     with patch("app.services.search_session.ensure_future") as mock_ensure:
-        result = await auto_search_and_save(db, user, project.id, "RAG medical QA", 50)
+        result = await auto_search_and_save(db, user, project.id, "RAG medical QA", 25)
 
     assert result["status"] == "running"
-    assert result["target_count"] == 50
+    assert result["target_count"] == 25
     assert "job_id" in result
     assert "session_id" in result
     # Worker was launched
@@ -106,7 +106,7 @@ async def test_auto_search_rejects_concurrent_job_for_same_user():
 
     db.execute = mock_execute
 
-    result = await auto_search_and_save(db, user, project.id, "RAG", 50)
+    result = await auto_search_and_save(db, user, project.id, "RAG", 25)
     assert result == {"error": "Another auto-search is already running", "status_code": 429}
 
 
@@ -125,8 +125,8 @@ async def test_run_auto_search_phase1_calls_search_and_download():
         id=job_id,
         status="pending",
         progress=0,
-        total=50,
-        progress_json={"phase": "queued", "target_count": 50},
+        total=25,
+        progress_json={"phase": "queued", "target_count": 25},
         result={},
         error_message=None,
     )
@@ -169,13 +169,13 @@ async def test_run_auto_search_phase1_calls_search_and_download():
             mock_search.return_value = mock_outcome
 
             with patch("app.services.search_session.batch_score_papers") as mock_score:
-                mock_score.return_value = ["high"] * 50 + ["medium"] * 100 + ["low"] * 50
+                mock_score.return_value = ["high"] * 25 + ["medium"] * 100 + ["low"] * 25
 
                 with patch("app.services.search_session.save_paper_to_project") as mock_save:
                     mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
 
                     await _run_auto_search_job(
-                        job_id, session_id, project_id, user_id, "RAG", 50,
+                        job_id, session_id, project_id, user_id, "RAG", 25,
                         timeout_seconds=5,
                     )
 
@@ -239,7 +239,7 @@ async def test_auto_search_generates_query_when_empty():
             "RAG medical QA retrieval augmented generation",
             "clinical decision support RAG evaluation",
         ]
-        result = await auto_search_and_save(db, user, project.id, "", 50)
+        result = await auto_search_and_save(db, user, project.id, "", 25)
 
     assert result["status"] == "running"
     assert result["query_was_generated"] is True
@@ -250,7 +250,7 @@ async def test_auto_search_generates_query_when_empty():
         "RAG medical QA retrieval augmented generation",
         "clinical decision support RAG evaluation",
     ]
-    assert captured.get("target_count") == 50
+    assert captured.get("target_count") == 25
     assert mock_gen.called
 
 
@@ -281,7 +281,7 @@ async def test_auto_search_uses_explicit_query_when_provided():
 
     with patch("app.services.search_session.ensure_future"), \
          patch("app.services.search_session._generate_queries_from_project") as mock_gen:
-        result = await auto_search_and_save(db, user, project.id, "explicit query", 50)
+        result = await auto_search_and_save(db, user, project.id, "explicit query", 25)
 
     assert result["query_was_generated"] is False
     assert result["query"] == "explicit query"
@@ -593,7 +593,7 @@ def test_auto_search_ranks_and_caps_candidates_before_llm_scoring():
         limit=2,
     )
 
-    assert _auto_search_score_candidate_limit(50) == 150
+    assert _auto_search_score_candidate_limit(25) == 75
     assert ranked == [clinical, method]
 
 
@@ -608,7 +608,7 @@ async def test_run_auto_search_phase1_runs_multiple_queries_concurrently():
     session_id = uuid4()
 
     job = SimpleNamespace(
-        id=job_id, status="pending", progress=0, total=50,
+        id=job_id, status="pending", progress=0, total=25,
         progress_json={"phase": "queued"}, result={}, error_message=None,
     )
     run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
@@ -669,13 +669,13 @@ async def test_run_auto_search_phase1_runs_multiple_queries_concurrently():
              patch("app.services.search_session.batch_score_papers") as mock_score, \
              patch("app.services.search_session.save_paper_to_project") as mock_save:
 
-            # All papers score "high" so all 12 are picked (capped at target=50).
+            # All papers score "high" so all 12 are picked (capped at target=25).
             mock_score.return_value = ["high"] * 12
             mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
 
             queries = ["q1", "q2", "q3", "q4"]
             await _run_auto_search_job(
-                job_id, session_id, project_id, user_id, queries, 50,
+                job_id, session_id, project_id, user_id, queries, 25,
                 timeout_seconds=10,
             )
 
@@ -699,7 +699,7 @@ async def test_run_auto_search_bumps_low_to_medium_when_multi_match():
     session_id = uuid4()
 
     job = SimpleNamespace(
-        id=job_id, status="pending", progress=0, total=50,
+        id=job_id, status="pending", progress=0, total=25,
         progress_json={"phase": "queued"}, result={}, error_message=None,
     )
     run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
@@ -752,7 +752,7 @@ async def test_run_auto_search_bumps_low_to_medium_when_multi_match():
             mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
 
             await _run_auto_search_job(
-                job_id, session_id, project_id, user_id, ["q1", "q2"], 50,
+                job_id, session_id, project_id, user_id, ["q1", "q2"], 25,
                 timeout_seconds=10,
             )
 
@@ -765,7 +765,7 @@ async def test_run_auto_search_bumps_low_to_medium_when_multi_match():
 
 
 @pytest.mark.asyncio
-async def test_run_auto_search_caps_scoring_candidates_for_target_50():
+async def test_run_auto_search_caps_scoring_candidates_for_target_25():
     from app.services.search_session import _run_auto_search_job
 
     user_id = uuid4()
@@ -774,7 +774,7 @@ async def test_run_auto_search_caps_scoring_candidates_for_target_50():
     session_id = uuid4()
 
     job = SimpleNamespace(
-        id=job_id, status="pending", progress=0, total=50,
+        id=job_id, status="pending", progress=0, total=25,
         progress_json={"phase": "queued"}, result={}, error_message=None,
     )
     run = SimpleNamespace(id=session_id, user_query="q", results_json=[], screening_scores=[])
@@ -839,14 +839,14 @@ async def test_run_auto_search_caps_scoring_candidates_for_target_50():
             mock_save.return_value = SimpleNamespace(project_paper_id=uuid4())
 
             await _run_auto_search_job(
-                job_id, session_id, project_id, user_id, ["q1"], 50,
+                job_id, session_id, project_id, user_id, ["q1"], 25,
                 timeout_seconds=10,
             )
 
-    assert scored_count["n"] == 150
+    assert scored_count["n"] == 75
     assert job.result["candidates_after_dedupe"] == 220
-    assert job.result["candidates_scored"] == 150
-    assert job.result["saved_count"] == 50
+    assert job.result["candidates_scored"] == 75
+    assert job.result["saved_count"] == 25
 
 
 @pytest.mark.asyncio

@@ -190,7 +190,7 @@ async def test_matrix_extraction_with_chunks():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Medical QA accuracy",
             "method": "We used dense retrieval.",
             "dataset_or_context": "PubMedQA",
@@ -199,7 +199,7 @@ async def test_matrix_extraction_with_chunks():
             "contribution": "Novel RAG pipeline",
             "relevance": "Directly relevant",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider), \
              patch("app.agents.nodes.get_matrix_verifier_provider", return_value=None):
@@ -240,7 +240,7 @@ async def test_matrix_extraction_reports_progress_per_processed_paper():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Medical QA accuracy",
             "method": "Dense retrieval with BERT",
             "dataset_or_context": "PubMedQA",
@@ -249,7 +249,7 @@ async def test_matrix_extraction_reports_progress_per_processed_paper():
             "contribution": "Novel RAG pipeline",
             "relevance": "Directly relevant",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(
@@ -340,7 +340,7 @@ async def test_matrix_extraction_reextracts_when_content_hash_changes():
         ) as mock_upsert,
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Updated problem",
             "method": "Updated method",
             "dataset_or_context": "Updated context",
@@ -349,7 +349,7 @@ async def test_matrix_extraction_reextracts_when_content_hash_changes():
             "contribution": "Updated contribution",
             "relevance": "Updated relevance",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(state, db)
@@ -381,7 +381,7 @@ async def test_matrix_extraction_verifier_can_adjust_primary_result():
         ),
     ):
         primary_provider = AsyncMock()
-        primary_provider.complete_structured.return_value = {
+        primary_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Primary problem",
             "method": "Primary method",
             "dataset_or_context": "Primary context",
@@ -390,9 +390,9 @@ async def test_matrix_extraction_verifier_can_adjust_primary_result():
             "contribution": "Primary contribution",
             "relevance": "Primary relevance",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
         verifier_provider = AsyncMock()
-        verifier_provider.complete_structured.return_value = {
+        verifier_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Verified problem",
             "method": "Verified method",
             "dataset_or_context": "Verified context",
@@ -401,7 +401,7 @@ async def test_matrix_extraction_verifier_can_adjust_primary_result():
             "contribution": "Verified contribution",
             "relevance": "Verified relevance",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
 
         with (
             patch("app.agents.nodes.get_provider", return_value=primary_provider),
@@ -440,17 +440,17 @@ async def test_matrix_extraction_verifier_lowers_confidence_is_respected():
         ),
     ):
         primary_provider = AsyncMock()
-        primary_provider.complete_structured.return_value = {
+        primary_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "P", "method": "P", "dataset_or_context": "P",
             "key_result": "P", "limitation": "P", "contribution": "P",
             "relevance": "P", "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
         verifier_provider = AsyncMock()
-        verifier_provider.complete_structured.return_value = {
+        verifier_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "V", "method": "V", "dataset_or_context": "V",
             "key_result": "V", "limitation": "V", "contribution": "V",
             "relevance": "V", "confidence": "low",
-        }
+        }, MagicMock(model="test-model"))
 
         with (
             patch("app.agents.nodes.get_provider", return_value=primary_provider),
@@ -484,7 +484,7 @@ async def test_matrix_extraction_verifier_failure_falls_back_to_primary():
         ),
     ):
         primary_provider = AsyncMock()
-        primary_provider.complete_structured.return_value = {
+        primary_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Primary problem",
             "method": "Primary method",
             "dataset_or_context": "Primary context",
@@ -493,9 +493,9 @@ async def test_matrix_extraction_verifier_failure_falls_back_to_primary():
             "contribution": "Primary contribution",
             "relevance": "Primary relevance",
             "confidence": "high",
-        }
+        }, MagicMock(model="test-model"))
         verifier_provider = AsyncMock()
-        verifier_provider.complete_structured.side_effect = Exception("Verifier timeout")
+        verifier_provider.complete_structured_with_usage.side_effect = Exception("Verifier timeout")
 
         with (
             patch("app.agents.nodes.get_provider", return_value=primary_provider),
@@ -538,7 +538,7 @@ async def test_matrix_extraction_no_chunks_falls_back():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Test problem",
             "method": "Test method",
             "dataset_or_context": "Test context",
@@ -547,7 +547,7 @@ async def test_matrix_extraction_no_chunks_falls_back():
             "contribution": "Test contribution",
             "relevance": "Test relevance",
             "confidence": "medium",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(state, db)
@@ -600,10 +600,10 @@ async def test_matrix_extraction_partial_failure():
                 "contribution": "Test",
                 "relevance": "Test",
                 "confidence": "medium",
-            }
+            }, MagicMock(model="test-model")
 
         mock_provider = AsyncMock()
-        mock_provider.complete_structured = mock_complete
+        mock_provider.complete_structured_with_usage = mock_complete
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(state, db)
@@ -638,7 +638,7 @@ async def test_matrix_extraction_invalid_confidence_defaults_to_medium():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Test",
             "method": "Test",
             "dataset_or_context": "Test",
@@ -647,7 +647,7 @@ async def test_matrix_extraction_invalid_confidence_defaults_to_medium():
             "contribution": "Test",
             "relevance": "Test",
             "confidence": "very_high",  # invalid
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider), \
              patch("app.agents.nodes.get_matrix_verifier_provider", return_value=None):
@@ -682,7 +682,7 @@ async def test_matrix_extraction_persist_failure_sets_status():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Test",
             "method": "Test",
             "dataset_or_context": "Test",
@@ -691,7 +691,7 @@ async def test_matrix_extraction_persist_failure_sets_status():
             "contribution": "Test",
             "relevance": "Test",
             "confidence": "medium",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(state, db)
@@ -729,7 +729,7 @@ async def test_matrix_extraction_rows_are_json_serializable():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "Test",
             "method": "Test",
             "dataset_or_context": "Test",
@@ -738,7 +738,7 @@ async def test_matrix_extraction_rows_are_json_serializable():
             "contribution": "Test",
             "relevance": "Test",
             "confidence": "medium",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch("app.agents.nodes.get_provider", return_value=mock_provider):
             result = await matrix_extraction_node(state, db)

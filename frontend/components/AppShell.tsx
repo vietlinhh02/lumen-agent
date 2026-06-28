@@ -457,6 +457,7 @@ function NavItems({ onNavigate }: { onNavigate?: () => void }) {
 function SidebarDesktop() {
   return (
     <aside
+      data-tour="sidebar"
       className="hidden xl:flex fixed top-[60px] left-0 bottom-0 z-10 w-[56px] flex-col items-center py-4 bg-canvas"
       style={{ borderRight: "1px solid var(--hairline)" }}
     >

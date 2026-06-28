@@ -295,7 +295,7 @@ async def test_matrix_extraction_with_custom_schema_persists_custom_fields():
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             # Universal fields
             "research_problem": "Medical QA accuracy",
             "method": "Dense retrieval with BERT",
@@ -309,7 +309,7 @@ async def test_matrix_extraction_with_custom_schema_persists_custom_fields():
             "sample_size": 500,
             "study_design": "cohort",
             "intervention": "BERT-based retrieval",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch(
             "app.agents.nodes.get_provider",
@@ -365,7 +365,7 @@ async def test_matrix_extraction_falls_back_to_defaults_when_schema_load_fails()
         ),
     ):
         mock_provider = AsyncMock()
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "X",
             "method": "Y",
             "dataset_or_context": "Z",
@@ -374,7 +374,7 @@ async def test_matrix_extraction_falls_back_to_defaults_when_schema_load_fails()
             "contribution": "C",
             "relevance": "D",
             "confidence": "medium",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch(
             "app.agents.nodes.get_provider",
@@ -438,7 +438,7 @@ async def test_matrix_extraction_skips_unknown_custom_field_values():
         mock_provider = AsyncMock()
         # sample_size is non-numeric → coerced to None → dropped.
         # design is an unknown enum → coerced to None → dropped.
-        mock_provider.complete_structured.return_value = {
+        mock_provider.complete_structured_with_usage.return_value = ({
             "research_problem": "X",
             "method": "Y",
             "dataset_or_context": "Z",
@@ -449,7 +449,7 @@ async def test_matrix_extraction_skips_unknown_custom_field_values():
             "confidence": "medium",
             "sample_size": "unknown",
             "design": "observational",
-        }
+        }, MagicMock(model="test-model"))
 
         with patch(
             "app.agents.nodes.get_provider",

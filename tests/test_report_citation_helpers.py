@@ -710,10 +710,10 @@ def test_classify_reference_group_routes_lunexcoding_to_industry():
 def test_aggregate_sections_succeeds_on_first_attempt():
     """Happy path: first attempt succeeds and returns the LLM's sections."""
     fake_provider = MagicMock()
-    fake_provider.complete_structured = AsyncMock(
-        return_value={
+    fake_provider.complete_structured_with_usage = AsyncMock(
+        return_value=({
             "sections": [{"heading": "Improved", "paragraphs": []}],
-        }
+        }, MagicMock(model="test-model"))
     )
     original_sections = [{"heading": "Original", "paragraphs": []}]
 
@@ -730,8 +730,8 @@ def test_aggregate_sections_succeeds_on_first_attempt():
     )
 
     assert result == [{"heading": "Improved", "paragraphs": []}]
-    assert fake_provider.complete_structured.await_count == 1
-    await_args = fake_provider.complete_structured.await_args
+    assert fake_provider.complete_structured_with_usage.await_count == 1
+    await_args = fake_provider.complete_structured_with_usage.await_args
     assert await_args is not None
     # First attempt should use the bumped default 16k tokens
     assert await_args.kwargs["max_tokens"] == 16000
@@ -741,10 +741,10 @@ def test_aggregate_sections_retries_with_higher_max_tokens_on_failure(caplog):
     """If the first call fails (truncated JSON), retry with 24k tokens."""
     fake_provider = MagicMock()
     # First call raises truncated-JSON error, second call succeeds.
-    fake_provider.complete_structured = AsyncMock(
+    fake_provider.complete_structured_with_usage = AsyncMock(
         side_effect=[
             ValueError("Expecting ',' delimiter: line 1 column 26319 (char 26318)"),
-            {"sections": [{"heading": "Improved", "paragraphs": []}]},
+            ({"sections": [{"heading": "Improved", "paragraphs": []}]}, MagicMock(model="test-model")),
         ]
     )
 
@@ -762,10 +762,10 @@ def test_aggregate_sections_retries_with_higher_max_tokens_on_failure(caplog):
         )
 
     assert result == [{"heading": "Improved", "paragraphs": []}]
-    assert fake_provider.complete_structured.await_count == 2
+    assert fake_provider.complete_structured_with_usage.await_count == 2
     # Second attempt must use the higher token budget
-    assert fake_provider.complete_structured.await_args_list[0].kwargs["max_tokens"] == 16000
-    assert fake_provider.complete_structured.await_args_list[1].kwargs["max_tokens"] == 24000
+    assert fake_provider.complete_structured_with_usage.await_args_list[0].kwargs["max_tokens"] == 16000
+    assert fake_provider.complete_structured_with_usage.await_args_list[1].kwargs["max_tokens"] == 24000
     # First failure should be logged
     assert any("Section aggregation attempt 1 failed" in rec.message for rec in caplog.records)
 
@@ -773,7 +773,7 @@ def test_aggregate_sections_retries_with_higher_max_tokens_on_failure(caplog):
 def test_aggregate_sections_falls_back_after_exhausted_retries(caplog):
     """After 2 failed attempts, fall back to the original sections."""
     fake_provider = MagicMock()
-    fake_provider.complete_structured = AsyncMock(
+    fake_provider.complete_structured_with_usage = AsyncMock(
         side_effect=[
             ValueError("truncated json attempt 1"),
             ValueError("truncated json attempt 2"),
@@ -796,7 +796,7 @@ def test_aggregate_sections_falls_back_after_exhausted_retries(caplog):
 
     # Must return the ORIGINAL sections, not raise
     assert result is original_sections
-    assert fake_provider.complete_structured.await_count == 2
+    assert fake_provider.complete_structured_with_usage.await_count == 2
     # Final fallback log
     assert any("Section aggregation failed after retries" in rec.message for rec in caplog.records)
 
@@ -804,7 +804,7 @@ def test_aggregate_sections_falls_back_after_exhausted_retries(caplog):
 def test_aggregate_sections_returns_empty_when_sections_empty():
     """Empty sections input skips the LLM call entirely."""
     fake_provider = MagicMock()
-    fake_provider.complete_structured = AsyncMock()
+    fake_provider.complete_structured_with_usage = AsyncMock()
 
     result = asyncio.run(
         _aggregate_sections(

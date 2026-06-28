@@ -29,6 +29,7 @@ export default function ProjectSearchPage() {
   const projectId = id ?? "";
 
   const project = useProjectsStore((s) => s.currentProject);
+  const fetchProjectPapers = useProjectsStore((s) => s.fetchProjectPapers);
   const setSelectedProjectId = useSearchStore((s) => s.setSelectedProjectId);
 
   // Bind the search store to the active project id so all store actions
@@ -165,8 +166,9 @@ export default function ProjectSearchPage() {
       }
       const saved = (result as { saved_count?: number }).saved_count ?? 0;
       toast.success(`Auto-saved ${saved} papers`);
-      // Refresh sessions list
+      // Refresh sessions list and project paper counts so tabs unlock.
       void loadSessions();
+      void fetchProjectPapers(projectId);
       clearAutoSearch();
       // Navigate to the new session (use query param — the search page
       // reads `?session=...` rather than a path segment).
@@ -278,6 +280,7 @@ export default function ProjectSearchPage() {
         return result;
       });
       toast.success("Auto-save complete");
+      void fetchProjectPapers(projectId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Auto-save failed");
     }
@@ -306,21 +309,33 @@ export default function ProjectSearchPage() {
   async function handleSave(paper: PaperResult) {
     if (!projectId) return;
     const result = await savePaper(paper, projectId);
-    if (result) toast.success("Paper saved");
-    else toast.error("Failed to save paper");
+    if (result) {
+      toast.success("Paper saved");
+      void fetchProjectPapers(projectId);
+    } else {
+      toast.error("Failed to save paper");
+    }
   }
 
   async function handleReject(paper: PaperResult, exclusionReason: string) {
     if (!projectId) return;
     const result = await rejectPaper(paper, projectId, exclusionReason);
-    if (result) toast.success("Paper rejected with reason");
-    else toast.error("Failed to reject paper");
+    if (result) {
+      toast.success("Paper rejected with reason");
+      void fetchProjectPapers(projectId);
+    } else {
+      toast.error("Failed to reject paper");
+    }
   }
 
   async function handleUnsave(paper: PaperResult) {
     const ok = await unsavePaper(paper);
-    if (ok) toast.success("Paper removed from project");
-    else toast.error("Failed to unsave");
+    if (ok) {
+      toast.success("Paper removed from project");
+      void fetchProjectPapers(projectId);
+    } else {
+      toast.error("Failed to unsave");
+    }
   }
 
   async function handleDownloadPDF(paper: PaperResult) {

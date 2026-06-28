@@ -270,7 +270,7 @@ export function ProjectsList({ projects, workflows = [], loading }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div data-tour="projects-list" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="font-ui text-[12px] text-ash">
           {projects.length} project{projects.length !== 1 ? "s" : ""}

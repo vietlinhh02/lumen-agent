@@ -55,7 +55,7 @@ export function QuickActionsRow({ projectCount }: Props) {
     projects.find((p) => p.status === "active")?.id ?? projects[0]?.id ?? null;
 
   return (
-    <div className="mb-5 animate-slide-up delay-100 sm:mb-8">
+    <div data-tour="quick-actions" className="mb-5 animate-slide-up delay-100 sm:mb-8">
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
           Quick Actions

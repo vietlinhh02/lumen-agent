@@ -186,7 +186,7 @@ class AutoSearchRequest(BaseModel):
     protocol using the LLM before kicking off the 4-phase worker.
 
     ``target_count`` is constrained to a small set of options so the UI can
-    present a simple dropdown (25 / 50 / 100).
+    present a simple dropdown (5 / 15 / 25).
     """
 
     query: str = Field(

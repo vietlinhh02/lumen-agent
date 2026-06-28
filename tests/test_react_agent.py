@@ -13,6 +13,22 @@ class MockProvider(AIProvider):
     async def complete(self, messages, system=None, max_tokens=2048):
         return self.response
 
+    async def complete_structured(self, messages, system, schema, tool_name, max_tokens=2048):
+        return {}
+
+    async def complete_structured_with_usage(self, messages, system, schema, tool_name, max_tokens=2048):
+        from unittest.mock import MagicMock
+        return {}, MagicMock()
+
+    async def embed(self, texts):
+        return []
+
+    async def stream(self, messages, system=None, max_tokens=2048):
+        yield self.response
+
+    async def stream_with_tools(self, messages, tools, system=None, max_tokens=2048):
+        yield self.response
+
 
 class TestReActAgentInit:
     """Test ReActAgent initialization."""

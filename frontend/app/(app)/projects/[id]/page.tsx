@@ -26,6 +26,7 @@ import { useGapsStore } from "@/lib/stores/gaps-store";
 import { useReportsStore } from "@/lib/stores/reports-store";
 import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
 import { formatDate, relativeTime } from "@/lib/utils";
+import { ProjectOnboardingTour } from "@/components/onboarding/ProjectOnboardingTour";
 
 interface MetricCardProps {
   href: string;
@@ -114,9 +115,11 @@ export default function ProjectOverviewPage() {
   const kmStats = kmData?.stats;
 
   return (
-    <div className="space-y-5 sm:space-y-6 animate-slide-up">
+    <div data-tour="project-welcome" className="space-y-5 sm:space-y-6 animate-slide-up">
+      <ProjectOnboardingTour />
       {/* Pipeline progress */}
       <section
+        data-tour="project-progress"
         className="rounded-[16px] bg-surface-card p-4 sm:p-6"
         style={{ border: "1px solid var(--hairline)" }}
       >
@@ -163,7 +166,7 @@ export default function ProjectOverviewPage() {
       </section>
 
       {/* Metric cards */}
-      <section>
+      <section data-tour="project-snapshot">
         <h2 className="font-ui mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-ash">
           Workspace Snapshot
         </h2>

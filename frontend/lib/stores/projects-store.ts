@@ -241,7 +241,11 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      set({ projects: get().projects.filter((p) => p.id !== id) });
+      set({
+        projects: get().projects.filter((p) => p.id !== id),
+        currentProject:
+          get().currentProject?.id === id ? null : get().currentProject,
+      });
       return true;
     } catch {
       return false;

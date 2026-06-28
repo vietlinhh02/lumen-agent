@@ -455,6 +455,23 @@ async def chat(
                    f"Remaining: {rate_limiter.get_message_remaining(user.id)}",
         )
 
+    # Check session message limit to prevent token abuse
+    from sqlalchemy import select, func
+    from app.db.models import AssistantEvent as DBAssistantEvent
+    stmt = select(func.count(DBAssistantEvent.id)).where(
+        DBAssistantEvent.session_id == session_id,
+        DBAssistantEvent.event_type == "message",
+        DBAssistantEvent.payload["role"].astext == "user"
+    )
+    result = await db.execute(stmt)
+    user_msg_count = result.scalar() or 0
+    if user_msg_count >= 30:
+        logger.warning("Session message limit exceeded for session %s (user %s)", session_id, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This chat session has reached the maximum limit of 30 messages. Please start a new chat session to continue."
+        )
+
     service = AssistantSessionService(db=db)
 
     # Track session metrics

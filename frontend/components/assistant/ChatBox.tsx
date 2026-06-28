@@ -7,21 +7,25 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
 import { ChatProjectPicker } from "./ChatProjectPicker";
-import { PaperPlaneTilt, Stop } from "@phosphor-icons/react";
+import { PaperPlaneTilt, Stop, Plus } from "@phosphor-icons/react";
 
 interface ChatBoxProps {
   onSend: (message: string) => Promise<void>;
   onStop: () => void;
+  onNewChat?: () => void;
 }
 
 /** Max message length */
 const MAX_LENGTH = 10000;
 
-export function ChatBox({ onSend, onStop }: ChatBoxProps) {
+export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
   const [message, setMessage] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useAssistantStore((s) => s.isStreaming);
+  const error = useAssistantStore((s) => s.error);
+  
+  const isLimitReached = error?.includes("maximum limit of 30 messages");
 
   // Auto-resize textarea
   useEffect(() => {
@@ -62,6 +66,7 @@ export function ChatBox({ onSend, onStop }: ChatBoxProps) {
 
   return (
     <div
+      data-tour="assistant-chatbox"
       className={`relative rounded-2xl border transition-colors ${
         isFocused ? "border-primary/50" : "border-charcoal/20"
       } bg-surface-card`}
@@ -77,9 +82,9 @@ export function ChatBox({ onSend, onStop }: ChatBoxProps) {
           onBlur={() => setIsFocused(false)}
           placeholder="Ask me anything about your research..."
           rows={1}
-          className="w-full resize-none bg-transparent px-4 py-3 font-ui text-sm text-ink placeholder:text-charcoal/50 focus:outline-none"
+          className="w-full resize-none bg-transparent px-4 py-3 font-ui text-sm text-ink placeholder:text-charcoal/50 focus:outline-none disabled:opacity-50"
           style={{ minHeight: "48px", maxHeight: "150px" }}
-          disabled={isStreaming}
+          disabled={isStreaming || isLimitReached}
         />
       </div>
 
@@ -109,12 +114,24 @@ export function ChatBox({ onSend, onStop }: ChatBoxProps) {
               Stop
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={!canSend || isOverLimit}
+            <>
+              {onNewChat && isLimitReached && (
+                <button
+                  type="button"
+                  onClick={onNewChat}
+                  title="Start a new chat"
+                  className="relative flex items-center gap-1.5 h-9 px-3 justify-center rounded-xl bg-primary text-white transition-all hover:bg-primary/90 hover:scale-105 shadow-md shadow-primary/20 animate-bounce"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span className="font-ui text-sm font-medium">New Chat</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+              disabled={!canSend || isOverLimit || isLimitReached}
               className={`flex items-center gap-2 rounded-xl px-4 py-2 font-ui text-sm font-medium transition-all ${
-                canSend && !isOverLimit
+                canSend && !isOverLimit && !isLimitReached
                   ? "bg-primary text-white hover:bg-primary/90"
                   : "bg-charcoal/20 text-charcoal/50 cursor-not-allowed"
               }`}
@@ -122,6 +139,7 @@ export function ChatBox({ onSend, onStop }: ChatBoxProps) {
               <PaperPlaneTilt size={16} weight="fill" />
               Send
             </button>
+            </>
           )}
         </div>
       </div>

@@ -9,6 +9,8 @@
  * chat body can scroll, not the page itself.
  */
 
+import { AssistantOnboardingTour } from "@/components/onboarding/AssistantOnboardingTour";
+
 export default function AssistantLayout({
   children,
 }: {
@@ -19,6 +21,7 @@ export default function AssistantLayout({
       className="fixed inset-x-0 top-[60px] bottom-0 xl:left-[56px] overflow-hidden bg-canvas"
       style={{ zIndex: 1 }}
     >
+      <AssistantOnboardingTour />
       {children}
     </div>
   );

@@ -4,8 +4,8 @@ from app.schemas.paper import AutoSearchRequest, AutoSearchResponse
 
 
 def test_auto_search_request_validates_target_count():
-    """Only 25, 50, 100 are accepted. Others raise validation error."""
-    for n in (25, 50, 100):
+    """Only 5, 15, 25 are accepted. Others raise validation error."""
+    for n in (5, 15, 25):
         r = AutoSearchRequest(query="RAG medical QA", target_count=n)
         assert r.target_count == n
 
@@ -13,7 +13,7 @@ def test_auto_search_request_validates_target_count():
     import pytest
     from pydantic import ValidationError
 
-    for n in (5, 75, 150, 200):
+    for n in (10, 50, 75, 150, 200):
         with pytest.raises(ValidationError):
             AutoSearchRequest(query="RAG medical QA", target_count=n)
 
@@ -25,14 +25,14 @@ def test_auto_search_request_validates_query_length():
     import pytest
 
     # Empty / short queries are allowed
-    AutoSearchRequest(query="", target_count=50)
-    AutoSearchRequest(query="x", target_count=50)
+    AutoSearchRequest(query="", target_count=25)
+    AutoSearchRequest(query="x", target_count=25)
 
     # Too long queries are still rejected
     with pytest.raises(ValidationError):
-        AutoSearchRequest(query="x" * 501, target_count=50)  # too long
+        AutoSearchRequest(query="x" * 501, target_count=25)  # too long
 
 
 def test_auto_search_response_defaults():
-    r = AutoSearchResponse(job_id="j", session_id="s", target_count=50, status="running")
+    r = AutoSearchResponse(job_id="j", session_id="s", target_count=25, status="running")
     assert r.status == "running"

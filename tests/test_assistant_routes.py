@@ -46,6 +46,20 @@ class MockProject:
         self.research_question = None
 
 
+class MockResult:
+    def scalar(self):
+        return 0
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+    def first(self):
+        return None
+
+
 class MockSession:
     """Mock database session."""
 
@@ -66,8 +80,7 @@ class MockSession:
         self._deleted = True
 
     async def execute(self, query):
-        result = MagicMock()
-        return result
+        return MockResult()
 
 
 class MockAssistantSession:

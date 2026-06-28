@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/stores/auth-store";
 import { useProjectsStore } from "@/lib/stores/projects-store";
 import type { ProjectResponse } from "@/lib/types";
 import { relativeTime } from "@/lib/utils";
+import { ProjectsListOnboardingTour } from "@/components/onboarding/ProjectsListOnboardingTour";
 
 function paperLabel(count: number) {
   if (count === 0) return "No papers";
@@ -115,7 +116,8 @@ export default function ProjectsPage() {
   const archivedCount = projects.filter((p) => p.status === "archived").length;
 
   return (
-    <div className="animate-fade-in">
+    <div data-tour="projects-list-welcome" className="animate-fade-in">
+      <ProjectsListOnboardingTour />
       <div className="mb-10">
         <div className="flex items-end justify-between">
           <div>
@@ -131,6 +133,7 @@ export default function ProjectsPage() {
           </div>
 
           <button
+            data-tour="projects-list-new"
             onClick={() => router.push("/projects/new")}
             className="focus-ring font-ui inline-flex items-center gap-2 h-[44px] rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95"
           >
@@ -170,7 +173,7 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <>
-          <div className="mb-6 flex items-center gap-1">
+          <div data-tour="projects-list-filter" className="mb-6 flex items-center gap-1">
             {[
               { key: "all", label: "All", count: projects.length },
               { key: "active", label: "Active", count: activeCount },
