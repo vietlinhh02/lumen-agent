@@ -12,13 +12,18 @@ settings = get_settings()
 db_url = settings.database_url
 try:
     parsed = urlparse(db_url)
-    if parsed.hostname and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-        # Force IPv4 resolution to prevent asyncpg from attempting IPv6
-        # and hanging for 5s on misconfigured Docker/Coolify DNS networks
-        ipv4 = socket.gethostbyname(parsed.hostname)
-        netloc = parsed.netloc.replace(parsed.hostname, ipv4)
-        parsed = parsed._replace(netloc=netloc)
-        db_url = urlunparse(parsed)
+    if parsed.hostname:
+        if parsed.hostname == "localhost":
+            ipv4 = "127.0.0.1"
+        elif parsed.hostname not in ("127.0.0.1", "::1"):
+            ipv4 = socket.gethostbyname(parsed.hostname)
+        else:
+            ipv4 = parsed.hostname
+            
+        if ipv4 != parsed.hostname:
+            netloc = parsed.netloc.replace(parsed.hostname, ipv4)
+            parsed = parsed._replace(netloc=netloc)
+            db_url = urlunparse(parsed)
 except Exception:
     pass
 
