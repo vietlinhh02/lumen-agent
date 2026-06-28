@@ -44,12 +44,12 @@ class User(Base):
     )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    projects: Mapped[list["Project"]] = relationship(back_populates="owner", lazy="selectin")
+    projects: Mapped[list["Project"]] = relationship(back_populates="owner")
     reports: Mapped[list["ReviewReport"]] = relationship(
-        back_populates="created_by_user", lazy="selectin"
+        back_populates="created_by_user"
     )
     assistant_sessions: Mapped[list["AssistantSession"]] = relationship(
-        back_populates="user", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="user", cascade="all, delete-orphan"
     )
 
     __table_args__ = (CheckConstraint("role IN ('researcher', 'admin')", name="ck_users_role"),)
@@ -83,34 +83,34 @@ class Project(Base):
 
     owner: Mapped["User"] = relationship(back_populates="projects")
     project_papers: Mapped[list["ProjectPaper"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     matrix_rows: Mapped[list["LiteratureMatrixRow"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     gaps: Mapped[list["ResearchGap"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     reports: Mapped[list["ReviewReport"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     agent_runs: Mapped[list["AgentRun"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     retrieval_audits: Mapped[list["RetrievalAudit"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     search_runs: Mapped[list["SearchRun"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     conflicting_findings: Mapped[list["ConflictingFinding"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     assistant_sessions: Mapped[list["AssistantSession"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
     claims: Mapped[list["Claim"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -152,7 +152,7 @@ class Paper(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     project_papers: Mapped[list["ProjectPaper"]] = relationship(
-        back_populates="paper", lazy="selectin"
+        back_populates="paper"
     )
 
     __table_args__ = (
@@ -223,7 +223,7 @@ class SearchRun(Base):
 
     project: Mapped["Project"] = relationship(back_populates="search_runs")
     queries: Mapped[list["SearchQuery"]] = relationship(
-        back_populates="search_run", lazy="selectin"
+        back_populates="search_run"
     )
 
     __table_args__ = (
@@ -296,22 +296,22 @@ class ProjectPaper(Base):
     project: Mapped["Project"] = relationship(back_populates="project_papers")
     paper: Mapped["Paper"] = relationship(back_populates="project_papers")
     enrichments: Mapped[list["PaperEnrichment"]] = relationship(
-        back_populates="project_paper", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project_paper", cascade="all, delete-orphan"
     )
     facets: Mapped[list["PaperFacet"]] = relationship(
-        back_populates="project_paper", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project_paper", cascade="all, delete-orphan"
     )
     matrix_row: Mapped["LiteratureMatrixRow | None"] = relationship(
         back_populates="project_paper", uselist=False, cascade="all, delete-orphan"
     )
     gap_evidence_entries: Mapped[list["GapEvidence"]] = relationship(
-        back_populates="project_paper", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project_paper", cascade="all, delete-orphan"
     )
     citations: Mapped[list["ReviewCitation"]] = relationship(
-        back_populates="project_paper", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project_paper", cascade="all, delete-orphan"
     )
     chunks: Mapped[list["PaperChunk"]] = relationship(
-        back_populates="project_paper", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="project_paper", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -524,7 +524,7 @@ class ResearchGap(Base):
 
     project: Mapped["Project"] = relationship(back_populates="gaps")
     evidence_entries: Mapped[list["GapEvidence"]] = relationship(
-        back_populates="gap", lazy="selectin"
+        back_populates="gap"
     )
 
     __table_args__ = (
@@ -614,7 +614,6 @@ class ConflictingFinding(Base):
     evidence_chunks: Mapped[list["ConflictingFindingChunk"]] = relationship(
         back_populates="conflict",
         cascade="all, delete-orphan",
-        lazy="selectin",
     )
 
     __table_args__ = (
@@ -695,7 +694,7 @@ class ReviewReport(Base):
     project: Mapped["Project"] = relationship(back_populates="reports")
     created_by_user: Mapped["User"] = relationship(back_populates="reports")
     citations: Mapped[list["ReviewCitation"]] = relationship(
-        back_populates="report", lazy="selectin"
+        back_populates="report"
     )
 
     __table_args__ = (
@@ -766,7 +765,7 @@ class AgentRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="agent_runs")
-    steps: Mapped[list["AgentStep"]] = relationship(back_populates="agent_run", lazy="selectin")
+    steps: Mapped[list["AgentStep"]] = relationship(back_populates="agent_run")
 
     __table_args__ = (
         CheckConstraint(
@@ -1015,13 +1014,11 @@ class AssistantSession(Base):
     project: Mapped["Project | None"] = relationship(back_populates="assistant_sessions")
     messages: Mapped[list["AssistantMessage"]] = relationship(
         back_populates="session",
-        lazy="selectin",
         cascade="all, delete-orphan",
         order_by="AssistantMessage.created_at",
     )
     events: Mapped[list["AssistantEvent"]] = relationship(
         back_populates="session",
-        lazy="selectin",
         cascade="all, delete-orphan",
         order_by="AssistantEvent.created_at",
     )
@@ -1210,7 +1207,7 @@ class Claim(Base):
 
     project: Mapped["Project"] = relationship(back_populates="claims")
     evidence_entries: Mapped[list["ClaimEvidence"]] = relationship(
-        back_populates="claim", lazy="selectin", cascade="all, delete-orphan"
+        back_populates="claim", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
