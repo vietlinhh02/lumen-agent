@@ -254,9 +254,9 @@ function MessageBubble({
 }) {
   const isUser = event.role === "user";
   const displayName = isUser ? userName : "Lumen AI";
-  const avatarSeed = isUser ? userName : "lumen-assistant";
-  const avatarStyle = isUser ? "thumbs" : "bottts-neutral";
-  const avatarUrl = `https://api.dicebear.com/7.x/${avatarStyle}/svg?seed=${encodeURIComponent(avatarSeed)}`;
+  const avatarSeed = isUser ? userName : "Nexus";
+  const avatarStyle = isUser ? "thumbs" : "bottts";
+  const avatarUrl = `https://api.dicebear.com/7.x/${avatarStyle}/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=transparent`;
 
   const parsed = !isUser ? parseAssistantMessage(event.content) : null;
   

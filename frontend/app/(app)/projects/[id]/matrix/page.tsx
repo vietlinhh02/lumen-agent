@@ -307,7 +307,7 @@ export default function ProjectMatrixPage() {
       style={{ marginRight: evidence.open ? 496 : 0 }}
     >
       {/* ── Compact toolbar ──────────────────────────────────────────── */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           <h2
             className="font-display text-[20px] sm:text-[22px] font-bold leading-[1.1] text-ink"

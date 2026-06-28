@@ -1,0 +1,654 @@
+react-doctor v0.2.14
+
+✔ Select projects › frontend
+  
+
+  ✗ react-doctor/effect-needs-cleanup                          ×2
+      useEffect subscribes via `on(...)` but never returns a cleanup — leaks the registration on every re-run and on unmount. Return a cleanup function that calls the matching remove/unsubscribe call
+      → Return a cleanup function that releases the subscription / timer: `return () => target.removeEventListener(name, handler)` for listeners, `return () => clearInterval(id)` / `clearTimeout(id)` for timers, or `return unsubscribe` if the subscribe call already returned one
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/effect-needs-cleanup.md
+      components/knowledge-map/KnowledgeGraph.tsx:141
+      app/page.tsx:20
+
+  ⚠ react-doctor/button-has-type                               ×83
+      `<button>` elements must have an explicit `type` attribute.
+      → Set `type="button"` (or `"submit"` / `"reset"`) explicitly on every `<button>`.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/button-has-type.md
+      components/evidence/EvidenceDrawer.tsx:82
+      components/evidence/EvidenceDrawer.tsx:243
+      components/ManualDownloadModal.tsx:51
+      app/(app)/projects/[id]/matrix/page.tsx:339
+      components/reports/CitationPdfModal.tsx:104
+      components/gaps/ConflictCard.tsx:20
+      components/gaps/ConflictCard.tsx:50
+      components/gaps/ConflictCard.tsx:64
+      components/assistant/DeleteSessionModal.tsx:76
+      components/assistant/DeleteSessionModal.tsx:83
+      app/(app)/projects/page.tsx:135
+      app/(app)/projects/page.tsx:166
+      app/(app)/projects/page.tsx:182
+      components/matrix/MatrixTable.tsx:150
+      components/matrix/MatrixTable.tsx:162
+      components/matrix/MatrixTable.tsx:171
+      components/matrix/MatrixTable.tsx:179
+      components/PaperCard.tsx:69
+      components/PaperCard.tsx:147
+      components/PaperCard.tsx:155
+      app/(app)/settings/page.tsx:36
+      app/(app)/settings/page.tsx:45
+      app/(app)/settings/page.tsx:55
+      components/reports/ReportContent.tsx:317
+      components/reports/ReportToolbar.tsx:43
+      components/reports/ReportToolbar.tsx:79
+      components/reports/ReportToolbar.tsx:93
+      components/reports/ReportToolbar.tsx:152
+      components/reports/ReportToolbar.tsx:166
+      components/reports/ReportList.tsx:28
+      components/reports/ReportList.tsx:57
+      components/reports/ReportList.tsx:92
+      app/(app)/projects/[id]/gaps/page.tsx:220
+      app/(app)/projects/[id]/gaps/page.tsx:228
+      app/(app)/projects/[id]/gaps/page.tsx:298
+      app/(app)/projects/[id]/gaps/page.tsx:310
+      app/(app)/projects/[id]/gaps/page.tsx:367
+      app/(app)/projects/[id]/gaps/page.tsx:379
+      app/(app)/projects/[id]/search/page.tsx:416
+      app/(app)/projects/[id]/search/page.tsx:428
+      app/(app)/projects/[id]/search/page.tsx:442
+      app/(app)/projects/[id]/search/page.tsx:462
+      app/(app)/projects/[id]/search/page.tsx:469
+      app/(app)/projects/[id]/search/page.tsx:481
+      app/(app)/projects/[id]/search/page.tsx:520
+      app/(app)/projects/[id]/search/page.tsx:526
+      components/papers/index.tsx:115
+      components/FullTextPanel.tsx:186
+      components/FullTextPanel.tsx:236
+      components/FullTextPanel.tsx:277
+      components/knowledge-map/NodeDetailPanel.tsx:111
+      components/knowledge-map/NodeDetailPanel.tsx:349
+      components/DeleteProjectModal.tsx:66
+      components/DeleteProjectModal.tsx:73
+      components/assistant/ToolPanel.tsx:49
+      components/assistant/ToolPanel.tsx:118
+      components/knowledge-map/GraphToolbar.tsx:54
+      components/knowledge-map/GraphToolbar.tsx:69
+      components/knowledge-map/GraphToolbar.tsx:89
+      app/(app)/projects/[id]/papers/page.tsx:198
+      app/(app)/projects/[id]/papers/page.tsx:230
+      components/EditProjectModal.tsx:83
+      components/matrix/MatrixEmptyState.tsx:57
+      components/UploadPaperModal.tsx:288
+      components/UploadPaperModal.tsx:352
+      components/gaps/GapCard.tsx:41
+      components/gaps/GapCard.tsx:70
+      app/(app)/assistant/page.tsx:72
+      components/settings/index.tsx:114
+      components/settings/index.tsx:211
+      components/settings/index.tsx:251
+      components/settings/index.tsx:262
+      components/search/PaperCard.tsx:178
+      components/search/PaperCard.tsx:194
+      components/search/PaperCard.tsx:221
+      components/search/PaperCard.tsx:228
+      components/search/PaperCard.tsx:234
+      components/search/PaperCard.tsx:271
+      components/search/PaperCard.tsx:278
+      components/search/PaperCard.tsx:285
+      components/search/Pagination.tsx:19
+      components/search/Pagination.tsx:28
+      components/search/Pagination.tsx:38
+
+  ⚠ react-doctor/design-no-redundant-size-axes                 ×56
+      w-3 h-3 → use the shorthand size-3 (Tailwind v3.4+)
+      → Collapse `w-N h-N` to `size-N` (Tailwind v3.4+) when both axes match
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/design-no-redundant-size-axes.md
+      components/search/AutoSearchProgress.tsx:110
+      components/evidence/EvidenceDrawer.tsx:84
+      components/ManualDownloadModal.tsx:53
+      components/reports/CitationPdfModal.tsx:74
+      components/reports/CitationPdfModal.tsx:92
+      components/reports/CitationPdfModal.tsx:100
+      components/reports/CitationPdfModal.tsx:107
+      components/assistant/DeleteSessionModal.tsx:61
+      components/assistant/DeleteSessionModal.tsx:90
+      app/(app)/projects/page.tsx:154
+      components/dashboard/ProjectsList.tsx:258
+      components/AppShell.tsx:142
+      components/AppShell.tsx:236
+      components/AppShell.tsx:433
+      components/AppShell.tsx:523
+      components/landing/WorkflowSteps.tsx:210
+      components/matrix/MatrixTable.tsx:164
+      components/matrix/MatrixTable.tsx:173
+      components/matrix/MatrixTable.tsx:181
+      app/(app)/projects/new/page.tsx:123
+      components/PaperCard.tsx:160
+      components/matrix/TypedCell.tsx:82
+      components/matrix/TypedCell.tsx:90
+      components/matrix/TypedCell.tsx:185
+      app/(app)/assistant/sessions/[id]/page.tsx:259
+      app/(app)/assistant/sessions/[id]/page.tsx:309
+      components/reports/ReportToolbar.tsx:81
+      app/(app)/projects/[id]/map/page.tsx:122
+      components/reports/ReportList.tsx:34
+      components/LoginGuard.tsx:28
+      app/(app)/projects/[id]/gaps/page.tsx:304
+      app/(app)/projects/[id]/gaps/page.tsx:373
+      components/papers/index.tsx:121
+      components/FullTextPanel.tsx:188
+      app/(app)/projects/[id]/schema/page.tsx:514
+      app/(app)/projects/[id]/schema/page.tsx:523
+      app/(app)/projects/[id]/schema/page.tsx:532
+      app/(app)/projects/[id]/schema/page.tsx:559
+      components/knowledge-map/NodeDetailPanel.tsx:118
+      components/knowledge-map/NodeDetailPanel.tsx:278
+      components/dashboard/QuickActionsRow.tsx:78
+      components/dashboard/ContinueWorkingHero.tsx:108
+      components/assistant/ToolPanel.tsx:120
+      components/knowledge-map/GraphToolbar.tsx:79
+      components/assistant/ThoughtBubble.tsx:163
+      components/EditProjectModal.tsx:85
+      app/(auth)/layout.tsx:24
+      components/matrix/MatrixEmptyState.tsx:25
+      components/matrix/MatrixEmptyState.tsx:44
+      components/UploadPaperModal.tsx:290
+      app/(app)/layout.tsx:40
+      components/gaps/GapCard.tsx:43
+      app/(app)/assistant/page.tsx:49
+      app/(app)/assistant/page.tsx:60
+      components/search/Pagination.tsx:22
+      components/search/Pagination.tsx:41
+
+  ⚠ react-doctor/control-has-associated-label                  ×26
+      A control must be associated with a text label — add visible text, `aria-label`, or `aria-labelledby`.
+      → Every interactive control must have an accessible label.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/control-has-associated-label.md
+      components/evidence/EvidenceDrawer.tsx:256
+      components/ManualDownloadModal.tsx:65
+      components/matrix/TypedCell.tsx:192
+      components/matrix/TypedCell.tsx:244
+      components/reports/ReportToolbar.tsx:70
+      components/reports/ReportToolbar.tsx:113
+      app/(app)/projects/[id]/search/page.tsx:455
+      components/papers/index.tsx:42
+      app/(app)/projects/[id]/schema/page.tsx:447
+      app/(app)/projects/[id]/schema/page.tsx:466
+      app/(app)/projects/[id]/schema/page.tsx:544
+      app/(app)/projects/[id]/schema/page.tsx:570
+      components/assistant/ChatBox.tsx:76
+      components/knowledge-map/GraphToolbar.tsx:106
+      components/matrix/EditableCell.tsx:46
+      components/UploadPaperModal.tsx:302
+      components/UploadPaperModal.tsx:449
+      components/UploadPaperModal.tsx:458
+      components/UploadPaperModal.tsx:467
+      components/UploadPaperModal.tsx:477
+      components/UploadPaperModal.tsx:485
+      components/dashboard/GlobalSearchBar.tsx:28
+      components/settings/index.tsx:74
+      components/settings/index.tsx:133
+      components/settings/index.tsx:137
+      components/settings/index.tsx:141
+
+  ⚠ deslop/unused-export                                       ×19
+      Unused export: `ProjectSelector`
+      → Drop the `export` keyword (or remove the declaration) if no other module uses this symbol.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/deslop/unused-export.md
+      components/ProjectSelector.tsx:15
+      components/assistant/ThoughtBubble.tsx:97
+      components/assistant/ThoughtBubble.tsx:147
+      components/dashboard/WorkflowPipeline.tsx:28
+      components/dashboard/WorkflowPipeline.tsx:39
+      components/dashboard/WorkflowPipeline.tsx:48
+      components/matrix/MatrixTable.tsx:247
+      components/search/PaperCard.tsx:48
+      lib/api/extraction-schema.ts:75
+      lib/api/extraction-schema.ts:90
+      lib/jwt.ts:18
+      lib/markdown.ts:14
+      lib/stores/assistant-store.ts:916
+      lib/stores/assistant-store.ts:927
+      lib/stores/assistant-store.ts:971
+      lib/stores/assistant-store.ts:985
+      lib/stores/projects-store.ts:313
+      lib/utils.ts:11
+      lib/utils.ts:45
+
+  ⚠ react-doctor/exhaustive-deps                               ×18
+      React Hook `useEffect` is missing dependency `fetchPapers` — list it in the dependency array, or call the hook unconditionally.
+      → Don't blindly add missing dependencies. Read the hook callback first.
+      
+      Bad:
+      useEffect(() => {
+        setCount(count + 1);
+      }, [count]);
+      
+      Better:
+      useEffect(() => {
+        setCount((currentCount) => currentCount + 1);
+      }, []);
+      
+      If the missing value is recreated every render, move it inside the hook or stabilize it before adding it to deps.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/exhaustive-deps.md
+      app/(app)/papers/page.tsx:31
+      components/knowledge-map/KnowledgeGraph.tsx:141
+      components/knowledge-map/KnowledgeGraph.tsx:367
+      app/(app)/projects/[id]/matrix/page.tsx:109
+      app/(app)/projects/page.tsx:108
+      app/(app)/settings/page.tsx:23
+      app/(app)/projects/[id]/reports/page.tsx:54
+      app/(app)/projects/[id]/reports/page.tsx:61
+      app/(app)/projects/[id]/map/page.tsx:48
+      app/(app)/projects/[id]/gaps/page.tsx:172
+      app/(app)/projects/[id]/search/page.tsx:183
+      app/(app)/projects/[id]/search/page.tsx:205
+      app/(app)/projects/[id]/search/page.tsx:211
+      app/(app)/projects/[id]/papers/page.tsx:36
+      app/(app)/projects/[id]/papers/page.tsx:49
+      components/UploadPaperModal.tsx:210
+      components/ui/CustomSelect.tsx:161
+      components/settings/index.tsx:161
+
+  ⚠ react-doctor/no-array-index-as-key                         ×17
+      Array index "i" used as key — causes bugs when list is reordered or filtered
+      → Use a stable unique identifier: `key={item.id}` or `key={item.slug}` — index keys break on reorder/filter
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-array-index-as-key.md
+      components/landing/Features.tsx:126
+      components/landing/Features.tsx:152
+      components/landing/TextReveal.tsx:48
+      components/dashboard/ActivityFeed.tsx:115
+      app/(app)/projects/[id]/search/page.tsx:428
+      components/FullTextPanel.tsx:205
+      components/FullTextPanel.tsx:232
+      components/FullTextPanel.tsx:273
+      components/landing/PainPoints.tsx:98
+      components/assistant/ToolPanel.tsx:173
+      components/assistant/ToolPanel.tsx:292
+      components/assistant/ToolPanel.tsx:432
+      components/assistant/ToolPanel.tsx:467
+      app/(app)/projects/[id]/audit/page.tsx:447
+      components/search/MathText.tsx:52
+      components/search/MathText.tsx:71
+      components/search/LanguageAudit.tsx:38
+
+  ⚠ react-doctor/no-array-index-key                            ×16
+      Array index in `key` doesn't uniquely identify the element — re-renders may use stale state.
+      → Use a stable, data-derived `key` instead of the array index.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-array-index-key.md
+      components/landing/Features.tsx:126
+      components/landing/Features.tsx:152
+      components/dashboard/ActivityFeed.tsx:115
+      app/(app)/projects/[id]/search/page.tsx:428
+      components/FullTextPanel.tsx:205
+      components/FullTextPanel.tsx:232
+      components/FullTextPanel.tsx:273
+      components/FullTextPanel.tsx:305
+      components/landing/PainPoints.tsx:98
+      components/assistant/ToolPanel.tsx:173
+      components/assistant/ToolPanel.tsx:292
+      components/assistant/ToolPanel.tsx:432
+      components/assistant/ToolPanel.tsx:467
+      components/search/MathText.tsx:52
+      components/search/MathText.tsx:71
+      components/search/LanguageAudit.tsx:38
+
+  ⚠ react-doctor/click-events-have-key-events                  ×10
+      Visible non-interactive elements with click handlers must have a corresponding keyboard listener (`onKeyUp`, `onKeyDown`, or `onKeyPress`).
+      → Pair `onClick` with `onKeyUp` / `onKeyDown` / `onKeyPress` for keyboard users.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/click-events-have-key-events.md
+      components/ManualDownloadModal.tsx:35
+      components/reports/CitationPdfModal.tsx:55
+      components/assistant/DeleteSessionModal.tsx:49
+      components/matrix/TypedCell.tsx:41
+      components/FullTextPanel.tsx:145
+      components/DeleteProjectModal.tsx:46
+      components/EditProjectModal.tsx:67
+      components/matrix/EditableCell.tsx:59
+      components/UploadPaperModal.tsx:270
+      components/UploadPaperModal.tsx:314
+
+  ⚠ react-doctor/no-static-element-interactions                ×10
+      Static HTML elements with event handlers require a role — add `role="…"` or use a semantic HTML element instead.
+      → Static HTML elements with event handlers require a role, or use a semantic HTML element instead.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-static-element-interactions.md
+      components/ManualDownloadModal.tsx:35
+      components/assistant/DeleteSessionModal.tsx:49
+      components/matrix/TypedCell.tsx:41
+      components/matrix/TypedCell.tsx:54
+      components/FullTextPanel.tsx:145
+      components/DeleteProjectModal.tsx:46
+      components/EditProjectModal.tsx:67
+      components/matrix/EditableCell.tsx:59
+      components/UploadPaperModal.tsx:270
+      components/UploadPaperModal.tsx:314
+
+  ⚠ react-doctor/label-has-associated-control                  ×10
+      A form label must be associated with a control — use `htmlFor` or nest the input.
+      → Associate every label with a control via `htmlFor` or by nesting the input.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/label-has-associated-control.md
+      app/(app)/projects/[id]/schema/page.tsx:444
+      app/(app)/projects/[id]/schema/page.tsx:463
+      app/(app)/projects/[id]/schema/page.tsx:485
+      app/(app)/projects/[id]/schema/page.tsx:541
+      app/(app)/projects/[id]/schema/page.tsx:567
+      components/EditProjectModal.tsx:138
+      components/settings/index.tsx:71
+      components/settings/index.tsx:132
+      components/settings/index.tsx:136
+      components/settings/index.tsx:140
+
+  ⚠ react-doctor/no-render-in-render                           ×8
+      Inline render function "renderDisplay()" — extract to a separate component for proper reconciliation
+      → Extract to a named component: `const ListItem = ({ item }) => <div>{item.name}</div>`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-render-in-render.md
+      components/matrix/TypedCell.tsx:48
+      components/matrix/TypedCell.tsx:74
+      components/papers/index.tsx:92
+      components/papers/index.tsx:96
+      components/papers/index.tsx:100
+      components/assistant/ToolPanel.tsx:127
+      components/assistant/ToolPanel.tsx:131
+      components/ui/CustomSelect.tsx:356
+
+  ⚠ react-doctor/prefer-useReducer                             ×7
+      Component "NewProjectPage" has 6 useState calls — consider useReducer for related state
+      → Group related state: `const [state, dispatch] = useReducer(reducer, { field1, field2, ... })`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/prefer-useReducer.md
+      app/(app)/projects/new/page.tsx:19
+      app/(app)/projects/[id]/schema/page.tsx:76
+      app/(app)/projects/[id]/papers/page.tsx:16
+      components/EditProjectModal.tsx:19
+      app/(app)/projects/[id]/protocol/page.tsx:70
+      components/UploadPaperModal.tsx:60
+      components/settings/index.tsx:11
+
+  ⚠ react-doctor/no-autofocus                                  ×6
+      `autoFocus` should not be used — it disrupts users who expect the page focus to remain at the top of the document on load.
+      → Don't use `autoFocus` — it disorients users.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-autofocus.md
+      components/matrix/TypedCell.tsx:182
+      components/matrix/TypedCell.tsx:194
+      components/matrix/TypedCell.tsx:217
+      components/matrix/TypedCell.tsx:245
+      components/matrix/TypedCell.tsx:277
+      components/reports/ReportToolbar.tsx:118
+
+  ⚠ react-doctor/rerender-lazy-state-init                      ×6
+      useState(join()) calls initializer on every render — use useState(() => join()) for lazy initialization
+      → Wrap in an arrow function so it only runs once: `useState(() => expensiveComputation())`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/rerender-lazy-state-init.md
+      app/(app)/projects/[id]/schema/page.tsx:420
+      app/(app)/projects/[id]/protocol/page.tsx:80
+      app/(app)/projects/[id]/protocol/page.tsx:83
+      app/(app)/projects/[id]/protocol/page.tsx:86
+      app/(app)/projects/[id]/protocol/page.tsx:95
+      components/settings/index.tsx:285
+
+  ⚠ react-doctor/prefer-tag-over-role                          ×5
+      Prefer the semantic `<dialog>` element over `role="dialog"` on a generic tag.
+      → Replace `role` with the semantic HTML element when one exists.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/prefer-tag-over-role.md
+      components/evidence/EvidenceDrawer.tsx:68
+      components/reports/CitationPdfModal.tsx:57
+      components/dashboard/ProjectsList.tsx:286
+      components/gaps/GapCard.tsx:22
+      components/ui/CustomSelect.tsx:240
+
+  ⚠ react-doctor/no-giant-component                            ×5
+      Component "ProjectMatrixPage" is 362 lines — consider breaking it into smaller focused components
+      → Extract logical sections into focused components: `<UserHeader />`, `<UserActions />`, etc.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-giant-component.md
+      app/(app)/projects/[id]/matrix/page.tsx:34
+      app/(app)/assistant/sessions/[id]/page.tsx:34
+      app/(app)/projects/[id]/search/page.tsx:24
+      app/(app)/projects/[id]/schema/page.tsx:76
+      components/UploadPaperModal.tsx:50
+
+  ⚠ react-doctor/nextjs-no-client-side-redirect                ×5
+      router.replace() in useEffect — use redirect() from next/navigation or handle navigation in an event handler
+      → Avoid redirects inside useEffect. Use an event handler, middleware, or server-side redirect (App Router: redirect() from next/navigation; Pages Router: getServerSideProps redirect)
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/nextjs-no-client-side-redirect.md
+      components/LoginGuard.tsx:21
+      app/(app)/projects/[id]/search/page.tsx:176
+      app/(auth)/layout.tsx:17
+      app/(app)/layout.tsx:27
+      app/(app)/assistant/page.tsx:33
+
+  ⚠ react-doctor/js-flatmap-filter                             ×5
+      .map().filter(Boolean) iterates twice — use .flatMap() to transform and filter in a single pass
+      → Use `.flatMap(item => condition ? [value] : [])` — transforms and filters in a single pass instead of creating an intermediate array
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/js-flatmap-filter.md
+      components/FullTextPanel.tsx:88
+      app/(app)/projects/[id]/schema/page.tsx:574
+      components/knowledge-map/NodeDetailPanel.tsx:43
+      app/(app)/projects/[id]/protocol/page.tsx:25
+      components/UploadPaperModal.tsx:229
+
+  ⚠ deslop/unused-file                                         ×5
+      Unused file — not reachable from any entry point
+      → Delete the file if it is truly unreachable, or import it from an entry point.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/deslop/unused-file.md
+      components/LoginGuard.tsx
+      components/dashboard/GlobalSearchBar.tsx
+      components/landing/TextReveal.tsx
+      components/ui/CustomSelect.tsx
+      components/ui/button.tsx
+
+  ⚠ react-doctor/no-derived-useState                           ×4
+      useState initialized from prop "value" — if this value should stay in sync with the prop, derive it during render instead
+      → Remove useState and compute the value inline: `const value = transform(propName)`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-derived-useState.md
+      components/matrix/TypedCell.tsx:33
+      components/EditProjectModal.tsx:20
+      components/EditProjectModal.tsx:21
+      components/EditProjectModal.tsx:23
+
+  ⚠ react-doctor/design-no-em-dash-in-jsx-text                 ×4
+      Em dash (—) in JSX text reads as model output — replace with comma, colon, semicolon, or parentheses
+      → Replace em dashes in JSX prose with commas, colons, semicolons, or parentheses so UI copy reads less like generated text.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/design-no-em-dash-in-jsx-text.md
+      components/matrix/TypedCell.tsx:222
+      components/papers/index.tsx:124
+      components/UploadPaperModal.tsx:402
+      app/(app)/assistant/page.tsx:67
+
+  ⚠ react-doctor/only-export-components                        ×4
+      Fast refresh only works when a file only exports components. Move non-component exports to a separate file.
+      → Move non-component exports out of files that export components.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/only-export-components.md
+      components/dashboard/WorkflowPipeline.tsx:28
+      components/dashboard/WorkflowPipeline.tsx:39
+      components/dashboard/WorkflowPipeline.tsx:48
+      components/ui/button.tsx:58
+
+  ⚠ react-doctor/no-multi-comp                                 ×4
+      Declare only one React component per file. Found extra component: ThoughtIndicator.
+      → Move secondary components into their own files.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-multi-comp.md
+      components/assistant/ThoughtBubble.tsx:97
+      components/assistant/ThoughtBubble.tsx:147
+      components/search/PaperCard.tsx:71
+      components/search/PaperCard.tsx:299
+
+  ⚠ react-doctor/prefer-use-effect-event                       ×3
+      "onClose" is read only inside `addEventListener` — wrap it with useEffectEvent and remove it from the dep array so the effect doesn't re-synchronize on every parent render
+      → Wrap the callback with `useEffectEvent(callback)` (React 19+) and call the resulting binding from inside the sub-handler. The Effect Event captures the latest props/state without being a reactive dep, so the effect doesn't re-subscribe on every parent render. See https://react.dev/reference/react/useEffectEvent
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/prefer-use-effect-event.md
+      components/evidence/EvidenceDrawer.tsx:60
+      components/reports/CitationPdfModal.tsx:45
+      components/UploadPaperModal.tsx:83
+
+  ⚠ react-doctor/prefer-module-scope-pure-function             ×3
+      `handleSend` inside `AssistantSessionPage` doesn't close over any local state. Move it to module scope so it isn't reallocated every render and the component file stays focused on rendering logic.
+      → Move the function to module scope (above the component). It doesn't reference any local state, so the per-render allocation is wasted.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/prefer-module-scope-pure-function.md
+      app/(app)/assistant/sessions/[id]/page.tsx:179
+      app/(app)/assistant/sessions/[id]/page.tsx:185
+      app/(app)/projects/[id]/audit/page.tsx:697
+
+  ⚠ react-doctor/design-no-three-period-ellipsis               ×3
+      Three-period ellipsis ("...") in JSX text — use the actual ellipsis character "…" (or `&hellip;`)
+      → Use the typographic ellipsis "…" (or `&hellip;`) instead of three periods — pairs with action-with-followup labels ("Rename…", "Loading…")
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/design-no-three-period-ellipsis.md
+      app/(app)/assistant/sessions/[id]/page.tsx:309
+      app/(app)/assistant/page.tsx:50
+      components/settings/index.tsx:319
+
+  ⚠ react-doctor/async-await-in-loop                           ×3
+      await inside a for-loop runs the calls sequentially — for independent operations, collect them and use `await Promise.all(items.map(...))` to run them concurrently
+      → Collect the items and use `await Promise.all(items.map(...))` to run independent operations concurrently
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/async-await-in-loop.md
+      app/(app)/projects/[id]/search/page.tsx:126
+      lib/hooks/useJobPolling.ts:40
+      lib/stores/matrix-store.ts:241
+
+  ⚠ deslop/unused-dependency                                   ×3
+      Unused dependency: `lucide-react`
+      → Remove the dependency from package.json if it is genuinely unused.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/deslop/unused-dependency.md
+      package.json
+
+  ⚠ react-doctor/require-pnpm-hardening                        ×2
+      pnpm-workspace.yaml is missing `minimumReleaseAge` — newly published versions can ship malware that gets caught and unpublished within hours
+      → Add `minimumReleaseAge: 10080` (7 days) to pnpm-workspace.yaml to delay installs until releases have had time to be vetted
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/require-pnpm-hardening.md
+      pnpm-workspace.yaml
+
+  ⚠ react-doctor/prefer-html-dialog                            ×2
+      Use the native `<dialog>` element instead of `role="dialog"` on a generic container — `<dialog>` ships built-in focus trap, `Escape` dismissal, the top-layer backdrop, and the right accessibility tree without you having to wire any of it up.
+      → Replace the wrapper with `<dialog>` and open it with `dialog.showModal()`. For the trigger, prefer `<button commandfor="id" command="show-modal">` (Chrome 135+) or fall back to a `useRef`-driven `dialogRef.current?.showModal()`.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/prefer-html-dialog.md
+      components/evidence/EvidenceDrawer.tsx:68
+      components/reports/CitationPdfModal.tsx:57
+
+  ⚠ react-doctor/no-cascading-set-state                        ×2
+      3 setState calls in a single useEffect — consider using useReducer or deriving state
+      → Combine into useReducer: `const [state, dispatch] = useReducer(reducer, initialState)`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-cascading-set-state.md
+      components/knowledge-map/KnowledgeGraph.tsx:141
+      components/UploadPaperModal.tsx:155
+
+  ⚠ react-doctor/no-event-handler                              ×2
+      Avoid using state and effects as an event handler. Instead, call the event handling code directly when the event occurs.
+      → Move the side effect into the event handler that triggers it, instead of guarding on its state inside a useEffect. See https://react.dev/learn/you-might-not-need-an-effect#sharing-logic-between-event-handlers
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-event-handler.md
+      components/matrix/TypedCell.tsx:36
+      app/(app)/assistant/sessions/[id]/page.tsx:76
+
+  ⚠ react-doctor/no-polymorphic-children                       ×2
+      Polymorphic `typeof children === "string"` check — expose explicit subcomponents (e.g. `<Button.Text>`) instead of branching on what the consumer passed
+      → Expose explicit subcomponents (`<Button.Text>`, `<Button.Icon>`) so consumers don't need to switch on `typeof children`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-polymorphic-children.md
+      components/reports/ReportContent.tsx:243
+      lib/markdown.ts:22
+
+  ⚠ react-doctor/no-inline-bounce-easing                       ×2
+      animate-bounce feels dated and tacky — use a subtle ease-out transform for natural deceleration
+      → Use `cubic-bezier(0.16, 1, 0.3, 1)` (ease-out-expo) for natural deceleration — objects in the real world don't bounce
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-inline-bounce-easing.md
+      app/(app)/assistant/sessions/[id]/page.tsx:319
+      components/assistant/ChatBox.tsx:119
+
+  ⚠ react-doctor/js-combine-iterations                         ×2
+      .filter().map() iterates the array twice — combine into a single loop with .reduce() or for...of
+      → Combine `.map().filter()` (or similar chains) into a single pass with `.reduce()` or a `for...of` loop to avoid iterating the array twice
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/js-combine-iterations.md
+      components/knowledge-map/NodeDetailPanel.tsx:43
+      lib/markdown.ts:100
+
+  ⚠ react-doctor/iframe-missing-sandbox
+      An `<iframe>` element is missing a `sandbox` attribute.
+      → Add `sandbox=""` (or a curated value) to your iframe.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/iframe-missing-sandbox.md
+      components/reports/CitationPdfModal.tsx:145
+
+  ⚠ react-doctor/rerender-memo-with-default-value
+      Default prop value [] creates a new array reference every render — extract to a module-level constant
+      → Move to module scope: `const EMPTY_ITEMS: Item[] = []` then use as the default value
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/rerender-memo-with-default-value.md
+      components/dashboard/ProjectsList.tsx:206
+
+  ⚠ react-doctor/nextjs-no-img-element
+      Use next/image instead of <img> — provides automatic optimization, lazy loading, and responsive srcset
+      → `import Image from 'next/image'` — provides automatic WebP/AVIF, lazy loading, and responsive srcset
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/nextjs-no-img-element.md
+      components/landing/Features.tsx:128
+
+  ⚠ react-doctor/no-derived-state-effect
+      State reset in useEffect — use a key prop to reset component state when props change
+      → For derived state, compute inline: `const x = fn(dep)`. For state resets on prop change, use a key prop: `<Component key={prop} />`. See https://react.dev/learn/you-might-not-need-an-effect
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-derived-state-effect.md
+      components/AppShell.tsx:300
+
+  ⚠ react-doctor/no-noninteractive-element-to-interactive-role
+      Non-interactive element `<sup>` cannot have interactive role `button` — use a semantic interactive element instead.
+      → Use a semantic interactive element instead of role-promoting a non-interactive one.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-noninteractive-element-to-interactive-role.md
+      components/reports/ReportContent.tsx:192
+
+  ⚠ react-doctor/nextjs-missing-metadata
+      Page without metadata or generateMetadata export — hurts SEO
+      → Add `export const metadata = { title: '...', description: '...' }` or `export async function generateMetadata()`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/nextjs-missing-metadata.md
+      app/page.tsx:1
+
+  ⚠ react-doctor/no-long-transition-duration
+      2000ms transition is too slow for UI feedback — keep transitions under 1000ms. Use longer durations only for page-load hero animations
+      → Keep UI transitions under 1s — 100-150ms for instant feedback, 200-300ms for state changes, 300-500ms for layout changes. Use longer durations only for page-load hero animations
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-long-transition-duration.md
+      components/assistant/IterationPanel.tsx:40
+
+  ⚠ react-doctor/nextjs-no-font-link
+      Loading Google Fonts via <link> — use next/font instead for self-hosting, zero layout shift, and no render-blocking requests
+      → `import { Inter } from "next/font/google"` — self-hosted, zero layout shift, no render-blocking requests
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/nextjs-no-font-link.md
+      app/layout.tsx:49
+
+  ⚠ react-doctor/nextjs-no-use-search-params-without-suspense
+      useSearchParams() requires a <Suspense> boundary — without one, the entire page bails out to client-side rendering
+      → Wrap the component using useSearchParams: `<Suspense fallback={<Skeleton />}><SearchComponent /></Suspense>`
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/nextjs-no-use-search-params-without-suspense.md
+      app/(app)/projects/[id]/search/page.tsx:28
+
+  ⚠ react-doctor/no-gradient-text
+      Gradient text (background-clip: text) is decorative rather than meaningful — a common AI tell. Use solid colors for text
+      → Use solid text colors for readability. If you need emphasis, use font weight, size, or a distinct color instead of gradients
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-gradient-text.md
+      app/not-found.tsx:9
+
+  ⚠ react-doctor/rerender-state-only-in-handlers
+      useState "activeView" is updated but never read in the component's return — use useRef so updates don't trigger re-renders
+      → Replace useState with useRef when the value is only mutated and never read in render — `ref.current = ...` updates without re-rendering the component
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/rerender-state-only-in-handlers.md
+      components/assistant/ToolPanel.tsx:37
+
+  ⚠ react-doctor/js-set-map-lookups
+      array.includes() in a loop is O(n) per call — convert to a Set for O(1) lookups
+      → Use a `Set` or `Map` for repeated membership tests / keyed lookups — `Array.includes`/`find` is O(n) per call
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/js-set-map-lookups.md
+      components/UploadPaperModal.tsx:89
+
+  ⚠ react-doctor/no-danger
+      Do not use `dangerouslySetInnerHTML` — it injects raw HTML and is a common XSS vector.
+      → Render trusted content as React children rather than injecting raw HTML.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/react-doctor/no-danger.md
+      components/search/MathText.tsx:67
+
+  ⚠ deslop/unused-dev-dependency
+      Unused devDependency: `react-doctor`
+      → Remove the dependency from package.json if it is genuinely unused.
+      Fetch & follow the canonical fix recipe before fixing: https://www.react.doctor/prompts/rules/deslop/unused-dev-dependency.md
+      package.json
+
+  ┌─────┐  39 / 100 Critical · frontend
+  │ x x │  ████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  │  ▽  │  React Doctor (https://react.doctor)
+  └─────┘
+
+  378 issues
+  Full diagnostics written to /tmp/react-doctor-cff1c0b6-62d6-4e9f-bca8-082bb65448a8
+
+  → Share: https://www.react.doctor/share?p=frontend&s=39&e=2&w=376&f=77
+
+
+[?25l[2K[1G? Copy issues to clipboard? › (Y/n)

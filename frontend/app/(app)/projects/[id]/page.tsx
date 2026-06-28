@@ -28,36 +28,7 @@ import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
 import { formatDate, relativeTime } from "@/lib/utils";
 import { ProjectOnboardingTour } from "@/components/onboarding/ProjectOnboardingTour";
 
-interface MetricCardProps {
-  href: string;
-  label: string;
-  value: number | string;
-  sub?: string;
-  icon: React.ComponentType<{ size?: number; weight?: "regular" | "fill" | "bold"; className?: string }>;
-  color: string;
-  emptyHint?: string;
-}
 
-function MetricCard({ href, label, value, sub, icon: Icon, color, emptyHint }: MetricCardProps) {
-  return (
-    <Link
-      href={href}
-      className="group flex flex-col items-center gap-1 rounded-[10px] bg-surface-card px-1.5 py-2 transition-all hover:bg-surface-bone"
-      style={{ border: "1px solid var(--hairline)" }}
-      title={sub ? `${label}: ${value} (${sub})` : `${label}: ${value}`}
-    >
-      <div className={`flex h-6 w-6 items-center justify-center rounded-[6px] ${color}`}>
-        <Icon size={12} weight="bold" />
-      </div>
-      <p className="font-display text-[18px] font-bold leading-none text-ink">
-        {value}
-      </p>
-      <p className="font-ui text-[9px] font-semibold uppercase tracking-wider text-ash truncate w-full text-center">
-        {label}
-      </p>
-    </Link>
-  );
-}
 
 export default function ProjectOverviewPage() {
   const params = useParams<{ id: string }>();
@@ -117,6 +88,52 @@ export default function ProjectOverviewPage() {
   return (
     <div data-tour="project-welcome" className="space-y-5 sm:space-y-6 animate-slide-up">
       <ProjectOnboardingTour />
+      
+      {/* Workspace Snapshot Pill */}
+      <section data-tour="project-snapshot">
+        <div
+          className="w-fit rounded-full bg-primary/[0.06] px-3 py-1.5 font-ui text-[11px] sm:text-[12px]"
+          style={{ border: "1px solid rgba(234, 40, 4, 0.22)" }}
+        >
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <Link href={`${base}/papers`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{papersCount}</span>
+              <span className="text-ink">Papers</span>
+            </Link>
+            <span className="text-primary/40">·</span>
+            
+            <Link href={`${base}/matrix`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{loadingMatrix ? "…" : matrixRows.length}</span>
+              <span className="text-ink">Matrix</span>
+            </Link>
+            <span className="text-primary/40">·</span>
+
+            <Link href={`${base}/map`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{kmStats ? kmStats.paper_count : (matrixReady ? "Ready" : "—")}</span>
+              <span className="text-ink">Graph</span>
+            </Link>
+            <span className="text-primary/40">·</span>
+
+            <Link href={`${base}/gaps`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{loadingGaps ? "…" : gaps.length}</span>
+              <span className="text-ink">Gaps</span>
+            </Link>
+            <span className="text-primary/40">·</span>
+
+            <Link href={`${base}/gaps`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{loadingGaps ? "…" : conflicts.length}</span>
+              <span className="text-ink">Conflicts</span>
+            </Link>
+            <span className="text-primary/40">·</span>
+
+            <Link href={`${base}/reports`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+              <span className="font-semibold text-primary">{loadingReports ? "…" : reports.length}</span>
+              <span className="text-ink">Reviews</span>
+            </Link>
+          </span>
+        </div>
+      </section>
+
       {/* Pipeline progress */}
       <section
         data-tour="project-progress"
@@ -165,66 +182,7 @@ export default function ProjectOverviewPage() {
         </div>
       </section>
 
-      {/* Metric cards */}
-      <section data-tour="project-snapshot">
-        <h2 className="font-ui mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-ash">
-          Workspace Snapshot
-        </h2>
-        <div className="grid grid-cols-6 gap-1.5">
-          <MetricCard
-            href={`${base}/papers`}
-            label="Papers"
-            value={papersCount}
-            sub={papersCount === 0 ? "None yet" : papersCount === 1 ? "1 saved" : `${papersCount} saved`}
-            icon={FileText}
-            color="bg-amber-50 text-amber-600"
-            emptyHint="Search →"
-          />
-          <MetricCard
-            href={`${base}/matrix`}
-            label="Matrix"
-            value={loadingMatrix ? "…" : matrixRows.length}
-            sub={matrixRows.length === 0 ? "Pending" : "Generated"}
-            icon={Table}
-            color="bg-emerald-50 text-emerald-600"
-            emptyHint="Need ≥5 papers"
-          />
-          <MetricCard
-            href={`${base}/map`}
-            label="Graph"
-            value={kmStats ? kmStats.paper_count : (matrixReady ? "Ready" : "—")}
-            sub={kmStats
-              ? `${kmStats.method_count}m · ${kmStats.dataset_count}d`
-              : "Requires matrix"}
-            icon={Graph}
-            color="bg-sky-50 text-sky-600"
-          />
-          <MetricCard
-            href={`${base}/gaps`}
-            label="Gaps"
-            value={loadingGaps ? "…" : gaps.length}
-            sub={conflicts.length > 0 ? `${conflicts.length} conflicts` : "Awaiting"}
-            icon={Lightbulb}
-            color="bg-violet-50 text-violet-600"
-          />
-          <MetricCard
-            href={`${base}/gaps`}
-            label="Conflicts"
-            value={loadingGaps ? "…" : conflicts.length}
-            sub={conflicts.length === 0 ? "None" : "Review"}
-            icon={Warning}
-            color="bg-rose-50 text-rose-600"
-          />
-          <MetricCard
-            href={`${base}/reports`}
-            label="Reviews"
-            value={loadingReports ? "…" : reports.length}
-            sub={reports.length === 0 ? "Pending" : "Generated"}
-            icon={PencilLine}
-            color="bg-blue-50 text-blue-600"
-          />
-        </div>
-      </section>
+
 
       {/* Two-column layout: recent papers + project meta */}
       <section className="grid gap-4 sm:gap-5 lg:grid-cols-3">

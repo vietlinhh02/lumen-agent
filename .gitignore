@@ -83,4 +83,4 @@ _bmad
 _bmad-output
 .agent/skills/
 .agents/skills/
-.claude/skills/
+.claude/skills/report_logic_analysis.md

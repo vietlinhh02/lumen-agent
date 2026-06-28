@@ -224,7 +224,7 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
         </div>
       )}
 
-      <div className="hidden flex-1 sm:block" />
+      <div className={!isAssistant && projects.length > 0 ? "hidden flex-1 sm:block" : "flex-1"} />
 
       {/* Assistant page header controls (rendered only on /assistant/*) */}
       {isAssistant && <AssistantHeaderControls />}
