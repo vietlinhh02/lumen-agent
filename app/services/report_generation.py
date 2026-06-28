@@ -1849,8 +1849,10 @@ async def get_reports_by_project(
     project_id: UUID,
 ) -> list[ReviewReport]:
     """List reports for a project."""
+    from sqlalchemy.orm import selectinload
     stmt = (
         select(ReviewReport)
+        .options(selectinload(ReviewReport.citations))
         .where(ReviewReport.project_id == project_id)
         .order_by(ReviewReport.created_at.desc())
     )
@@ -1863,7 +1865,8 @@ async def get_report_by_id(
     report_id: UUID,
 ) -> ReviewReport | None:
     """Get a single report by ID."""
-    stmt = select(ReviewReport).where(
+    from sqlalchemy.orm import selectinload
+    stmt = select(ReviewReport).options(selectinload(ReviewReport.citations)).where(
         ReviewReport.id == report_id,
         ReviewReport.project_id == project_id,
     )

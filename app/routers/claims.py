@@ -100,7 +100,8 @@ async def list_claims(
     if not project:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    stmt = select(Claim).where(Claim.project_id == pid)
+    from sqlalchemy.orm import selectinload
+    stmt = select(Claim).options(selectinload(Claim.evidence_entries)).where(Claim.project_id == pid)
     if claim_type:
         stmt = stmt.where(Claim.claim_type == claim_type)
     if sort == "confidence":
@@ -168,8 +169,9 @@ async def get_claim(
     if not project:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Project not found")
 
+    from sqlalchemy.orm import selectinload
     claim = (
-        await db.execute(select(Claim).where(Claim.id == cid, Claim.project_id == pid))
+        await db.execute(select(Claim).options(selectinload(Claim.evidence_entries)).where(Claim.id == cid, Claim.project_id == pid))
     ).scalar_one_or_none()
     if not claim:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Claim not found")
