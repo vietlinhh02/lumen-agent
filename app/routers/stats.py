@@ -32,106 +32,68 @@ async def get_stats(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Return dashboard stats for the current user."""
-    import asyncio
-
-    proj_stmt = select(func.count()).select_from(Project).where(Project.owner_id == user.id)
-    paper_stmt = (
-        select(func.count())
-        .select_from(ProjectPaper)
-        .join(Project, Project.id == ProjectPaper.project_id)
-        .where(Project.owner_id == user.id, ProjectPaper.status == "saved")
+    import time
+    import logging
+    logger = logging.getLogger(__name__)
+    t0 = time.time()
+    
+    # 1. Global counts in a single round-trip
+    global_counts_stmt = select(
+        select(func.count()).select_from(Project).where(Project.owner_id == user.id).scalar_subquery().label("proj_count"),
+        select(func.count()).select_from(ProjectPaper).join(Project, Project.id == ProjectPaper.project_id).where(Project.owner_id == user.id, ProjectPaper.status == "saved").scalar_subquery().label("paper_count"),
+        select(func.count()).select_from(LiteratureMatrixRow).join(Project, Project.id == LiteratureMatrixRow.project_id).where(Project.owner_id == user.id).scalar_subquery().label("matrix_count"),
+        select(func.count()).select_from(ResearchGap).join(Project, Project.id == ResearchGap.project_id).where(Project.owner_id == user.id).scalar_subquery().label("gap_count"),
+        select(func.count()).select_from(ReviewReport).where(ReviewReport.created_by == user.id).scalar_subquery().label("report_count"),
     )
-    matrix_stmt = (
-        select(func.count())
-        .select_from(LiteratureMatrixRow)
-        .join(Project, Project.id == LiteratureMatrixRow.project_id)
-        .where(Project.owner_id == user.id)
-    )
-    gap_stmt = (
-        select(func.count())
-        .select_from(ResearchGap)
-        .join(Project, Project.id == ResearchGap.project_id)
-        .where(Project.owner_id == user.id)
-    )
-    report_stmt = (
-        select(func.count()).select_from(ReviewReport).where(ReviewReport.created_by == user.id)
-    )
+    
+    global_row = (await db.execute(global_counts_stmt)).first()
+    proj_count = getattr(global_row, "proj_count", 0) or 0
+    paper_count = getattr(global_row, "paper_count", 0) or 0
+    matrix_count = getattr(global_row, "matrix_count", 0) or 0
+    gap_count = getattr(global_row, "gap_count", 0) or 0
+    report_count = getattr(global_row, "report_count", 0) or 0
+    
     recent_stmt = (
         select(Project)
         .where(Project.owner_id == user.id)
         .order_by(Project.updated_at.desc())
         .limit(8)
     )
-
-    proj_count = (await db.execute(proj_stmt)).scalar() or 0
-    paper_count = (await db.execute(paper_stmt)).scalar() or 0
-    matrix_count = (await db.execute(matrix_stmt)).scalar() or 0
-    gap_count = (await db.execute(gap_stmt)).scalar() or 0
-    report_count = (await db.execute(report_stmt)).scalar() or 0
     recent_projects = (await db.execute(recent_stmt)).scalars().all()
-
+    
+    workflow_counts: dict[str, dict[str, int]] = {}
     recent_project_ids = [project.id for project in recent_projects]
 
-    workflow_counts: dict[str, dict[str, int]] = {}
     if recent_project_ids:
-        count_queries = {
-            "paper_count": (
-                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
-                .where(
-                    ProjectPaper.project_id.in_(recent_project_ids),
-                    ProjectPaper.status == "saved",
-                )
-                .group_by(ProjectPaper.project_id)
-            ),
-            "full_text_count": (
-                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
-                .where(
-                    ProjectPaper.project_id.in_(recent_project_ids),
-                    ProjectPaper.status == "saved",
-                    ProjectPaper.full_text_status.in_(("completed", "raw_extracted")),
-                )
-                .group_by(ProjectPaper.project_id)
-            ),
-            "raw_text_count": (
-                select(ProjectPaper.project_id, func.count(ProjectPaper.id))
-                .where(
-                    ProjectPaper.project_id.in_(recent_project_ids),
-                    ProjectPaper.status == "saved",
-                    ProjectPaper.full_text_status == "raw_extracted",
-                )
-                .group_by(ProjectPaper.project_id)
-            ),
-            "matrix_count": (
-                select(LiteratureMatrixRow.project_id, func.count(LiteratureMatrixRow.id))
-                .where(LiteratureMatrixRow.project_id.in_(recent_project_ids))
-                .group_by(LiteratureMatrixRow.project_id)
-            ),
-            "gap_count": (
-                select(ResearchGap.project_id, func.count(ResearchGap.id))
-                .where(ResearchGap.project_id.in_(recent_project_ids))
-                .group_by(ResearchGap.project_id)
-            ),
-            "conflict_count": (
-                select(ConflictingFinding.project_id, func.count(ConflictingFinding.id))
-                .where(ConflictingFinding.project_id.in_(recent_project_ids))
-                .group_by(ConflictingFinding.project_id)
-            ),
-            "report_count": (
-                select(ReviewReport.project_id, func.count(ReviewReport.id))
-                .where(
-                    ReviewReport.project_id.in_(recent_project_ids),
-                    ReviewReport.created_by == user.id,
-                )
-                .group_by(ReviewReport.project_id)
-            ),
-        }
-        count_results = []
-        for query in count_queries.values():
-            count_results.append(await db.execute(query))
-        for key, result in zip(count_queries, count_results, strict=True):
-            for project_id, count in result.all():
-                workflow_counts.setdefault(str(project_id), {})[key] = count
+        # Combine all per-project counts into a single UNION ALL query to save round-trips
+        from sqlalchemy import literal_column, text
+        
+        # Build raw sql for union all because SQLAlchemy's union of grouped selects can be tricky
+        p_ids = [f"'{pid}'" for pid in recent_project_ids]
+        p_ids_str = ",".join(p_ids)
+        
+        union_sql = f"""
+        SELECT 'paper_count' as type, project_id, count(*) as cnt FROM project_papers WHERE project_id IN ({p_ids_str}) AND status = 'saved' GROUP BY project_id
+        UNION ALL
+        SELECT 'full_text_count' as type, project_id, count(*) as cnt FROM project_papers WHERE project_id IN ({p_ids_str}) AND status = 'saved' AND full_text_status IN ('completed', 'raw_extracted') GROUP BY project_id
+        UNION ALL
+        SELECT 'raw_text_count' as type, project_id, count(*) as cnt FROM project_papers WHERE project_id IN ({p_ids_str}) AND status = 'saved' AND full_text_status = 'raw_extracted' GROUP BY project_id
+        UNION ALL
+        SELECT 'matrix_count' as type, project_id, count(*) as cnt FROM literature_matrix_rows WHERE project_id IN ({p_ids_str}) GROUP BY project_id
+        UNION ALL
+        SELECT 'gap_count' as type, project_id, count(*) as cnt FROM research_gaps WHERE project_id IN ({p_ids_str}) GROUP BY project_id
+        UNION ALL
+        SELECT 'conflict_count' as type, project_id, count(*) as cnt FROM conflicting_findings WHERE project_id IN ({p_ids_str}) GROUP BY project_id
+        UNION ALL
+        SELECT 'report_count' as type, project_id, count(*) as cnt FROM review_reports WHERE project_id IN ({p_ids_str}) AND created_by = '{user.id}' GROUP BY project_id
+        """
+        
+        results = await db.execute(text(union_sql))
+        for row in results:
+            type_key, pid, count = row
+            workflow_counts.setdefault(str(pid), {})[type_key] = count
 
+    t5 = time.time()
     project_workflows = []
     for project in recent_projects:
         counts = workflow_counts.get(str(project.id), {})
