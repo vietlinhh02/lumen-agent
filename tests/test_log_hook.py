@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -7,14 +8,23 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
 def run_log_hook(payload: dict[str, str], tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    # Inherit the parent environment so shared-library paths (e.g. LD_LIBRARY_PATH)
+    # and other runner-specific variables are available to the subprocess.
+    env = os.environ.copy()
+    env["AI_LOG_DIR"] = str(tmp_path)
+    
+    # Resolve sys.executable to its real path to bypass dynamic linker $ORIGIN issues
+    # that occur in CI when executing a python symlink created by uv.
+    python_exe = os.path.realpath(sys.executable)
+    
     return subprocess.run(
-        [sys.executable, "scripts/log_hook.py", "--tool=codex"],
+        [python_exe, "scripts/log_hook.py", "--tool=codex"],
         cwd=ROOT_DIR,
         input=json.dumps(payload),
         text=True,
         capture_output=True,
         check=False,
-        env={"AI_LOG_DIR": str(tmp_path)},
+        env=env,
     )
 
 
