@@ -289,6 +289,30 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ── Latency logging middleware ────────────────────────────────────────────
+    import time as _time
+
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as _Request
+
+    class LatencyMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: _Request, call_next):
+            _start = _time.monotonic()
+            response = await call_next(request)
+            _elapsed_ms = round((_time.monotonic() - _start) * 1000, 1)
+            logger.info(
+                "request",
+                extra={
+                    "path": request.url.path,
+                    "method": request.method,
+                    "status_code": response.status_code,
+                    "latency_ms": _elapsed_ms,
+                },
+            )
+            return response
+
+    app.add_middleware(LatencyMiddleware)
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
     app.include_router(project_router, prefix="/api/projects")

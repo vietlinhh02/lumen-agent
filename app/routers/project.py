@@ -168,7 +168,7 @@ async def generate_project_metadata(
             schema=_ProjectMeta.model_json_schema(),
             tool_name="extract_project_metadata",
             system=system,
-            max_tokens=300,
+            max_tokens=1500,
         )
         meta = _ProjectMeta.model_validate(result)
         return GenerateMetadataResponse(

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     pass
 
 from app.agents.assistant.react.memory import Scratchpad
+from app.services.eval_counters import eval_counters
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,9 @@ async def inject(
             elapsed_ms,
             project_id,
         )
+
+        # Record into eval counters for /api/stats/eval
+        eval_counters.rag_injector.record(elapsed_ms)
 
         # Check latency requirement
         if elapsed_ms > 500:

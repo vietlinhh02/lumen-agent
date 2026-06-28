@@ -153,6 +153,7 @@ async def save_paper_to_project(
     user: User,
     project_id: UUID,
     data: SavePaperRequest,
+    wait_for_ingestion: bool = False,
 ) -> SavePaperResponse | None:
     # Verify project ownership
     project_result = await db.execute(
@@ -246,7 +247,13 @@ async def save_paper_to_project(
 
         import asyncio
 
-        asyncio.ensure_future(_download_and_ingest_bg(pp.id, raw, pdf_path=prefetched))
+        if wait_for_ingestion:
+            success = await _download_and_ingest_bg(pp.id, raw, pdf_path=prefetched)
+            if not success:
+                return None
+            full_text_status = "completed"
+        else:
+            asyncio.ensure_future(_download_and_ingest_bg(pp.id, raw, pdf_path=prefetched))
 
     return SavePaperResponse(
         project_paper_id=pp.id,
@@ -415,12 +422,13 @@ async def remove_project_paper(
 
 async def _download_and_ingest_bg(
     project_paper_id: UUID, raw: RawPaper, *, pdf_path: str | Path | None = None
-) -> None:
+) -> bool:
     """Background task: download PDF for *raw* paper and extract text.
 
     Opens its own DB session so the caller's session can return immediately.
     If *pdf_path* is provided (pre-downloaded), skips download + Firecrawl.
     Never raises — failures are logged, not propagated.
+    Returns True if successful, False if failed and deleted.
     """
 
     from app.db.session import async_session_factory
@@ -444,8 +452,11 @@ async def _download_and_ingest_bg(
 
         if pdf_result is None or not pdf_result.exists():
             async with async_session_factory() as bg_db:
-                await _update_paper_status(bg_db, project_paper_id, "failed")
-            return
+                from sqlalchemy import delete
+                from app.db.models import ProjectPaper
+                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.commit()
+            return False
 
         # Single-pass: extract -> chunk -> embed -> store. No batch trigger.
         async with async_session_factory() as bg_db:
@@ -458,8 +469,24 @@ async def _download_and_ingest_bg(
                 result.chunk_count,
                 result.char_count,
             )
+            if result.status in ("failed", "ocr_required"):
+                from sqlalchemy import delete
+                from app.db.models import ProjectPaper
+                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.commit()
+                return False
+            return True
     except Exception as exc:
         logger.exception("Background download+ingest failed for %s: %s", project_paper_id, exc)
+        try:
+            async with async_session_factory() as bg_db:
+                from sqlalchemy import delete
+                from app.db.models import ProjectPaper
+                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.commit()
+        except Exception:
+            pass
+        return False
 
 
 async def _update_paper_status(db, project_paper_id: UUID, status: str) -> None:

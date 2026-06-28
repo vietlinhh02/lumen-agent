@@ -68,6 +68,53 @@ DEFAULT_MAX_WALL_TIME_SECONDS = 600
 DEFAULT_HEARTBEAT_SECONDS = 15
 QUEUE_MAXSIZE = 100  # Bounded queue to prevent memory leaks
 
+# ── Guardrail constants ───────────────────────────────────────────────────────
+
+# B-A1: Topic boundary — keywords that signal a research-related message
+_RESEARCH_KEYWORDS: frozenset[str] = frozenset({
+    "paper", "papers", "research", "study", "studies", "article", "articles",
+    "matrix", "gap", "gaps", "report", "reports", "citation", "citations",
+    "find", "search", "analyze", "analyse", "summarize", "summarise",
+    "project", "literature", "review", "author", "journal", "dataset",
+    "method", "methodology", "result", "results", "hypothesis", "abstract",
+    "conflict", "evidence", "query", "topic", "thesis", "survey",
+})
+
+# B-A2: Token budget per turn (input + output tokens)
+_MAX_TOKENS_PER_TURN = 50_000
+
+# B-A3: Citation pattern in assistant answers
+_CITE_RE = re.compile(r"\[CITE:([^\]]+)\]")
+
+
+def _is_off_topic(message: str) -> bool:
+    """B-A1: Return True if message is short AND has no research keywords.
+
+    Heuristic only — blocks messages with < 6 words that contain zero
+    research-domain keywords. False-positive rate is very low because
+    any mention of a research term passes through.
+    """
+    words = message.lower().split()
+    if len(words) >= 6:
+        return False
+    return not bool(frozenset(words) & _RESEARCH_KEYWORDS)
+
+
+def _sanitize_citations(text: str, valid_ids: set[str]) -> str:
+    """B-A3: Remove [CITE:xxx] tags whose ID is not in the project's papers.
+
+    Valid IDs are kept; unknown IDs are replaced with [citation removed] and
+    a warning is logged so they show up in structured logs.
+    """
+    def _replace(m: re.Match) -> str:
+        cid = m.group(1).strip()
+        if cid in valid_ids:
+            return m.group(0)
+        logger.warning("assistant guardrail: hallucinated citation removed: %s", cid)
+        return "[citation removed]"
+
+    return _CITE_RE.sub(_replace, text)
+
 
 class ProjectContext:
     """Context about the user's active project."""
@@ -160,6 +207,17 @@ class ReActAgent:
             self._scratchpad.reset()
 
         start_time = time.monotonic()
+
+        # ── B-A1: Topic boundary guardrail (pre-LLM) ─────────────────────────
+        if _is_off_topic(message):
+            yield ErrorEvent(
+                code="OFF_TOPIC",
+                message="Tôi chỉ hỗ trợ các tác vụ nghiên cứu học thuật. "
+                        "Bạn có thể hỏi tôi tìm papers, phân tích matrix, "
+                        "phát hiện gaps, hoặc tạo báo cáo.",
+            )
+            yield DoneEvent(summary="Off-topic message rejected by guardrail.")
+            return
 
         try:
             # ── 1. Classify intent via IntentClassifier ─────────────────────
@@ -621,6 +679,28 @@ class ReActAgent:
         """
         iteration = 0
         conversation_messages: list[dict[str, Any]] = []  # ToolMessage format
+        input_tokens_this_turn: int = 0
+        output_tokens_this_turn: int = 0
+
+        # B-A3: load valid project paper IDs once for citation sanitizer
+        _valid_citation_ids: set[str] = set()
+        if self.project_context.has_project and self.project_context.project_id:
+            try:
+                from app.db.session import async_session_factory
+                from app.db.models import ProjectPaper
+                from sqlalchemy import select
+                from uuid import UUID as _UUID
+                _pid = _UUID(self.project_context.project_id)
+                async with async_session_factory() as _db:
+                    _rows = (await _db.execute(
+                        select(ProjectPaper.id).where(
+                            ProjectPaper.project_id == _pid,
+                            ProjectPaper.status == "saved",
+                        )
+                    )).scalars().all()
+                    _valid_citation_ids = {str(r) for r in _rows}
+            except Exception as _exc:
+                logger.warning("guardrail: failed to load valid citation IDs: %s", _exc)
 
         while iteration < self.max_iterations:
             # ── Limit checks ──────────────────────────────────────────────
@@ -636,6 +716,20 @@ class ReActAgent:
                     message=f"Exceeded maximum runtime of {self.max_wall_time}s",
                 )
                 yield DoneEvent()
+                return
+
+            # ── B-A2: Token budget cap per turn ───────────────────────────
+            if (input_tokens_this_turn + output_tokens_this_turn) >= _MAX_TOKENS_PER_TURN:
+                yield ErrorEvent(
+                    code="TOKEN_BUDGET_EXCEEDED",
+                    message=f"Đã dùng {(input_tokens_this_turn + output_tokens_this_turn):,} tokens trong lượt này. "
+                            "Vui lòng đặt câu hỏi cụ thể hơn.",
+                )
+                yield DoneEvent(usage={
+                    "input_tokens": input_tokens_this_turn,
+                    "output_tokens": output_tokens_this_turn,
+                    "model": getattr(self.provider, "_model", "unknown"),
+                })
                 return
 
             # ── Build messages for LLM ─────────────────────────────────────
@@ -728,6 +822,10 @@ class ReActAgent:
                                         call_id=tc["id"],
                                     )
                                 )
+                        # B-A2: accumulate token usage if provider reports it
+                        if hasattr(chunk, "usage") and chunk.usage:
+                            input_tokens_this_turn += getattr(chunk.usage, "input_tokens", 0)
+                            output_tokens_this_turn += getattr(chunk.usage, "output_tokens", 0)
             
             except asyncio.CancelledError:
                 raise
@@ -743,11 +841,18 @@ class ReActAgent:
             if not tool_calls_found:
                 # No tool calls — this is the final answer
                 final_answer = self._extract_final_answer(response_text)
+                # B-A3: strip hallucinated citation tags before streaming
+                if _valid_citation_ids:
+                    final_answer = _sanitize_citations(final_answer, _valid_citation_ids)
                 # Stream the final answer as deltas for immediate user feedback
                 for token in final_answer:
                     yield AssistantDeltaEvent(delta=token, is_final=False)
                 yield AssistantDeltaEvent(delta="", is_final=True)
-                yield DoneEvent()
+                yield DoneEvent(usage={
+                    "input_tokens": input_tokens_this_turn,
+                    "output_tokens": output_tokens_this_turn,
+                    "model": getattr(self.provider, "_model", "unknown"),
+                })
                 return
 
             # ── Execute tools in parallel ───────────────────────────────────

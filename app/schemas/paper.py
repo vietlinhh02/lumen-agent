@@ -197,7 +197,7 @@ class AutoSearchRequest(BaseModel):
         ),
         max_length=500,
     )
-    target_count: Literal[25, 50, 100] = Field(..., description="Number of papers to save (25, 50, or 100)")
+    target_count: Literal[5, 15, 25] = Field(..., description="Number of papers to save (5, 15, or 25)")
 
 
 class AutoSearchResponse(BaseModel):

@@ -1402,3 +1402,70 @@ class EvidenceRating(Base):
             "source_id",
         ),
     )
+
+
+# ── LLM Cost Tracking ─────────────────────────────────────────────────────────
+
+
+class LLMUsageLog(Base):
+    """One row per LLM call — used for cost reporting.
+
+    Written by app.services.cost_tracker.log_llm_usage() after every call to
+    provider.complete_with_usage(). Rows are append-only; never updated.
+    """
+
+    __tablename__ = "llm_usage_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # context: what triggered this LLM call
+    context: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="One of: report, matrix, assistant, screening, gaps, other",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # Composite index for the monthly cost-report query (user + time range)
+        Index("ix_llm_usage_user_created", "user_id", "created_at"),
+        CheckConstraint(
+            "context IN ('report','matrix','assistant','screening','gaps','other') OR context IS NULL",
+            name="ck_llm_usage_context",
+        ),
+    )
+
+class EvalLog(Base):
+    """Stores evaluation metrics (latency, citation pass/fail, etc.) for /api/stats/eval"""
+    __tablename__ = "eval_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    metric_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    # value1, value2 interpretation depends on metric_type
+    # rag_latency: value1 = elapsed_ms
+    # citation_check: value1 = total_checks, value2 = invalid_checks
+    # assistant_session: value1 = wall_time_s, value2 = success (1.0 or 0.0)
+    value1: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    value2: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )

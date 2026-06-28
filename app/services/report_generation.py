@@ -29,6 +29,8 @@ from app.db.models import (
     ReviewCitation,
     ReviewReport,
 )
+from app.services.cost_tracker import log_llm_usage
+from app.services.eval_counters import eval_counters
 from app.services.hybrid_retrieval import RetrievedChunk, retrieve_project_evidence
 
 logger = logging.getLogger(__name__)
@@ -260,6 +262,8 @@ def _group_chunks_by_paper(
 
 
 async def _plan_sections(
+    db: AsyncSession,
+    user_id: UUID,
     topic: str,
     research_question: str | None,
     safe_rows: list[dict],
@@ -315,7 +319,7 @@ Example format:
 ]}}"""
 
     try:
-        result = await provider.complete_structured(
+        result, usage = await provider.complete_structured_with_usage(
             messages=[{"role": "user", "content": plan_prompt}],
             system=(
                 "You are a literature review planner. Return ONLY a JSON object "
@@ -325,6 +329,8 @@ Example format:
             tool_name="review_plan",
             max_tokens=3000,
         )
+        await log_llm_usage(db, user_id, usage, context="report")
+        
         raw_sections = result.get("sections", [])
         if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, str):
             return []
@@ -350,6 +356,8 @@ Example format:
 
 
 async def _generate_section(
+    db: AsyncSession,
+    user_id: UUID,
     section_plan: dict,
     chunks_by_paper: dict[UUID, list[RetrievedChunk]],
     paper_catalog_str: str,
@@ -423,13 +431,15 @@ Do not use them as primary scholarly evidence for empirical claims.
 """
 
     try:
-        result = await provider.complete_structured(
+        result, usage = await provider.complete_structured_with_usage(
             messages=[{"role": "user", "content": section_prompt}],
             system=REVIEW_WRITER_CHUNK_SYSTEM,
             schema=ReviewOutput.model_json_schema(),
             tool_name="review_section",
             max_tokens=_MAX_SECTION_TOKENS,
         )
+        await log_llm_usage(db, user_id, usage, context="report")
+        
         sections = result.get("sections", [])
         if sections:
             # The LLM returns a sections array, we want the first one
@@ -445,6 +455,8 @@ Do not use them as primary scholarly evidence for empirical claims.
 
 
 async def _aggregate_sections(
+    db: AsyncSession,
+    user_id: UUID,
     sections: list[dict],
     safe_conflicts: list[dict],
     safe_gaps: list[dict],
@@ -497,13 +509,14 @@ Return the improved sections as a JSON object with "sections" array."""
     max_tokens = 16000
     for attempt in range(2):
         try:
-            result = await provider.complete_structured(
+            result, usage = await provider.complete_structured_with_usage(
                 messages=[{"role": "user", "content": aggregate_prompt}],
                 system=REVIEW_WRITER_CHUNK_SYSTEM,
                 schema=ReviewOutput.model_json_schema(),
                 tool_name="review_aggregate",
                 max_tokens=max_tokens,
             )
+            await log_llm_usage(db, user_id, usage, context="report")
             return result.get("sections", sections)
         except Exception as exc:
             last_error = exc
@@ -647,6 +660,8 @@ async def generate_report(
 
     # 8b. Section planning
     sections_plan = await _plan_sections(
+        db,
+        user_id,
         topic,
         research_question,
         safe_rows,
@@ -666,6 +681,8 @@ async def generate_report(
         async def _generate_with_semaphore(plan: dict) -> dict | None:
             async with sem:
                 return await _generate_section(
+                    db,
+                    user_id,
                     plan,
                     chunks_by_paper,
                     paper_catalog_str,
@@ -689,7 +706,7 @@ async def generate_report(
     # 8d. Aggregate + weave conflicts/gaps
     if generated_sections:
         sections = await _aggregate_sections(
-            generated_sections, safe_conflicts, safe_gaps, paper_catalog_str, provider
+            db, user_id, generated_sections, safe_conflicts, safe_gaps, paper_catalog_str, provider
         )
     else:
         # Ultimate fallback: use single-pass generation with original retrieval
@@ -714,6 +731,7 @@ async def generate_report(
         sections, _, _ = await _generate_and_validate(
             db,
             project_id,
+            user_id,
             topic,
             research_question,
             paper_catalog_str,
@@ -738,6 +756,7 @@ async def generate_report(
             sections2, audit2, _ = await _generate_and_validate(
                 db,
                 project_id,
+                user_id,
                 topic,
                 research_question,
                 paper_catalog_str,
@@ -833,6 +852,7 @@ async def generate_report(
 async def _generate_and_validate(
     db: AsyncSession,
     project_id: UUID,
+    user_id: UUID,
     topic: str,
     research_question: str | None,
     paper_catalog_str: str,
@@ -859,13 +879,15 @@ async def _generate_and_validate(
         user_msg += f"\n\nWARNING: {retry_warning} Use ONLY the paper IDs listed above."
 
     provider = get_provider()
-    result = await provider.complete_structured(
+    result, usage = await provider.complete_structured_with_usage(
         messages=[{"role": "user", "content": user_msg}],
         system=REVIEW_WRITER_CHUNK_SYSTEM,
         schema=ReviewOutput.model_json_schema(),
         tool_name="review_report",
         max_tokens=8000,
     )
+    await log_llm_usage(db, user_id, usage, context="report")
+    
     sections = result.get("sections", [])
 
     # Validate citations
@@ -929,6 +951,8 @@ async def _validate_citations(
             cleaned_sections.append({**section, "paragraphs": cleaned_paras})
 
     uncited = len(valid_pp_ids - valid_cited_ids)
+    # Record into eval counters for /api/stats/eval
+    eval_counters.citation.record(total=total, invalid=invalid)
     return cleaned_sections, {
         "total_citations": total,
         "invalid_citations": invalid,

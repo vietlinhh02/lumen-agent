@@ -78,6 +78,14 @@ class StreamDone:
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class LLMUsage:
+    """Token usage returned by complete_with_usage()."""
+    input_tokens: int
+    output_tokens: int
+    model: str
+
+
 StreamChunk = Union[TextChunk, ToolCallStart, ToolCallArgsDelta, ToolCallDone, StreamDone]
 
 
@@ -121,9 +129,36 @@ class AIProvider(ABC):
     ) -> dict[str, Any]:
         """Return structured JSON dict matching *schema* (JSON Schema format)."""
 
+    async def complete_structured_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        tool_name: str,
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        """Return (structured_data, LLMUsage). Default implementation returns 0 usage."""
+        data = await self.complete_structured(messages, schema, tool_name, system, max_tokens)
+        return data, LLMUsage(input_tokens=0, output_tokens=0, model="unknown")
+
     @abstractmethod
     async def embed(self, text: str) -> list[float]:
         """Return embedding vector for *text*."""
+
+    async def complete_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[str, LLMUsage]:
+        """Return (text, LLMUsage) with real token counts.
+
+        Default implementation calls complete() and returns zero-count usage.
+        Subclasses override to capture actual provider-reported token counts.
+        This does NOT replace complete() so existing callers are unaffected.
+        """
+        text = await self.complete(messages, system=system, max_tokens=max_tokens)
+        return text, LLMUsage(input_tokens=0, output_tokens=0, model="unknown")
 
     @abstractmethod
     async def stream_with_tools(
@@ -186,6 +221,29 @@ class AnthropicAdapter(AIProvider):
         response = await self._client.messages.create(**kwargs)
         return response.content[0].text  # type: ignore[union-attr]
 
+    async def complete_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[str, LLMUsage]:
+        """Anthropic implementation — reads .usage.input_tokens / output_tokens."""
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
+        if system:
+            kwargs["system"] = system
+        response = await self._client.messages.create(**kwargs)
+        text = response.content[0].text  # type: ignore[union-attr]
+        usage = LLMUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            model=self._model,
+        )
+        return text, usage
+
     async def stream(
         self,
         messages: list[dict[str, str]],
@@ -220,11 +278,21 @@ class AnthropicAdapter(AIProvider):
         system: str | None = None,
         max_tokens: int = 2048,
     ) -> dict[str, Any]:
-        """Force JSON output via tool_use.
+        """Force JSON output via tool_use."""
+        data, _ = await self.complete_structured_with_usage(
+            messages, schema, tool_name, system, max_tokens
+        )
+        return data
 
-        Defines a single tool whose input_schema is *schema*, then forces the
-        model to call it. The returned tool_input is a validated JSON dict.
-        """
+    async def complete_structured_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        tool_name: str,
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        """Force JSON output via tool_use and return token usage."""
         tool: dict[str, Any] = {
             "name": tool_name,
             "description": f"Return structured data matching the {tool_name} schema.",
@@ -240,9 +308,16 @@ class AnthropicAdapter(AIProvider):
         if system:
             kwargs["system"] = system
         response = await self._client.messages.create(**kwargs)
+        
+        usage = LLMUsage(
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            model=self._model,
+        )
+
         for block in response.content:
             if block.type == "tool_use" and block.name == tool_name:
-                return block.input  # type: ignore[return-value]
+                return block.input, usage  # type: ignore[return-value]
         raise ValueError(f"Model did not call tool '{tool_name}'")
 
     async def embed(self, text: str) -> list[float]:
@@ -392,6 +467,25 @@ class OpenAICompatibleAdapter(AIProvider):
 
         return ""
 
+    async def complete_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[str, LLMUsage]:
+        """OpenAI-compatible implementation — reads .usage.prompt_tokens / completion_tokens."""
+        kwargs = self._base_kwargs(messages, system, max_tokens)
+        response = await self._client.chat.completions.create(**kwargs)
+        msg = response.choices[0].message
+        text = msg.content or ""
+        usage_obj = response.usage
+        usage = LLMUsage(
+            input_tokens=usage_obj.prompt_tokens if usage_obj else 0,
+            output_tokens=usage_obj.completion_tokens if usage_obj else 0,
+            model=self._model,
+        )
+        return text, usage
+
     async def stream(
         self,
         messages: list[dict[str, str]],
@@ -438,41 +532,45 @@ class OpenAICompatibleAdapter(AIProvider):
         system: str | None = None,
         max_tokens: int = 4096,
     ) -> dict[str, Any]:
-        """Force JSON output via two strategies.
+        data, _ = await self.complete_structured_with_usage(
+            messages, schema, tool_name, system, max_tokens
+        )
+        return data
 
-        1) **response_format json_object** — works with DeepSeek V4 Flash
-           (thinking model) which rejects forced tool_choice.
-        2) **forced tool_choice** — works with standard OpenAI / GPT models.
-
-        The schema is injected into the system prompt so the model knows the
-        expected shape when using strategy (1).
-        """
+    async def complete_structured_with_usage(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        tool_name: str,
+        system: str | None = None,
+        max_tokens: int = 2048,
+    ) -> tuple[dict[str, Any], LLMUsage]:
+        """Return structured JSON output with usage."""
         import json
+        schema_str = json.dumps(schema)
 
-        schema_str = json.dumps(schema, indent=2)
-
-        # Strategy 1: response_format json_object (DeepSeek‑compatible)
+        # Strategy 1: JSON format
         try:
-            return await self._structured_via_json_format(
+            return await self._structured_via_json_format_with_usage(
                 messages, schema, schema_str, system, max_tokens, use_response_format=True
             )
         except Exception:
             pass
 
-        # Strategy 2: forced tool_choice (standard OpenAI‑compatible)
+        # Strategy 2: tool_choice
         try:
-            return await self._structured_via_tool_choice(
+            return await self._structured_via_tool_choice_with_usage(
                 messages, schema, tool_name, system, max_tokens
             )
         except Exception:
             pass
             
-        # Strategy 3: raw text fallback (for reasoning models like mimo-v2.5-pro)
-        return await self._structured_via_json_format(
+        # Strategy 3: raw text fallback
+        return await self._structured_via_json_format_with_usage(
             messages, schema, schema_str, system, max_tokens, use_response_format=False
         )
 
-    async def _structured_via_json_format(
+    async def _structured_via_json_format_with_usage(
         self,
         messages: list[dict[str, str]],
         schema: dict[str, Any],
@@ -480,7 +578,7 @@ class OpenAICompatibleAdapter(AIProvider):
         system: str | None,
         max_tokens: int,
         use_response_format: bool = True,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         import json
 
         json_system = (
@@ -507,27 +605,33 @@ class OpenAICompatibleAdapter(AIProvider):
 
         response = await self._client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content or ""
-        # Strip markdown fences if the model ignores the instruction
+        
+        usage_obj = response.usage
+        usage = LLMUsage(
+            input_tokens=usage_obj.prompt_tokens if usage_obj else 0,
+            output_tokens=usage_obj.completion_tokens if usage_obj else 0,
+            model=self._model,
+        )
+
         content = content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("\n```", 1)[0]
 
-        # Additional cleanup to find JSON block in case reasoning model rambled
         start_idx = content.find("{")
         end_idx = content.rfind("}")
         if start_idx != -1 and end_idx != -1 and end_idx >= start_idx:
             content = content[start_idx:end_idx+1]
 
-        return json.loads(content)
+        return json.loads(content), usage
 
-    async def _structured_via_tool_choice(
+    async def _structured_via_tool_choice_with_usage(
         self,
         messages: list[dict[str, str]],
         schema: dict[str, Any],
         tool_name: str,
         system: str | None,
         max_tokens: int,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], LLMUsage]:
         import json
 
         tool_def: dict[str, Any] = {
@@ -550,10 +654,18 @@ class OpenAICompatibleAdapter(AIProvider):
         if self._extra_body:
             kwargs["extra_body"] = dict(self._extra_body)
         response = await self._client.chat.completions.create(**kwargs)
+        
+        usage_obj = response.usage
+        usage = LLMUsage(
+            input_tokens=usage_obj.prompt_tokens if usage_obj else 0,
+            output_tokens=usage_obj.completion_tokens if usage_obj else 0,
+            model=self._model,
+        )
+        
         tool_calls = response.choices[0].message.tool_calls
         if not tool_calls:
             raise ValueError(f"Model '{self._model}' did not call tool '{tool_name}'")
-        return json.loads(tool_calls[0].function.arguments)
+        return json.loads(tool_calls[0].function.arguments), usage
 
     async def embed(self, text: str) -> list[float]:
         raise NotImplementedError(

@@ -29,6 +29,8 @@ from sse_starlette.sse import EventSourceResponse
 from app.agents.assistant.event_mapper import EventMapper
 from app.agents.assistant.events import BaseEvent
 from app.agents.assistant.graph.adapter import is_graph_enabled
+from app.ai.provider import LLMUsage
+from app.services.cost_tracker import log_llm_usage
 from app.core.security import get_current_user
 from app.db.models import User
 from app.db.session import get_db
@@ -504,6 +506,19 @@ async def chat(
                     tool_name = sse_data.get("data", {}).get("tool", "unknown")
                     tool_calls[tool_name] += 1
                     metrics.record_tool_call(tool_name)
+                    
+                if hasattr(event, "usage") and getattr(event, "usage", None):
+                    usage_dict = getattr(event, "usage")
+                    try:
+                        usage_obj = LLMUsage(
+                            input_tokens=usage_dict.get("input_tokens", 0),
+                            output_tokens=usage_dict.get("output_tokens", 0),
+                            model=usage_dict.get("model", "unknown")
+                        )
+                        # Fire and forget logging (db.add is sync within async session)
+                        await log_llm_usage(db, user.id, usage_obj, context="assistant")
+                    except Exception as e:
+                        logger.warning("Failed to log LLM usage: %s", e)
 
                 yield event_dict
 
@@ -533,6 +548,9 @@ async def chat(
                 tool_calls=tool_calls,
                 tokens_used=0,  # Token tracking requires integration with provider
             )
+            # Record into eval counters for /api/stats/eval
+            from app.services.eval_counters import eval_counters as _ec
+            _ec.sessions.record(wall_time_s=wall_time, success=(final_status == "completed"))
 
     # Verify session exists
     session = await service.get_session(user, session_id)

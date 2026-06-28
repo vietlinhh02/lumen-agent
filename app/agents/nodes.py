@@ -29,13 +29,14 @@ from app.ai.prompts import (
     REVIEW_WRITER_CHUNK_USER,
     format_protocol_for_prompt,
 )
-from app.ai.provider import get_matrix_verifier_provider, get_provider
+from app.ai.provider import get_matrix_verifier_provider, get_provider, LLMUsage
 from app.ai.structured_outputs import (
     GapListOutput,
     MatrixRowOutput,
     QueryPlanOutput,
     ReviewOutput,
 )
+from app.services.cost_tracker import log_llm_usage
 from app.services.extraction_schema import (
     build_extraction_json_schema,
     coerce_custom_value,
@@ -547,7 +548,7 @@ async def _verify_matrix_extraction(
     primary_result: dict[str, Any],
     protocol_text: str | None = None,
     custom_schema: dict | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], LLMUsage]:
     """Ask the verifier model to confirm or correct one matrix extraction."""
     protocol_block = protocol_text or "Not provided"
     verify_prompt = f"""Verify this literature-matrix extraction against the paper evidence.
@@ -567,7 +568,7 @@ Evidence:
 {chunk_context or "No full-text sections available."}
 """
     schema = custom_schema if custom_schema is not None else MatrixRowOutput.model_json_schema()
-    return await verifier_provider.complete_structured(
+    return await verifier_provider.complete_structured_with_usage(
         messages=[{"role": "user", "content": verify_prompt}],
         system=_MATRIX_VERIFICATION_SYSTEM,
         schema=schema,
@@ -736,7 +737,7 @@ async def matrix_extraction_node(
                     chunk_context=chunk_context,
                 )
                 if use_custom_schema and schema_json is not None:
-                    primary_result = await provider.complete_structured(
+                    primary_result, usage_p = await provider.complete_structured_with_usage(
                         messages=[{"role": "user", "content": user_msg}],
                         system=system_prompt,
                         schema=schema_json,
@@ -744,13 +745,14 @@ async def matrix_extraction_node(
                         max_tokens=32768,
                     )
                 else:
-                    primary_result = await provider.complete_structured(
+                    primary_result, usage_p = await provider.complete_structured_with_usage(
                         messages=[{"role": "user", "content": user_msg}],
                         system=MATRIX_EXTRACTION_CHUNK_SYSTEM,
                         schema=MatrixRowOutput.model_json_schema(),
                         tool_name="matrix_row",
                         max_tokens=32768,
                     )
+                await log_llm_usage(db, state.user_id, usage_p, context="matrix")
                 normalized = _normalize_matrix_extraction(primary_result)
                 # T4: pull out typed custom-field values per the schema.
                 custom_fields: dict = {}
@@ -766,7 +768,7 @@ async def matrix_extraction_node(
                             custom_fields[f.key] = coerced
                 if verifier_provider is not None:
                     try:
-                        verified_result = await _verify_matrix_extraction(
+                        verified_result, usage_v = await _verify_matrix_extraction(
                             verifier_provider,
                             user_topic=state.user_topic,
                             paper=paper,
@@ -775,6 +777,7 @@ async def matrix_extraction_node(
                             protocol_text=protocol_text,
                             custom_schema=schema_json,
                         )
+                        await log_llm_usage(db, state.user_id, usage_v, context="matrix")
                         verified_normalized = _normalize_matrix_extraction(verified_result)
                         if verified_normalized != normalized:
                             logger.info(

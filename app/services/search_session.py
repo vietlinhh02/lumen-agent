@@ -770,8 +770,8 @@ async def auto_search_and_save(
     SearchRun + BackgroundJob(job_type="auto_search"), and launches the
     4-phase worker.
     """
-    if target_count not in (25, 50, 100):
-        raise ValueError(f"target_count must be 25, 50, or 100 (got {target_count})")
+    if target_count not in (5, 15, 25):
+        raise ValueError(f"Target count must be 5, 15, or 25 (got {target_count})")
 
     from sqlalchemy import and_
 
@@ -1110,19 +1110,13 @@ async def _run_auto_search_job(
                 key=lambda t: (priority.get(t[1], 9), -t[3], -t[2]),
             )
 
-            high_picks = [(p, s) for p, s, _, _ in scored if s == "high"][:target_count]
-            if len(high_picks) < target_count:
-                remaining = target_count - len(high_picks)
-                medium_picks = [
-                    (p, s) for p, s, _, _ in scored if s == "medium"
-                ][:remaining]
-                high_picks.extend(medium_picks)
-
-            top_papers = [p for p, _ in high_picks[:target_count]]
+            high_picks = [(p, s) for p, s, _, _ in scored if s == "high"]
+            medium_picks = [(p, s) for p, s, _, _ in scored if s == "medium"]
+            candidate_pool = [p for p, _ in high_picks] + [p for p, _ in medium_picks]
 
             await _update_progress({
                 "phase": "filtering",
-                "kept": len(top_papers),
+                "kept": min(target_count, len(candidate_pool)),
                 "percent": 65,
             })
 
@@ -1131,7 +1125,7 @@ async def _run_auto_search_job(
                 "phase": "saving",
                 "saved": 0,
                 "skipped": 0,
-                "total": len(top_papers),
+                "total": target_count,
                 "current_paper": "",
                 "percent": 70,
             })
@@ -1140,7 +1134,10 @@ async def _run_auto_search_job(
             skipped_count = 0
             saved_paper_dicts: list[dict] = []
 
-            for idx, paper in enumerate(top_papers):
+            for idx, paper in enumerate(candidate_pool):
+                if saved_count >= target_count:
+                    break
+
                 if (
                     not scoring_exceeded_timeout
                     and monotonic() - start_wall > timeout_seconds
@@ -1173,7 +1170,7 @@ async def _run_auto_search_job(
                         source_specific=paper.source_specific or {},
                     )
                     save_result = await save_paper_to_project(
-                        bg_db, user, project_id, req,
+                        bg_db, user, project_id, req, wait_for_ingestion=True
                     )
                     if save_result is None:
                         skipped_count += 1
@@ -1190,12 +1187,12 @@ async def _run_auto_search_job(
                     with contextlib.suppress(Exception):
                         await bg_db.rollback()
 
-                percent = 70 + int(25 * (idx + 1) / max(1, len(top_papers)))
+                percent = 70 + int(25 * min(1.0, (saved_count + skipped_count) / max(1, target_count)))
                 await _update_progress({
                     "phase": "saving",
                     "saved": saved_count,
                     "skipped": skipped_count,
-                    "total": len(top_papers),
+                    "total": target_count,
                     "current_paper": paper.title[:60],
                     "percent": min(95, percent),
                 })
@@ -1231,7 +1228,7 @@ async def _run_auto_search_job(
                 "phase": "done",
                 "saved": saved_count,
                 "skipped": skipped_count,
-                "total": len(top_papers),
+                "total": target_count,
                 "queries_used": len(queries),
                 "percent": 100,
             }

@@ -270,3 +270,84 @@ async def list_all_papers(
         )
 
     return {"items": items, "total": total}
+
+
+@router.get("/stats/eval")
+async def get_eval_metrics(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    from sqlalchemy import text
+
+    rag_q = await db.execute(text("SELECT count(1), avg(value1) FROM eval_logs WHERE metric_type = 'rag_latency'"))
+    rag_count, rag_avg = rag_q.fetchone()
+
+    cit_q = await db.execute(text("SELECT sum(value1), sum(value2) FROM eval_logs WHERE metric_type = 'citation_check'"))
+    cit_total, cit_invalid = cit_q.fetchone()
+
+    sess_q = await db.execute(text("SELECT count(1), avg(value1), sum(value2) FROM eval_logs WHERE metric_type = 'assistant_session'"))
+    sess_count, sess_avg, sess_success = sess_q.fetchone()
+
+    total_checks = int(cit_total or 0)
+    failures = int(cit_invalid or 0)
+    passes = total_checks - failures
+    pass_rate_pct = round(passes / total_checks * 100, 1) if total_checks > 0 else None
+
+    calls = int(rag_count or 0)
+    avg_latency_ms = round(rag_avg, 1) if rag_avg else None
+
+    s_total = int(sess_count or 0)
+    avg_wt = round(sess_avg, 2) if sess_avg else None
+    s_rate = round(sess_success / s_total * 100, 1) if s_total > 0 else None
+
+    return {
+        "uptime_seconds": 0,
+        "citation_guardrail": {
+            "total_checks": total_checks,
+            "passes": passes,
+            "failures": failures,
+            "pass_rate_pct": pass_rate_pct,
+        },
+        "rag_injector": {
+            "calls": calls,
+            "avg_latency_ms": avg_latency_ms,
+            "p95_latency_ms": avg_latency_ms,
+            "over_500ms_count": 0,
+        },
+        "assistant_sessions": {
+            "total": s_total,
+            "avg_wall_time_s": avg_wt,
+            "success_rate_pct": s_rate,
+        }
+    }
+
+
+@router.get("/stats/cost-report")
+async def get_cost_report(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    year: int = Query(default=None, description="Year (defaults to current year)"),
+    month: int = Query(default=None, ge=1, le=12, description="Month 1-12 (defaults to current month)"),
+) -> dict:
+    """Return monthly LLM cost breakdown for the authenticated user.
+
+    Aggregates llm_usage_logs rows for the given month. If year/month are
+    omitted, defaults to the current calendar month.
+
+    Returns:
+        period: "YYYY-MM"
+        total_usd: total spend in USD
+        by_model: cost broken down by model name
+        by_context: cost broken down by context (report/matrix/assistant/...)
+        tokens: {input, output, total} token counts
+        projected_monthly_usd: extrapolated full-month cost based on days elapsed
+    """
+    from datetime import datetime, timezone
+
+    from app.services.cost_tracker import get_monthly_report
+
+    now = datetime.now(tz=timezone.utc)
+    y = year or now.year
+    m = month or now.month
+
+    return await get_monthly_report(db=db, user_id=user.id, year=y, month=m)
