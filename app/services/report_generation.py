@@ -306,6 +306,11 @@ Plan a literature review with 5-8 substantive synthesis sections. Each section s
   summarize the strongest cross-paper patterns, state implications, and identify
   specific future work without introducing new evidence.
 - IMPORTANT: Ensure your planned sections collectively try to cover as many of the provided matrix rows as possible.
+- The "Limitations" section must focus on METHODOLOGICAL limitations of the
+  reviewed studies themselves (sample size, evaluation metrics, reproducibility,
+  narrow evaluation scope). The "Research Gaps" section must focus on UNEXPLORED
+  areas, missing comparisons, and future research directions. These two sections
+  must NOT overlap in content.
 
 Return a JSON object with a "sections" array, each section having:
 - "heading": section name
@@ -428,6 +433,10 @@ new claims.
 Do not write a Methodology or Methods section; the application adds that section separately.
 Treat blogs, leaderboards, vendor pages, and commentary sources as industry context only.
 Do not use them as primary scholarly evidence for empirical claims.
+NEVER mention author names (e.g. "Smith et al.") — refer to studies by contribution.
+ONLY mention benchmarks, datasets, tools, or frameworks that appear in the evidence above.
+When the evidence contains specific numbers or metrics, include them instead of vague
+superlatives like "significant" or "substantial".
 """
 
     try:
@@ -491,6 +500,14 @@ Please review and improve them:
 9. Ensure the final substantive section is named "Conclusion". It should close the review by
    answering the research question, synthesizing the main patterns, naming implications, and
    pointing to specific future work without adding new evidence.
+10. REMOVE duplicate content: if the same finding, limitation, or claim appears in
+    multiple sections, keep it only in the most relevant section. Merge or trim sections
+    that repeat the same points.
+11. Do NOT add new factual claims, author names, benchmark names, or entity names that
+    were not already present in the original sections. Your role is to polish and
+    integrate, not to introduce new information.
+12. NEVER mention author names (e.g. "Smith et al.") in the prose. Refer to studies
+    by their contribution instead.
 Available Papers (ID to Title):
 {paper_catalog_str}
 
@@ -1189,7 +1206,6 @@ def _render_methodology(methodology: Mapping[str, int]) -> str:
             "corpus entries are treated as supplementary material rather than as "
             "equally structured evidence."
         )
-
     return (
         "This narrative synthesis is built on the project's curated scholarly "
         "corpus. The review draws on "
@@ -1200,7 +1216,8 @@ def _render_methodology(methodology: Mapping[str, int]) -> str:
         "against the project's saved evidence identifiers. Peer-reviewed and "
         "preprint scholarly sources are prioritized for empirical claims; web "
         "commentary, vendor material, and leaderboard sources are treated only "
-        "as contextual industry evidence and listed separately when cited."
+        "as contextual industry evidence and, when cited, are listed in a "
+        "separate 'Industry Commentary' section."
         f"{coverage_note}"
     )
 

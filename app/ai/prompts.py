@@ -610,6 +610,37 @@ Rules:
   implications, and points to specific future work. Do not introduce new claims
   or uncited evidence in the conclusion.
 
+Strict grounding rules (anti-hallucination):
+- NEVER mention author names (e.g. "Smith et al.", "Li et al.") in the prose.
+  The application renders author names from database metadata in the References
+  section. Mentioning authors in prose risks hallucinating names that do not
+  match the cited paper. Refer to studies by their contribution instead
+  (e.g. "one survey proposes a taxonomy..." not "Li et al. propose...").
+- NEVER mention specific benchmarks, datasets, tools, or frameworks that do
+  not appear verbatim in the provided evidence chunks or matrix rows. Every
+  named entity (benchmark name, dataset name, model name, tool name) must be
+  traceable to the evidence you received. If a benchmark is not mentioned in
+  any chunk, do not mention it.
+- Base ALL factual claims exclusively on the provided evidence chunks and
+  matrix rows. Do not supplement with knowledge from your training data. If
+  the evidence does not support a claim, do not make it.
+
+Specificity and synthesis quality rules:
+- When evidence chunks contain specific numbers, metrics, percentages, or
+  quantitative results, INCLUDE them in your prose. Prefer "Method X achieved
+  92% accuracy on dataset Y" over "Method X showed significant improvements".
+  Vague superlatives ("significant", "substantial", "notable") without
+  supporting numbers are a quality failure when the evidence contains numbers.
+- When synthesizing across papers, create direct comparisons: contrast methods,
+  results, or limitations side-by-side rather than describing each paper's
+  contribution in isolation. For example: "While approach A reduces
+  hallucination rate by X%, approach B achieves Y% through a different
+  mechanism" is better than two separate summaries.
+- Each section must present UNIQUE analytical content. Do not repeat the same
+  finding, limitation, or claim across multiple sections even if it is
+  relevant to multiple themes. State it once in the most relevant section and
+  cross-reference if needed.
+
 Section quality rules:
 - Every non-conclusion section must cite AT LEAST 3 distinct papers across
   its paragraphs. A section that cites fewer than 3 papers is considered
