@@ -283,7 +283,7 @@ export default function ProjectSearchPage() {
     }
   }
 
-  async function handleAutoSearch(targetCount: 25 | 50 | 100) {
+  async function handleAutoSearch(targetCount: 5 | 15 | 25) {
     if (!projectId) return;
     setAutoSearchMenuOpen(false);
     const trimmed = query.trim();
@@ -462,7 +462,7 @@ export default function ProjectSearchPage() {
           </button>
           {autoSearchMenuOpen && (
             <div className="absolute right-0 mt-2 w-56 rounded-xl border border-hairline bg-surface-card shadow-lg z-10 overflow-hidden">
-              {([25, 50, 100] as const).map((n) => (
+              {([5, 15, 25] as const).map((n) => (
                 <button
                   key={n}
                   onClick={() => handleAutoSearch(n)}

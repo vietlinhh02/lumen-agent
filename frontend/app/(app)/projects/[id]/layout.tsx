@@ -169,6 +169,16 @@ export default function ProjectWorkspaceLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    const hasExtracting = currentPapers.some((p) => p.full_text_status === "extracting" || p.full_text_status === "pending");
+    if (!hasExtracting) return;
+    const int = setInterval(() => {
+      void fetchProjectPapers(projectId);
+    }, 5000);
+    return () => clearInterval(int);
+  }, [projectId, currentPapers, fetchProjectPapers]);
+
   const activeKey = (() => {
     // Strip the /projects/[id] prefix and compare the remainder against
     // each tab's href. We use exact equality because `startsWith("")`
@@ -201,12 +211,77 @@ export default function ProjectWorkspaceLayout({
   const coreTabs = TABS.filter((t) => !t.addon);
   const addonTabs = TABS.filter((t) => t.addon);
 
-  function renderTabLink(t: (typeof TABS)[number]) {
+  function renderTabLink(t: (typeof TABS)[number], isCore = true) {
     const isActive = t.key === activeKey;
     const Icon = t.icon;
     const badge = badges[t.key];
     const isLocked = workflowStep < t.minStep;
     const lockReason = isLocked ? lockReasonForTab(t.key, workflowStep, currentPapers.length) : null;
+
+    const isStepMode = workflowStep < 6;
+    const isPipelineTab = isCore && t.key !== "overview";
+
+    if (isStepMode && isPipelineTab) {
+      const stepIndex = coreTabs.filter((x) => x.key !== "overview").findIndex((x) => x.key === t.key);
+      const stepNum = stepIndex + 1;
+      
+      const doneThresholds: Record<string, number> = {
+        search: 2,
+        papers: 3,
+        matrix: 4,
+        map: 5,
+        gaps: 6,
+        reports: 7,
+      };
+      const isDone = workflowStep >= (doneThresholds[t.key] ?? 99);
+
+      return (
+        <div key={t.key} className="flex items-center py-1.5 sm:py-2">
+          {stepIndex === 0 && (
+             <div className="h-4 w-px bg-hairline mx-1 sm:mx-2" />
+          )}
+          {stepIndex > 0 && (
+             <div className={`h-[2px] w-3 sm:w-5 mx-1 sm:mx-1.5 rounded-full ${isLocked ? "bg-surface-bone" : "bg-primary/30"}`} />
+          )}
+          <Link
+            href={isLocked ? "#" : `${base}${t.href}`}
+            onClick={(e) => {
+              if (isLocked) {
+                e.preventDefault();
+                handleLockedTabClick(t.key, t.minStep);
+              }
+            }}
+            title={lockReason ?? undefined}
+            aria-disabled={isLocked}
+            className={`relative flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-full font-ui text-[12px] sm:text-[13px] font-medium transition-all whitespace-nowrap border ${
+              isActive
+                ? "border-primary bg-primary/5 text-primary"
+                : isLocked
+                  ? "border-transparent text-stone cursor-not-allowed hover:text-stone"
+                  : "border-hairline bg-surface-card text-charcoal hover:border-ash hover:text-ink shadow-sm"
+            }`}
+          >
+            {isDone && !isActive ? (
+              <Check size={14} weight="bold" className="text-emerald-500" />
+            ) : isLocked ? (
+              <Lock size={12} weight="fill" className="text-stone" />
+            ) : (
+              <span className={`flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${isActive ? "bg-primary text-on-primary" : "bg-surface-bone text-ash"}`}>
+                {stepNum}
+              </span>
+            )}
+            <span>{t.label}</span>
+          </Link>
+        </div>
+      );
+    }
+
+    let displayLabel: string = t.label;
+    if (!isStepMode && isPipelineTab) {
+      const stepIndex = coreTabs.filter((x) => x.key !== "overview").findIndex((x) => x.key === t.key);
+      displayLabel = `${stepIndex + 1}. ${t.label}`;
+    }
+
     return (
       <Link
         key={t.key}
@@ -227,7 +302,7 @@ export default function ProjectWorkspaceLayout({
           }`}
       >
         <Icon size={15} weight={isActive ? "fill" : "regular"} />
-        <span>{t.label}</span>
+        <span>{displayLabel}</span>
         {isLocked ? (
           <Lock size={10} weight="fill" className="ml-0.5 text-stone sm:hidden" />
         ) : (
@@ -379,6 +454,12 @@ export default function ProjectWorkspaceLayout({
                     </span>
                   </span>
                 )}
+              {currentPapers.some(p => p.full_text_status === "extracting" || p.full_text_status === "pending") && (
+                <span className="font-ui inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold text-blue-700" title="Papers are being extracted">
+                  <Spinner size={12} className="animate-spin" />
+                  Extracting...
+                </span>
+              )}
             </div>
             {project.topic && (
               <p className="mt-1 sm:mt-1.5 text-[12px] sm:text-[14px] leading-[1.45] sm:leading-[1.5] text-charcoal line-clamp-2">
@@ -446,7 +527,7 @@ export default function ProjectWorkspaceLayout({
         style={{ borderBottom: "1px solid var(--hairline)" }}
       >
         <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto scrollbar-hide -mb-px px-4 sm:px-6">
-          {coreTabs.map(renderTabLink)}
+          {coreTabs.map((t) => renderTabLink(t, true))}
 
           {addonTabs.length > 0 && (
             <>
@@ -459,7 +540,7 @@ export default function ProjectWorkspaceLayout({
                 {addonsOpen ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />}
                 <span>More</span>
               </button>
-              {addonsOpen && addonTabs.map(renderTabLink)}
+              {addonsOpen && addonTabs.map((t) => renderTabLink(t, false))}
             </>
           )}
         </nav>

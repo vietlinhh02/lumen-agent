@@ -70,7 +70,7 @@ interface ProjectsState {
 
   // Actions
   fetchProjects: (opts?: { force?: boolean }) => Promise<void>;
-  fetchStats: () => Promise<void>;
+  fetchStats: (opts?: { force?: boolean }) => Promise<void>;
   setFilter: (f: ProjectFilter) => void;
   setSelectedProjectId: (id: string) => void;
   createProject: (data: ProjectCreate) => Promise<ProjectResponse | null>;
@@ -160,16 +160,25 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
     return promise;
   },
 
-  async fetchStats() {
+  async fetchStats(opts) {
+    const { force = false } = opts ?? {};
     const token = useAuthStore.getState().token;
     if (!token) return;
+
+    const { lastFetchedAt, loadingStats, stats } = get();
+    // Re-use the same TTL as fetchProjects (CACHE_TTL_MS)
+    const isFresh = Date.now() - lastFetchedAt < CACHE_TTL_MS;
+    if (!force && !loadingStats && stats !== null && isFresh) {
+      return;
+    }
+
     set({ loadingStats: true });
     try {
       const data = await apiFetch<StatsData>(
         "/stats",
-        { headers: { Authorization: `Bearer ${token}` },
-      });
-      set({ stats: data });
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      set({ stats: data, lastFetchedAt: Date.now() });
     } catch {
       // ignored – caller toasts
     } finally {

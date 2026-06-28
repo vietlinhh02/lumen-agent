@@ -79,7 +79,7 @@ interface SearchState {
   startAutoSearch: (
     query: string,
     projectId: string,
-    targetCount: 25 | 50 | 100,
+    targetCount: number,
   ) => Promise<AutoSearchResponse>;
   setAutoSearchProgress: (p: AutoSearchProgressJson | null) => void;
   clearAutoSearch: () => void;

@@ -9,42 +9,60 @@ interface Props {
   runningJobs: number;
 }
 
+const QUOTES = [
+  "Research is formalized curiosity.",
+  "Stand on the shoulders of giants.",
+  "Every paper is a conversation; your review is the synthesis.",
+  "A good literature review does not just report — it reveals patterns.",
+  "Read widely, think deeply, write clearly.",
+  "The best research begins with a better question.",
+  "Curiosity is the engine of scholarship.",
+  "Synthesis is the moment separate voices become one argument.",
+  "Knowledge grows when connections are made visible.",
+  "Your review is the map you draw across the field.",
+  "Ideas are cheap; evidence is expensive.",
+  "Great researchers are ruthless curators of sources.",
+];
+
 export function DashboardHeader({ stats, runningJobs }: Props) {
   const user = useAuth((s) => s.user);
 
-  const { greeting, sub } = useMemo(() => {
+  const { greeting, quote, status } = useMemo(() => {
     const hour = new Date().getHours();
     const base = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const name = user?.display_name?.trim() || user?.email?.split("@")[0] || "researcher";
     const cap = name.charAt(0).toUpperCase() + name.slice(1);
 
-    const parts: string[] = [];
-    if (runningJobs > 0) parts.push(`${runningJobs} AI job${runningJobs > 1 ? "s" : ""} running`);
-    if (stats) {
-      if (stats.paper_count === 0) parts.push("no papers saved yet");
-      else if (stats.matrix_count === 0) parts.push(`${stats.paper_count} paper${stats.paper_count !== 1 ? "s" : ""} ready to analyze`);
-      else if (stats.gap_count === 0) parts.push("gaps not detected yet");
-      else if (stats.report_count === 0) parts.push("review not generated yet");
-      else parts.push("all systems active");
+    const quoteIndex = new Date().getDate() % QUOTES.length;
+    const quote = QUOTES[quoteIndex];
+
+    let status = "";
+    if (runningJobs > 0) {
+      status = `${runningJobs} AI job${runningJobs > 1 ? "s" : ""} running`;
+    } else if (stats) {
+      if (stats.report_count > 0) status = "Review pipeline complete";
+      else if (stats.gap_count > 0) status = "Gaps detected — ready to review";
+      else if (stats.matrix_count > 0) status = "Matrix ready — find the gaps";
+      else if (stats.paper_count > 0) status = `${stats.paper_count} paper${stats.paper_count !== 1 ? "s" : ""} saved`;
+      else status = "Start by creating a project";
     }
 
-    const sub = parts.length > 0
-      ? `You have ${parts.join(", ")}.`
-      : "Everything is up to date.";
-
-    return { greeting: `${base}, ${cap}`, sub };
+    return { greeting: `${base}, ${cap}`, quote, status };
   }, [user, stats, runningJobs]);
 
   return (
-    <div className="mb-5 animate-fade-in sm:mb-8">
-      <h1
-        className="font-display text-[28px] font-bold leading-[1.05] text-ink sm:text-[36px]"
-      >
+    <div className="animate-fade-in">
+      <h1 className="font-display text-[28px] font-bold leading-[1.05] text-ink sm:text-[36px]">
         {greeting}.
       </h1>
-      <p className="mt-2 max-w-2xl text-sm leading-[1.55] text-charcoal sm:text-base sm:leading-[1.6]">
-        {sub}
+      <p className="mt-2 max-w-2xl text-sm font-medium italic leading-[1.6] text-charcoal sm:text-base sm:leading-[1.65]">
+        “{quote}”
       </p>
+      {status && (
+        <p className="mt-1.5 font-ui text-[12px] text-ash">
+          {status}
+        </p>
+      )}
     </div>
   );
 }

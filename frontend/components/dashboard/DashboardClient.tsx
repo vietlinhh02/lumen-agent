@@ -9,7 +9,6 @@ import { QuickActionsRow } from "./QuickActionsRow";
 import { StatsGrid } from "./StatsGrid";
 import { ProjectsList } from "./ProjectsList";
 import { ActivityFeed } from "./ActivityFeed";
-import { GlobalSearchBar } from "./GlobalSearchBar";
 
 export function DashboardClient() {
   const token = useAuth((s) => s.token);
@@ -38,37 +37,34 @@ export function DashboardClient() {
 
   return (
     <div>
-      <DashboardHeader stats={stats} runningJobs={0} />
+      <div className="mb-5 grid gap-4 sm:mb-8 lg:grid-cols-[1fr_auto] lg:items-start">
+        <DashboardHeader stats={stats} runningJobs={0} />
+        <StatsGrid stats={stats} />
+      </div>
 
-      <GlobalSearchBar />
+      <section className="mb-5 sm:mb-8">
+        <h2 className="mb-4 font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
+          Your Projects
+        </h2>
+        <ProjectsList
+          projects={projects}
+          workflows={workflows}
+          loading={loadingProjects}
+        />
+      </section>
 
       {activeWorkflow && (
         <ContinueWorkingHero workflow={activeWorkflow} />
       )}
 
-      <StatsGrid stats={stats} />
-
       <QuickActionsRow projectCount={stats?.project_count ?? 0} />
 
-      <div className="grid gap-5 lg:grid-cols-2 lg:gap-6">
-        <section>
-          <h2 className="mb-4 font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
-            Your Projects
-          </h2>
-          <ProjectsList
-            projects={projects}
-            workflows={workflows}
-            loading={loadingProjects}
-          />
-        </section>
-
-        <section>
-          <h2 className="mb-4 font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
-            Activity & Insights
-          </h2>
-          <ActivityFeed stats={stats} />
-        </section>
-      </div>
+      <section className="mt-5 sm:mt-8">
+        <h2 className="mb-4 font-ui text-[12px] font-semibold uppercase tracking-wider text-ash">
+          Activity & Insights
+        </h2>
+        <ActivityFeed stats={stats} />
+      </section>
     </div>
   );
 }
