@@ -501,7 +501,7 @@ export default function ProjectWorkspaceLayout({
 
             {menuOpen && (
               <div
-                className="absolute right-0 top-[40px] z-40 w-[160px] rounded-[10px] bg-surface-card p-1 shadow-lg animate-scale-in"
+                className="absolute right-0 top-[40px] z-[60] w-[160px] rounded-[10px] bg-surface-card p-1 shadow-lg animate-scale-in"
                 style={{ border: "1px solid var(--hairline)" }}
               >
                 <button
