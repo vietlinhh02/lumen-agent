@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.models import (
-    ConflictingFinding,
     LiteratureMatrixRow,
     Paper,
     Project,
@@ -32,10 +31,6 @@ async def get_stats(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Return dashboard stats for the current user."""
-    import time
-    import logging
-    logger = logging.getLogger(__name__)
-    t0 = time.time()
     
     # 1. Global counts in a single round-trip
     global_counts_stmt = select(
@@ -66,7 +61,7 @@ async def get_stats(
 
     if recent_project_ids:
         # Combine all per-project counts into a single UNION ALL query to save round-trips
-        from sqlalchemy import literal_column, text
+        from sqlalchemy import text
         
         # Build raw sql for union all because SQLAlchemy's union of grouped selects can be tricky
         p_ids = [f"'{pid}'" for pid in recent_project_ids]
@@ -93,7 +88,6 @@ async def get_stats(
             type_key, pid, count = row
             workflow_counts.setdefault(str(pid), {})[type_key] = count
 
-    t5 = time.time()
     project_workflows = []
     for project in recent_projects:
         counts = workflow_counts.get(str(project.id), {})

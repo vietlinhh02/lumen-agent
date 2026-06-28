@@ -216,6 +216,21 @@ export function ReportContent({
                         <div className="h-px bg-[var(--hairline)]" />
                       </div>
                     ),
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-6">
+                        <table className="w-full text-left border-collapse min-w-[600px]">{children}</table>
+                      </div>
+                    ),
+                    th: ({ children }) => (
+                      <th className="font-semibold text-ink pb-2 px-3 border-b border-[var(--hairline)] bg-surface-bone/30">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="py-2 px-3 border-b border-[var(--hairline)] align-top">
+                        {children}
+                      </td>
+                    ),
                     strong: ({ children }) => {
                       const text = extractText(children);
                       const isLabel = /^(Key synthesis|Key finding|Research gap|Limitation):?$/i.test(text.trim());

@@ -296,7 +296,7 @@ Conflicts: {json.dumps(safe_conflicts, indent=2) if safe_conflicts else "None"}
 Plan a literature review with 5-8 substantive synthesis sections. Each section should cover a distinct angle:
 - Do NOT plan a "Methodology" or "Methods" section. The application injects a
   deterministic methodology section from validated project metadata.
-- At least one section on methodology comparison
+- At least one section on methodology comparison (this section MUST include a plan for a comparison table)
 - At least one section on findings and results synthesis
 - At least one section on limitations and challenges
 - If gaps exist, at least one section addressing research gaps
@@ -430,6 +430,7 @@ Structure the section with 2-3 focused paragraphs that synthesize the evidence. 
 section is Conclusion, keep it to 1-2 concise paragraphs that answer the research question,
 distill cross-paper patterns, and point to evidence-backed future work without introducing
 new claims.
+If this section involves methodology comparison or results synthesis, you MUST include a comprehensive Markdown comparison table between the papers, comparing their methods, datasets, and key results. Output this Markdown table as the entire 'text' content of one of the paragraphs.
 Do not write a Methodology or Methods section; the application adds that section separately.
 Treat blogs, leaderboards, vendor pages, and commentary sources as industry context only.
 Do not use them as primary scholarly evidence for empirical claims.
@@ -508,6 +509,7 @@ Please review and improve them:
     integrate, not to introduce new information.
 12. NEVER mention author names (e.g. "Smith et al.") in the prose. Refer to studies
     by their contribution instead.
+13. PRESERVE any Markdown comparison tables present in the original sections. Do not delete them.
 Available Papers (ID to Title):
 {paper_catalog_str}
 

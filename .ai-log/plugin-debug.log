@@ -638,3 +638,25 @@
 [2026-06-27T18:59:44.974Z] chat.message: role=user, content length=75
 [2026-06-27T18:59:44.974Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
 [2026-06-27T18:59:44.975Z] spawned successfully
+[2026-06-28T10:35:57.711Z] Plugin module loaded
+[2026-06-28T10:35:57.712Z] Plugin init called, directory=/home/eddiesngu/Desktop/VinUni/C2-App-053
+[2026-06-28T10:35:59.930Z] chat.message fired
+[2026-06-28T10:35:59.930Z] chat.message: role=user, content length=218
+[2026-06-28T10:35:59.930Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-28T10:35:59.931Z] spawned successfully
+[2026-06-28T10:38:22.597Z] chat.message fired
+[2026-06-28T10:38:22.598Z] chat.message: role=user, content length=15
+[2026-06-28T10:38:22.598Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-28T10:38:22.599Z] spawned successfully
+[2026-06-28T10:39:23.436Z] chat.message fired
+[2026-06-28T10:39:23.436Z] chat.message: role=user, content length=225
+[2026-06-28T10:39:23.436Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-28T10:39:23.437Z] spawned successfully
+[2026-06-28T10:41:50.534Z] chat.message fired
+[2026-06-28T10:41:50.535Z] chat.message: role=user, content length=45
+[2026-06-28T10:41:50.535Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-28T10:41:50.535Z] spawned successfully
+[2026-06-28T10:43:29.069Z] chat.message fired
+[2026-06-28T10:43:29.070Z] chat.message: role=user, content length=59
+[2026-06-28T10:43:29.070Z] logToHook called: script=/home/eddiesngu/Desktop/VinUni/C2-App-053/scripts/log_hook.py exists=true
+[2026-06-28T10:43:29.071Z] spawned successfully

@@ -159,7 +159,7 @@ class CitedParagraph(BaseModel):
     The citation guardrail service validates each ID before export.
     """
 
-    text: str = Field(description="Paragraph text. Claims must correspond to cited papers.")
+    text: str = Field(description="Paragraph text or a complete Markdown table. Claims must correspond to cited papers.")
     citation_paper_ids: Annotated[list[uuid.UUID], Field(min_length=1)] = Field(
         description="IDs of project papers cited in this paragraph. Must not be empty."
     )
