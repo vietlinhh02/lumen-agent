@@ -1,4 +1,6 @@
-const BASE_URL = "/api";
+const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL 
+  ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api`
+  : "/api";
 
 export async function apiFetch<T>(
   path: string,
