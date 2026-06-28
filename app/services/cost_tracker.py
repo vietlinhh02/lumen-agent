@@ -11,7 +11,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -116,10 +116,7 @@ async def get_monthly_report(
 
     # Month bounds in UTC
     start = datetime(year, month, 1)
-    if month == 12:
-        end = datetime(year + 1, 1, 1)
-    else:
-        end = datetime(year, month + 1, 1)
+    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
 
     base_where = (
         LLMUsageLog.user_id == user_id,
@@ -155,7 +152,7 @@ async def get_monthly_report(
     total_output = int(totals_row.total_output)
 
     # Project to full month based on days elapsed
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     days_in_month = (end - start).days
     if now < end:
         days_elapsed = max(1, (now - start).days)

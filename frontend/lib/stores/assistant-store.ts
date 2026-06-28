@@ -412,7 +412,7 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
           ),
           currentSession:
             state.currentSession?.id === sessionId
-              ? { ...state.currentSession, title: event.title }
+              ? { ...state.currentSession, title: event.title, question: "Lumen AI is connecting to the session. This usually takes just a moment..." }
               : state.currentSession,
         }));
       },
@@ -621,10 +621,7 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       const existingMessages = [...(messagesMap.get(sessionId) ?? [])];
       
       // Find or create the streaming assistant message in events
-      let messageIndex = existingEvents.findIndex(
-        (e) => e.type === "message" && (e as MessageEvent).role === "assistant" &&
-        (e as MessageEvent).id === state._streamingAssistantMessageId
-      );
+      const messageIndex = existingEvents.findIndex((e) => e.type === "message" && (e as MessageEvent).role === "assistant" && (e as MessageEvent).id === state._streamingAssistantMessageId);
 
       // If no streaming message exists, create one
       if (messageIndex === -1) {
@@ -873,7 +870,7 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
     } else {
       // Fallback for all other tools: raw JSON view
       artifact = {
-        type: event.function,
+        type: event.function as ToolArtifact["type"],
         title: event.function.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
         data: result,
       };

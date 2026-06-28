@@ -181,6 +181,7 @@ async def get_stats(
 
 from fastapi import Query
 from sqlalchemy import String, cast, or_
+from datetime import UTC
 
 
 @router.get("/papers/all")
@@ -342,11 +343,11 @@ async def get_cost_report(
         tokens: {input, output, total} token counts
         projected_monthly_usd: extrapolated full-month cost based on days elapsed
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.services.cost_tracker import get_monthly_report
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     y = year or now.year
     m = month or now.month
 

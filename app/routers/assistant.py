@@ -508,7 +508,7 @@ async def chat(
                     metrics.record_tool_call(tool_name)
                     
                 if hasattr(event, "usage") and getattr(event, "usage", None):
-                    usage_dict = getattr(event, "usage")
+                    usage_dict = event.usage
                     try:
                         usage_obj = LLMUsage(
                             input_tokens=usage_dict.get("input_tokens", 0),

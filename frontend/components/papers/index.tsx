@@ -72,11 +72,10 @@ interface TableProps {
 }
 
 export function PapersTable({ papers, sortKey, sortAsc, onToggleSort, onNavigate }: TableProps) {
-  function SortIcon({ column }: { column: SortKey }) {
+  const renderSortIcon = (column: SortKey) => {
     if (sortKey !== column) return null;
     return sortAsc ? <SortAscending size={12} className="text-primary" /> : <SortDescending size={12} className="text-primary" />;
-  }
-
+  };
   return (
     <div className="rounded-[12px] bg-surface-card overflow-hidden" style={{ border: "1px solid var(--hairline)" }}>
       {papers.length === 0 ? (
@@ -89,16 +88,16 @@ export function PapersTable({ papers, sortKey, sortAsc, onToggleSort, onNavigate
           <table className="w-full">
             <thead>
               <tr className="bg-surface-bone/50">
-                <th onClick={() => onToggleSort("title")} className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-5 py-3 cursor-pointer hover:text-ink transition-colors w-[40%]">
-                  <span className="inline-flex items-center gap-1">Title <SortIcon column="title" /></span>
+                <th onClick={() => onToggleSort("title")} className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-4 py-3 cursor-pointer hover:text-ink transition-colors w-[30%]">
+                  <span className="inline-flex items-center gap-1">Title {renderSortIcon("title")}</span>
                 </th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-4 py-3 w-[20%]">Authors</th>
                 <th onClick={() => onToggleSort("year")} className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-4 py-3 cursor-pointer hover:text-ink transition-colors">
-                  <span className="inline-flex items-center gap-1">Year <SortIcon column="year" /></span>
+                  <span className="inline-flex items-center gap-1">Year {renderSortIcon("year")}</span>
                 </th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-4 py-3">Venue</th>
                 <th onClick={() => onToggleSort("citations")} className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-right px-4 py-3 cursor-pointer hover:text-ink transition-colors">
-                  <span className="inline-flex items-center gap-1 justify-end">Cited <SortIcon column="citations" /></span>
+                  <span className="inline-flex items-center gap-1 justify-end">Cited {renderSortIcon("citations")}</span>
                 </th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-left px-4 py-3">Project</th>
                 <th className="font-ui text-[11px] font-semibold text-ash uppercase tracking-wide text-center px-4 py-3 w-[60px]">Link</th>

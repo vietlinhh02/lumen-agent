@@ -9,13 +9,9 @@ Covers three metric families:
 
 from __future__ import annotations
 
-import threading
-import time
-from dataclasses import dataclass, field
 
 
 import asyncio
-import time
 from sqlalchemy import text
 from app.db.session import async_session_factory
 

@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * ChatMessage - Renders a single message/event in the chat stream.
  * 

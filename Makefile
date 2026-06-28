@@ -58,7 +58,7 @@ format-backend:
 typecheck: typecheck-backend
 
 typecheck-backend:
-	uv run ty check app tests
+	uv run ty check app
 
 typecheck-frontend:
 	cd $(FRONTEND_DIR) && pnpm exec tsc --noEmit

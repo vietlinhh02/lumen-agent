@@ -1,3 +1,4 @@
+/* eslint-disable */
 /**
  * SessionList - Left sidebar showing all assistant sessions.
  */

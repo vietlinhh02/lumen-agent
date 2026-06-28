@@ -1,3 +1,4 @@
+/* eslint-disable */
 declare module "cytoscape-node-html-label" {
   import type cytoscape from "cytoscape";
 

@@ -231,6 +231,8 @@ async def test_plan_sections_rejects_thin_plan():
     }
 
     result = await _plan_sections(
+        MagicMock(),
+        uuid4(),
         "RAG for medical QA",
         "How does retrieval improve clinical answers?",
         [{"project_paper_id": str(uuid4()), "method": "Graph RAG"}],

@@ -719,6 +719,8 @@ def test_aggregate_sections_succeeds_on_first_attempt():
 
     result = asyncio.run(
         _aggregate_sections(
+            db=MagicMock(),
+            user_id=uuid4(),
             sections=original_sections,
             safe_conflicts=[],
             safe_gaps=[],
@@ -749,7 +751,9 @@ def test_aggregate_sections_retries_with_higher_max_tokens_on_failure(caplog):
     with caplog.at_level(logging.WARNING, logger="app.services.report_generation"):
         result = asyncio.run(
             _aggregate_sections(
-                sections=[{"heading": "Original", "paragraphs": []}],
+            db=MagicMock(),
+            user_id=uuid4(),
+            sections=[{"heading": "Original", "paragraphs": []}],
                 safe_conflicts=[],
                 safe_gaps=[],
                 paper_catalog_str="catalog",
@@ -780,7 +784,9 @@ def test_aggregate_sections_falls_back_after_exhausted_retries(caplog):
     with caplog.at_level(logging.WARNING, logger="app.services.report_generation"):
         result = asyncio.run(
             _aggregate_sections(
-                sections=original_sections,
+            db=MagicMock(),
+            user_id=uuid4(),
+            sections=original_sections,
                 safe_conflicts=[],
                 safe_gaps=[],
                 paper_catalog_str="catalog",
@@ -802,6 +808,8 @@ def test_aggregate_sections_returns_empty_when_sections_empty():
 
     result = asyncio.run(
         _aggregate_sections(
+            db=MagicMock(),
+            user_id=uuid4(),
             sections=[],
             safe_conflicts=[],
             safe_gaps=[],

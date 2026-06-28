@@ -1,9 +1,10 @@
 """Tests for the ReActAgent."""
 
 from unittest.mock import MagicMock
+from app.ai.provider import AIProvider
 
 
-class MockProvider:
+class MockProvider(AIProvider):
     """Mock AI provider."""
 
     def __init__(self, response: str = "Final Answer: Test response"):
