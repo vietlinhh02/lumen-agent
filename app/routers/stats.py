@@ -63,21 +63,13 @@ async def get_stats(
         .limit(8)
     )
 
-    results = await asyncio.gather(
-        db.execute(proj_stmt),
-        db.execute(paper_stmt),
-        db.execute(matrix_stmt),
-        db.execute(gap_stmt),
-        db.execute(report_stmt),
-        db.execute(recent_stmt),
-    )
+    proj_count = (await db.execute(proj_stmt)).scalar() or 0
+    paper_count = (await db.execute(paper_stmt)).scalar() or 0
+    matrix_count = (await db.execute(matrix_stmt)).scalar() or 0
+    gap_count = (await db.execute(gap_stmt)).scalar() or 0
+    report_count = (await db.execute(report_stmt)).scalar() or 0
+    recent_projects = (await db.execute(recent_stmt)).scalars().all()
 
-    proj_count = results[0].scalar() or 0
-    paper_count = results[1].scalar() or 0
-    matrix_count = results[2].scalar() or 0
-    gap_count = results[3].scalar() or 0
-    report_count = results[4].scalar() or 0
-    recent_projects = results[5].scalars().all()
     recent_project_ids = [project.id for project in recent_projects]
 
     workflow_counts: dict[str, dict[str, int]] = {}
@@ -133,9 +125,9 @@ async def get_stats(
                 .group_by(ReviewReport.project_id)
             ),
         }
-        count_results = await asyncio.gather(
-            *(db.execute(query) for query in count_queries.values())
-        )
+        count_results = []
+        for query in count_queries.values():
+            count_results.append(await db.execute(query))
         for key, result in zip(count_queries, count_results, strict=True):
             for project_id, count in result.all():
                 workflow_counts.setdefault(str(project_id), {})[key] = count

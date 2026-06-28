@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 // Define the backend URL. Fallback to localhost if not provided.
-const backendUrl = process.env.BACKEND_URL ?? `http://localhost:${process.env.BACKEND_PORT ?? "8000"}`;
+const backendUrl = process.env.BACKEND_URL ?? `http://127.0.0.1:${process.env.BACKEND_PORT ?? "8000"}`;
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["*"],
