@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # Database
-    database_url: str = "postgresql+asyncpg://litreview:litreview@localhost:5434/litreview"
+    database_url: str = "postgresql+asyncpg://litreview:litreview@127.0.0.1:5434/litreview"
     db_pool_size: int = 20
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
