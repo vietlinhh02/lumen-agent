@@ -640,8 +640,8 @@ async def generate_report(
     # 8. Multi-section generation flow
     provider = get_provider()
 
-    # 8a. Multi-angle RAG retrieval for broader evidence coverage
-    all_chunks = await _retrieve_multi_angle(
+    # 8a & 8b. Run multi-angle retrieval and section planning in parallel
+    retrieve_task = _retrieve_multi_angle(
         db,
         project_id,
         topic,
@@ -651,15 +651,7 @@ async def generate_report(
         conflicts,
         review_protocol=review_protocol,
     )
-    chunks_by_paper = _group_chunks_by_paper(all_chunks)
-    logger.info(
-        "Multi-angle retrieval: %d chunks from %d papers",
-        len(all_chunks),
-        len(chunks_by_paper),
-    )
-
-    # 8b. Section planning
-    sections_plan = await _plan_sections(
+    plan_task = _plan_sections(
         db,
         user_id,
         topic,
@@ -670,6 +662,15 @@ async def generate_report(
         paper_catalog_str,
         provider,
         protocol_text=protocol_text,
+    )
+
+    all_chunks, sections_plan = await asyncio.gather(retrieve_task, plan_task)
+
+    chunks_by_paper = _group_chunks_by_paper(all_chunks)
+    logger.info(
+        "Multi-angle retrieval: %d chunks from %d papers",
+        len(all_chunks),
+        len(chunks_by_paper),
     )
     logger.info("Section planning: %d sections planned", len(sections_plan))
     chunk_context: str | None = None
