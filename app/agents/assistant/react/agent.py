@@ -477,25 +477,6 @@ class ReActAgent:
 
     # ── Pipeline and simple dispatch helpers ──────────────────────────────────
 
-    async def _run_research_pipeline(
-        self,
-        query: str,
-        project_id: str,
-        cancel_event: asyncio.Event | None = None,
-    ) -> AsyncGenerator[BaseEvent]:
-        """Run the deterministic research pipeline orchestrator."""
-        config = ResearchPipelineConfig(
-            project_id=project_id,
-            query=query,
-            max_papers_to_save=10,
-            relevance_threshold="medium",
-            include_gap_section=True,
-            auto_generate_report=True,
-        )
-        pipeline = ResearchPipeline(config, cancel_event=cancel_event)
-        async for event in pipeline.run():
-            yield event
-        yield DoneEvent()
 
     async def _run_single_tool(
         self,

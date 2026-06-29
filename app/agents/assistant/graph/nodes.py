@@ -11,7 +11,6 @@ Nodes are designed to be:
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import logging
@@ -24,7 +23,6 @@ from app.agents.assistant.events import (
     ErrorEvent,
     IterationEvent,
     MessageEvent,
-    ProgressEvent,
     ThoughtEvent,
     ToolEvent,
     WaitEvent,
@@ -33,7 +31,6 @@ from app.agents.assistant.graph.state import (
     AssistantGraphState,
     ScratchpadEntry,
     check_limits,
-    get_last_user_message,
 )
 from app.agents.assistant.react.intent_classifier import IntentClassifier
 from app.agents.assistant.react.router import FastRouter, Intent
