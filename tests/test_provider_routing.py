@@ -328,9 +328,9 @@ def test_stream_with_tools_skips_reasoning_content():
     assert result == ["Answer: ", "42"]
 
 
-def test_extra_body_omitted_when_not_set():
-    """Non-MiniMax models (e.g. deepseek) should not get extra_body in
-    requests — backwards compatible with the original behaviour."""
+def test_extra_body_disables_thinking_for_deepseek():
+    """Non-MiniMax models (e.g. deepseek) should get extra_body in
+    requests to disable the thinking block."""
     import asyncio
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -342,7 +342,7 @@ def test_extra_body_omitted_when_not_set():
     ):
         adapter = _build_provider_for_model("deepseek-v4-flash")
 
-    assert adapter._extra_body == {}
+    assert adapter._extra_body == {"thinking": {"type": "disabled"}}
 
     fake_response = MagicMock()
     fake_response.choices = [MagicMock(message=MagicMock(content="ok"))]
@@ -359,4 +359,4 @@ def test_extra_body_omitted_when_not_set():
         )
 
     call_kwargs = fake_client.chat.completions.create.await_args.kwargs
-    assert "extra_body" not in call_kwargs
+    assert call_kwargs.get("extra_body") == {"thinking": {"type": "disabled"}}
