@@ -488,9 +488,9 @@ class ResearchPipeline:
                         paper_title=paper.get("title", ""),
                         paper_abstract=paper.get("abstract"),
                         paper_year=paper.get("year"),
-                        paper_doi=paper.get("doi"),
-                        paper_arxiv_id=paper.get("arxiv_id"),
-                        paper_semantic_scholar_id=paper.get("paper_id"),
+                        paper_doi=paper.get("doi") or None,
+                        paper_arxiv_id=paper.get("arxiv_id") or None,
+                        paper_semantic_scholar_id=paper.get("paper_id") or None,
                         paper_url=paper.get("url"),
                         paper_citation_count=paper.get("citation_count"),
                         paper_authors=paper.get("authors", []),
@@ -507,6 +507,7 @@ class ResearchPipeline:
                     if result:
                         saved_ids.append(str(result.project_paper_id))
                 except Exception as exc:
+                    await db.rollback()
                     logger.warning("Failed to save paper %s: %s", paper.get("title", ""), exc)
 
         return saved_ids

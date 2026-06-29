@@ -510,6 +510,11 @@ async def _upsert_paper(db: AsyncSession, data: SavePaperRequest) -> Paper:
     """
     paper: Paper | None = None
 
+    # Sanitize empty strings to None for unique identifiers
+    data.paper_semantic_scholar_id = data.paper_semantic_scholar_id or None
+    data.paper_arxiv_id = data.paper_arxiv_id or None
+    data.paper_doi = data.paper_doi or None
+
     # Priority: semantic_scholar > arxiv > doi
     if data.paper_semantic_scholar_id:
         result = await db.execute(
