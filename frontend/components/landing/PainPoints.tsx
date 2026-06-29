@@ -25,56 +25,7 @@ export function PainPoints() {
     const pills = sectionRef.current.querySelectorAll(".trust-pill");
     const arrows = sectionRef.current.querySelectorAll(".trust-arrow");
 
-      const words = heading?.querySelectorAll(".word") || [];
 
-      // SET hidden
-      if (words.length) gsap.set(words, { y: 30, opacity: 0 });
-      if (statCards.length) gsap.set(statCards, { y: 40, opacity: 0 });
-      if (pills.length) gsap.set(pills, { x: -20, opacity: 0 });
-      if (arrows.length) gsap.set(arrows, { scale: 0, opacity: 0 });
-
-      // TO visible
-      if (words.length) {
-        gsap.to(words, {
-          y: 0, opacity: 1, stagger: 0.06, ease: "back.out(1.7)", duration: 0.8,
-          scrollTrigger: { trigger: sectionRef.current, start: "top 75%", toggleActions: "play none none none" },
-        });
-      }
-
-      // Counters
-      const statValues = sectionRef.current.querySelectorAll(".stat-value");
-      statValues.forEach((el) => {
-        const target = parseInt(el.getAttribute("data-target") || "0", 10);
-        const counter = { value: 0 };
-        gsap.to(counter, {
-          value: target, duration: 2, ease: "power1.inOut",
-          scrollTrigger: { trigger: el, start: "top 85%", toggleActions: "play none none none" },
-          onUpdate: () => { el.textContent = Math.round(counter.value).toString(); },
-        });
-      });
-
-      if (statCards.length) {
-        gsap.to(statCards, {
-          y: 0, opacity: 1, stagger: 0.1, ease: "power2.out", duration: 0.6,
-          scrollTrigger: { trigger: sectionRef.current, start: "top 70%", toggleActions: "play none none none" },
-        });
-      }
-
-      if (pills.length) {
-        gsap.to(pills, {
-          x: 0, opacity: 1, stagger: 0.08, ease: "power2.out", duration: 0.5,
-          scrollTrigger: { trigger: ".trust-chain", start: "top 85%", toggleActions: "play none none none" },
-        });
-      }
-
-      if (arrows.length) {
-        gsap.to(arrows, {
-          scale: 1, opacity: 1, stagger: 0.08, ease: "back.out(2)", duration: 0.4, delay: 0.2,
-          scrollTrigger: { trigger: ".trust-chain", start: "top 85%", toggleActions: "play none none none" },
-        });
-    }
-
-    ScrollTrigger.refresh();
   }, { scope: sectionRef });
 
   return (
@@ -92,7 +43,7 @@ export function PainPoints() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, i) => (
             <div key={i} className="stat-card rounded-xl border border-[rgba(255,255,255,0.1)] p-6">
-              <p className="stat-value font-display text-4xl font-bold text-primary" style={{ letterSpacing: "-1px" }} data-target={stat.value}>0</p>
+              <p className="stat-value font-display text-4xl font-bold text-primary" style={{ letterSpacing: "-1px" }} data-target={stat.value}>{stat.value}</p>
               <p className="mt-2 text-sm leading-relaxed text-on-dark">{stat.suffix && <span className="stat-suffix">{stat.suffix}</span>} {stat.label}</p>
               <p className="mt-3 text-xs text-on-dark-mute">{stat.source}</p>
             </div>

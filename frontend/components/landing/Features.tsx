@@ -44,61 +44,7 @@ export function Features() {
     const cards = sectionRef.current.querySelectorAll(".feature-card");
     const secondaryCards = sectionRef.current.querySelectorAll(".secondary-card");
 
-      const words = heading?.querySelectorAll(".word") || [];
 
-      // SET hidden
-      if (words.length) gsap.set(words, { y: 30, opacity: 0 });
-      if (cards.length) gsap.set(cards, { y: 50, opacity: 0 });
-      if (secondaryCards.length) gsap.set(secondaryCards, { y: 30, opacity: 0 });
-      cards.forEach((card) => {
-        const tags = card.querySelectorAll(".feature-tag");
-        if (tags.length) gsap.set(tags, { y: 10, opacity: 0 });
-      });
-
-      // TO visible
-      if (words.length) {
-        gsap.to(words, {
-          y: 0, opacity: 1, stagger: 0.06, ease: "back.out(1.7)", duration: 0.8,
-          scrollTrigger: { trigger: sectionRef.current, start: "top 75%", toggleActions: "play none none none" },
-        });
-      }
-
-      if (cards.length) {
-        gsap.to(cards, {
-          y: 0, opacity: 1, stagger: 0.15, ease: "power2.out", duration: 0.7,
-          scrollTrigger: { trigger: sectionRef.current, start: "top 70%", toggleActions: "play none none none" },
-        });
-      }
-
-      // Image parallax
-      const images = sectionRef.current.querySelectorAll(".feature-img");
-      images.forEach((img) => {
-        gsap.to(img, {
-          y: -20, ease: "none",
-          scrollTrigger: { trigger: img.closest(".feature-card"), start: "top bottom", end: "bottom top", scrub: true },
-        });
-      });
-
-      // Tags
-      cards.forEach((card) => {
-        const tags = card.querySelectorAll(".feature-tag");
-        if (tags.length) {
-          gsap.to(tags, {
-            y: 0, opacity: 1, stagger: 0.08, ease: "power2.out", duration: 0.4,
-            scrollTrigger: { trigger: card, start: "top 80%", toggleActions: "play none none none" },
-          });
-        }
-      });
-
-      // Secondary cards
-      if (secondaryCards.length) {
-        gsap.to(secondaryCards, {
-          y: 0, opacity: 1, stagger: 0.1, ease: "power2.out", duration: 0.5,
-          scrollTrigger: { trigger: sectionRef.current, start: "top 60%", toggleActions: "play none none none" },
-        });
-    }
-
-    ScrollTrigger.refresh();
   }, { scope: sectionRef });
 
   return (

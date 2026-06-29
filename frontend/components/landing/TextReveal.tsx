@@ -33,19 +33,7 @@ export function TextReveal({
     const words = ref.current.querySelectorAll(".word");
     if (!words.length) return;
 
-    gsap.from(words, {
-      y,
-      opacity: 0,
-      stagger,
-      ease,
-      scrollTrigger: {
-        trigger: ref.current,
-        start,
-        toggleActions: "play none none none",
-      },
-    });
 
-    ScrollTrigger.refresh();
   }, { scope: ref });
 
   const words = children.split(" ").map((w, i) => (

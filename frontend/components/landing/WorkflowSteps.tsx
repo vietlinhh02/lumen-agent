@@ -107,61 +107,7 @@ export function WorkflowSteps() {
     const cards = sectionRef.current.querySelectorAll(".step-card");
     const icons = sectionRef.current.querySelectorAll(".step-icon");
 
-      const words = heading?.querySelectorAll(".word") || [];
 
-      // 1. SET hidden state immediately (before any scroll)
-      if (words.length) gsap.set(words, { y: 30, opacity: 0 });
-      if (cards.length) gsap.set(cards, { y: 60, opacity: 0, scale: 0.95 });
-      if (icons.length) gsap.set(icons, { rotation: -90, scale: 0 });
-
-      // 2. TO visible when scroll trigger fires
-      if (words.length) {
-        gsap.to(words, {
-          y: 0,
-          opacity: 1,
-          stagger: 0.06,
-          ease: "back.out(1.7)",
-          duration: 0.8,
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: "top 75%",
-            toggleActions: "play none none none",
-          },
-        });
-      }
-
-      if (cards.length) {
-        gsap.to(cards, {
-          y: 0,
-          opacity: 1,
-          scale: 1,
-          stagger: 0.1,
-          ease: "power2.out",
-          duration: 0.6,
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: "top 70%",
-            toggleActions: "play none none none",
-          },
-        });
-      }
-
-      if (icons.length) {
-        gsap.to(icons, {
-          rotation: 0,
-          scale: 1,
-          stagger: 0.08,
-          ease: "back.out(2)",
-          duration: 0.5,
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: "top 65%",
-            toggleActions: "play none none none",
-          },
-        });
-    }
-
-    ScrollTrigger.refresh();
   }, { scope: sectionRef });
 
   return (

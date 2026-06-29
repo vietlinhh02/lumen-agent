@@ -46,58 +46,6 @@ export function Hero() {
       });
     }
 
-    // ── Entrance animation (plays immediately on load) ──
-    const entranceTl = gsap.timeline({ delay: 0.2 });
-
-    // 1. Title words staggered reveal
-    if (heading) {
-      entranceTl.from(heading.querySelectorAll(".word"), {
-        y: 40,
-        opacity: 0,
-        stagger: 0.08,
-        ease: "back.out(1.7)",
-        duration: 0.8,
-      });
-    }
-
-    // 2. Subtitle fade in
-    if (subtitle) {
-      entranceTl.from(
-        subtitle,
-        { y: 20, opacity: 0, duration: 0.6, ease: "power2.out" },
-        "-=0.3"
-      );
-    }
-
-    // 3. CTA buttons scale in
-    if (cta) {
-      entranceTl.from(
-        cta.children,
-        {
-          scale: 0.8,
-          opacity: 0,
-          ease: "back.out(2)",
-          stagger: 0.15,
-          duration: 0.6,
-        },
-        "-=0.2"
-      );
-    }
-
-    // 4. Screenshot entrance
-    if (screenshot) {
-      entranceTl.from(
-        screenshot,
-        {
-          scale: 0.85,
-          rotateX: -15,
-          opacity: 0,
-          ease: "power3.out",
-          duration: 1,
-        },
-        "-=0.4"
-      );
-    }
 
     // ── Scroll-linked parallax on screenshot (lightweight) ──
     if (screenshot) {
