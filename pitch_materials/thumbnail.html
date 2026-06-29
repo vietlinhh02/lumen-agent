@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumen 16:9 Poster (Light Mode)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --canvas: #f9f7f3;
+            --surface-card: #ffffff;
+            --primary: #ea2804;
+            --hero-glow: #ff6a3d;
+            --hero-pink: #f4a8a0;
+            --ink: #202020;
+            --charcoal: #575757;
+            --body-text: #3a3a3a;
+            --font-display: 'Bricolage Grotesque', sans-serif;
+            --font-body: 'Inter', sans-serif;
+            --hairline: rgba(32, 32, 32, 0.12);
+        }
+
+        body {
+            margin: 0; padding: 0; 
+            width: 3840px; height: 2160px; /* 16:9 4K */
+            background-color: var(--canvas); font-family: var(--font-body);
+            color: var(--ink); overflow: hidden; position: relative;
+        }
+
+        .mesh-bg {
+            position: absolute; top: 50%; left: 80%; width: 4000px; height: 4000px;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(255, 106, 61, 0.25) 0%, rgba(244, 168, 160, 0.25) 40%, transparent 70%);
+            filter: blur(200px); z-index: 1;
+        }
+
+        .header {
+            position: absolute; top: 0; left: 0; right: 0; height: 160px;
+            padding: 0 160px; display: flex; align-items: center; justify-content: space-between;
+            z-index: 10;
+        }
+        .header-logo { font-family: var(--font-display); font-size: 60px; font-weight: 700; color: var(--ink); letter-spacing: -2px; }
+        .header-meta { font-size: 32px; font-weight: 600; color: var(--charcoal); letter-spacing: 6px; text-transform: uppercase; font-family: var(--font-display); }
+
+        .footer {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 140px;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 10; font-size: 32px; color: var(--charcoal); font-weight: 500;
+            letter-spacing: 4px; text-transform: uppercase; font-family: var(--font-display);
+        }
+
+        .main-content {
+            position: relative; z-index: 2; display: flex; height: 100%;
+            padding: 200px 160px 160px; box-sizing: border-box; gap: 140px;
+        }
+
+        .left-col {
+            flex: 1.2; display: flex; flex-direction: column; justify-content: center;
+        }
+        .right-col {
+            flex: 0.8; position: relative; display: flex; align-items: center; justify-content: center;
+        }
+
+        .title { font-family: var(--font-display); font-size: 220px; font-weight: 700; line-height: 1.05; margin: 0 0 50px; color: var(--ink); text-shadow: 0 20px 60px rgba(0,0,0,0.03); letter-spacing: -6px; text-transform: uppercase; }
+        .highlight { position: relative; display: inline-block; z-index: 1; }
+        .highlight::after {
+            content: ''; position: absolute; bottom: 30px; left: -10px; right: -20px;
+            height: 55px; background: linear-gradient(90deg, #ff6a3d, #ea2804);
+            z-index: -1; transform: rotate(-1.5deg); border-radius: 25px; opacity: 0.5;
+        }
+        .quote-box {
+            border-left: 8px solid var(--primary); padding-left: 40px; margin-bottom: 80px; max-width: 1600px;
+        }
+        .quote { font-size: 45px; color: var(--charcoal); line-height: 1.5; font-weight: 400; font-style: italic; margin: 0; }
+
+        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 1300px; }
+        .data-card {
+            background: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.4) 100%);
+            border: 2px solid rgba(255,255,255,0.8);
+            border-radius: 30px; padding: 40px; 
+            box-shadow: 0 30px 80px rgba(234,40,4,0.04), inset 0 2px 4px rgba(255,255,255,1);
+            display: flex; flex-direction: column; justify-content: flex-start;
+            position: relative; overflow: hidden; backdrop-filter: blur(40px);
+        }
+        .data-card::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 6px;
+            background: linear-gradient(90deg, var(--primary), var(--hero-pink));
+        }
+        .data-val { 
+            font-family: var(--font-display); font-size: 90px; font-weight: 800; 
+            background: linear-gradient(135deg, var(--primary), #ff4d00);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            line-height: 1; margin-bottom: 20px; letter-spacing: -3px;
+            display: flex; align-items: baseline;
+        }
+        .data-val span {
+            font-size: 32px; font-weight: 600; color: var(--charcoal); margin-left: 15px;
+            -webkit-text-fill-color: initial; letter-spacing: 0;
+        }
+        .data-label { 
+            font-size: 26px; font-weight: 500; color: #444; line-height: 1.6; 
+            border-top: 2px solid rgba(0,0,0,0.06); padding-top: 20px;
+        }
+
+        .screenshot-stack { position: relative; width: 1300px; height: 1000px; }
+        .screenshot {
+            position: absolute; border-radius: 30px; border: 3px solid var(--hairline);
+            box-shadow: 0 60px 120px rgba(0,0,0,0.1); object-fit: cover; background: #fff;
+        }
+        .img-1 { width: 1300px; top: -100px; left: -100px; z-index: 3; transform: perspective(3000px) rotateY(-8deg) rotateX(4deg); }
+        .img-2 { width: 1100px; top: 200px; left: 150px; z-index: 2; opacity: 0.9; transform: perspective(3000px) rotateY(-8deg) rotateX(4deg); }
+
+    </style>
+</head>
+<body>
+    <div class="mesh-bg"></div>
+    
+    <div class="header">
+        <div class="header-logo">Lumen.</div>
+        <div class="header-meta">Product Overview</div>
+    </div>
+
+    <div class="main-content">
+        <div class="left-col">
+            <h1 class="title">Research,<br><span class="highlight">Reimagined.</span></h1>
+            <div class="quote-box">
+                <p class="quote">"An elegant orchestration of discovery and synthesis. Engineered to eliminate the noise, surface the truth, and protect academic integrity."</p>
+            </div>
+            
+            <div class="data-grid">
+                <div class="data-card">
+                    <div class="data-val">2,000<span>hrs</span></div>
+                    <div class="data-label">Time reclaimed. Focus on breakthroughs, not manual literature mapping.</div>
+                </div>
+                <div class="data-card">
+                    <div class="data-val">0<span>%</span></div>
+                    <div class="data-label">Hallucinations. A strict three-layer defense system ensures pristine evidence.</div>
+                </div>
+                <div class="data-card">
+                    <div class="data-val">8</div>
+                    <div class="data-label">Core capabilities. A unified workspace for the entire research lifecycle.</div>
+                </div>
+                <div class="data-card">
+                    <div class="data-val">Multi<span>source</span></div>
+                    <div class="data-label">Deep integration. Connect natively to Semantic Scholar, arXiv, and OpenAlex.</div>
+                </div>
+            </div>
+        </div>
+        <div class="right-col">
+            <div class="screenshot-stack">
+                <img src="/home/eddiesngu/Desktop/VinUni/C2-App-053/docs/images/dashboard.png" class="screenshot img-1" alt="Dashboard">
+                <img src="/home/eddiesngu/Desktop/VinUni/C2-App-053/docs/images/matrix.png" class="screenshot img-2" alt="Matrix">
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        HTTPS://AI20K.AAISEE.ME &nbsp;&nbsp; | &nbsp;&nbsp; THE RESEARCH WORKFLOW
+    </div>
+</body>
+</html>
