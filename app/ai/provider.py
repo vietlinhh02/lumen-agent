@@ -856,6 +856,7 @@ def _build_provider_for_model(model: str) -> AIProvider:
             model=model,
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
+            extra_body={"thinking": {"type": "disabled"}},
         )
 
     if model_lower.startswith(("gpt", "o1", "o3")):
