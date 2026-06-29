@@ -155,7 +155,7 @@ class IntentClassifier:
     """
 
     # Timeout for the classification call (seconds)
-    TIMEOUT_SECONDS = 5.0
+    TIMEOUT_SECONDS = 30.0
 
     def __init__(self, provider: AIProvider) -> None:
         self._provider = provider
