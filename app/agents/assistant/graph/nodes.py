@@ -417,12 +417,11 @@ async def react_loop_node(
         ):
             if isinstance(chunk, TextChunk):
                 response_text += chunk.delta
-                if pending_text_delta is not None:
-                    emit(AssistantDeltaEvent(delta=pending_text_delta, is_final=False))
-                pending_text_delta = chunk.delta
+                # Emit as ThoughtEvent so preamble/reasoning is hidden in the thinking block
+                # rather than polluting the main chat UI before a tool call.
+                emit(ThoughtEvent(delta=chunk.delta, iteration=iteration))
 
             elif isinstance(chunk, ToolCallStart):
-                pending_text_delta = None
                 tool_call_args[chunk.call_id] = {"name": chunk.name, "args_str": ""}
                 emit(
                     ToolEvent(
@@ -439,7 +438,6 @@ async def react_loop_node(
                     tool_call_args[chunk.call_id]["args_str"] += chunk.delta
 
             elif isinstance(chunk, ToolCallDone):
-                pending_text_delta = None
                 name = chunk.name or tool_call_args.get(chunk.call_id, {}).get("name", "unknown")
                 args = chunk.arguments or {}
                 if not args and tool_call_args.get(chunk.call_id, {}).get("args_str"):
@@ -462,9 +460,13 @@ async def react_loop_node(
 
     # Check for tool calls
     if not tool_calls_found:
-        if pending_text_delta is not None:
-            emit(AssistantDeltaEvent(delta=pending_text_delta, is_final=False))
         if response_text:
+            # If no tools were called, this is the final answer.
+            # We emit it as AssistantDeltaEvent so the frontend displays it as a final message.
+            # We chunk it to simulate a fast stream.
+            chunk_size = 20
+            for i in range(0, len(response_text), chunk_size):
+                emit(AssistantDeltaEvent(delta=response_text[i:i+chunk_size], is_final=False))
             emit(AssistantDeltaEvent(delta="", is_final=True))
 
         # No tools - graph will proceed to final_answer_node

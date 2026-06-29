@@ -262,34 +262,34 @@ async def _list_project_papers_impl(
         async with async_session_factory() as db:
             papers = await list_project_papers(db, user, pid)
 
-        if papers is None:
-            return _error_result("PROJECT_NOT_FOUND", f"Project {project_id} not found or access denied")
+            if papers is None:
+                return _error_result("PROJECT_NOT_FOUND", f"Project {project_id} not found or access denied")
 
-        paper_list = []
-        for p in papers:
-            # Truncate authors to prevent context explosion
-            truncated_authors = p.authors[:3] if isinstance(p.authors, list) else []
-            if isinstance(p.authors, list) and len(p.authors) > 3:
-                truncated_authors.append({"name": "et al.", "author_id": ""})
+            paper_list = []
+            for p in papers:
+                # Truncate authors to prevent context explosion
+                truncated_authors = p.authors[:3] if isinstance(p.authors, list) else []
+                if isinstance(p.authors, list) and len(p.authors) > 3:
+                    truncated_authors.append({"name": "et al.", "author_id": ""})
 
-            paper_list.append({
-                "project_paper_id": str(p.id),
-                "paper_id": str(p.paper_id),
-                "title": p.title,
-                "authors": truncated_authors,
-                "year": p.year,
-                "doi": p.doi,
-                "arxiv_id": p.arxiv_id,
-                "abstract": p.abstract,
-                "status": p.status,
-                "relevance_label": p.relevance_label,
-                "saved_at": p.saved_at.isoformat() if p.saved_at else None,
-            })
+                paper_list.append({
+                    "project_paper_id": str(p.id),
+                    "paper_id": str(p.paper_id),
+                    "title": p.title,
+                    "authors": truncated_authors,
+                    "year": p.year,
+                    "doi": p.doi,
+                    "arxiv_id": p.arxiv_id,
+                    "abstract": p.abstract,
+                    "status": p.status,
+                    "relevance_label": p.relevance_label,
+                    "saved_at": p.saved_at.isoformat() if p.saved_at else None,
+                })
 
-        return _ok_result(
-            f"Found {len(paper_list)} papers",
-            {"papers": paper_list}
-        )
+            return _ok_result(
+                f"Found {len(paper_list)} papers",
+                {"papers": paper_list}
+            )
     except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")
     except Exception as exc:

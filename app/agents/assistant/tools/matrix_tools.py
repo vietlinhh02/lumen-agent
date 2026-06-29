@@ -231,28 +231,28 @@ async def _list_matrix_rows_impl(
             result = await db.execute(stmt)
             rows = result.scalars().all()
         
-        matrix_rows = []
-        for row in rows:
-            matrix_rows.append({
-                "row_id": str(row.id),
-                "dimension": row.research_problem or row.method or "Unknown",
-                "cell_content": row.key_result or row.contribution or "",
-                "source_paper_id": str(row.project_paper_id) if row.project_paper_id else None,
-                # Extended fields for full data
-                "research_problem": row.research_problem,
-                "method": row.method,
-                "dataset_or_context": row.dataset_or_context,
-                "key_result": row.key_result,
-                "limitation": row.limitation,
-                "contribution": row.contribution,
-                "relevance": row.relevance,
-                "extraction_confidence": row.extraction_confidence,
-            })
-        
-        return _ok_result(
-            f"Found {len(matrix_rows)} matrix rows",
-            {"rows": matrix_rows}
-        )
+            matrix_rows = []
+            for row in rows:
+                matrix_rows.append({
+                    "row_id": str(row.id),
+                    "dimension": row.research_problem or row.method or "Unknown",
+                    "cell_content": row.key_result or row.contribution or "",
+                    "source_paper_id": str(row.project_paper_id) if row.project_paper_id else None,
+                    # Extended fields for full data
+                    "research_problem": row.research_problem,
+                    "method": row.method,
+                    "dataset_or_context": row.dataset_or_context,
+                    "key_result": row.key_result,
+                    "limitation": row.limitation,
+                    "contribution": row.contribution,
+                    "relevance": row.relevance,
+                    "extraction_confidence": row.extraction_confidence,
+                })
+            
+            return _ok_result(
+                f"Found {len(matrix_rows)} matrix rows",
+                {"rows": matrix_rows}
+            )
         
     except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")

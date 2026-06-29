@@ -250,19 +250,19 @@ async def _list_reports_impl(
             result = await db.execute(stmt)
             reports = result.scalars().all()
         
-        report_list = []
-        for report in reports:
-            report_list.append({
-                "report_id": str(report.id),
-                "title": report.title,
-                "created_at": report.created_at.isoformat() if report.created_at else None,
-                "validation_status": report.validation_status,
-            })
-        
-        return _ok_result(
-            f"Found {len(report_list)} reports",
-            {"reports": report_list}
-        )
+            report_list = []
+            for report in reports:
+                report_list.append({
+                    "report_id": str(report.id),
+                    "title": report.title,
+                    "created_at": report.created_at.isoformat() if report.created_at else None,
+                    "validation_status": report.validation_status,
+                })
+            
+            return _ok_result(
+                f"Found {len(report_list)} reports",
+                {"reports": report_list}
+            )
         
     except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")
@@ -330,16 +330,16 @@ async def _get_report_impl(
             cited_ids = {c.project_paper_id for c in citations}
             references = await _build_references(db, cited_ids)
         
-        return _ok_result(
-            f"Retrieved report: {report.title}",
-            {
-                "report_id": str(report.id),
-                "title": report.title,
-                "content": report.content_markdown,
-                "references": references,
-                "validation_status": report.validation_status,
-            }
-        )
+            return _ok_result(
+                f"Retrieved report: {report.title}",
+                {
+                    "report_id": str(report.id),
+                    "title": report.title,
+                    "content": report.content_markdown,
+                    "references": references,
+                    "validation_status": report.validation_status,
+                }
+            )
         
     except ValueError:
         return _error_result("INVALID_ID", "Invalid project or report ID format")
@@ -398,13 +398,13 @@ async def _export_report_markdown_impl(
             if report is None:
                 return _error_result("REPORT_NOT_FOUND", f"Report {report_id} not found")
         
-        return _ok_result(
-            "Exported report as markdown",
-            {
-                "markdown": report.content_markdown,
-                "title": report.title,
-            }
-        )
+            return _ok_result(
+                "Exported report as markdown",
+                {
+                    "markdown": report.content_markdown,
+                    "title": report.title,
+                }
+            )
         
     except ValueError:
         return _error_result("INVALID_ID", "Invalid project or report ID format")
