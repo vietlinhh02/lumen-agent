@@ -25,6 +25,7 @@ from app.agents.assistant.events import (
     IterationEvent,
     MessageEvent,
     ProgressEvent,
+    ThoughtEvent,
     ToolEvent,
     WaitEvent,
 )
@@ -404,7 +405,6 @@ async def react_loop_node(
 
     # Stream LLM response
     response_text = ""
-    pending_text_delta: str | None = None
     tool_calls_found: list[ToolCall] = []
     tool_call_args: dict[str, dict[str, Any]] = {}
 
