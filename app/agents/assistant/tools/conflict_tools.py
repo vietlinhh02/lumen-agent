@@ -220,58 +220,58 @@ async def _list_conflicts_impl(
             result = await db.execute(stmt)
             conflicts = result.scalars().all()
         
-        conflict_list = []
-        for conflict in conflicts:
-            # Get paper titles
-            pa_title = ""
-            pb_title = ""
-            
-            if conflict.paper_a_id:
-                pp_result = await db.execute(
-                    select(ProjectPaper).where(ProjectPaper.id == conflict.paper_a_id)
-                )
-                pp = pp_result.scalar_one_or_none()
-                if pp:
-                    paper_result = await db.execute(
-                        select(Paper).where(Paper.id == pp.paper_id)
+            conflict_list = []
+            for conflict in conflicts:
+                # Get paper titles
+                pa_title = ""
+                pb_title = ""
+                
+                if conflict.paper_a_id:
+                    pp_result = await db.execute(
+                        select(ProjectPaper).where(ProjectPaper.id == conflict.paper_a_id)
                     )
-                    paper = paper_result.scalar_one_or_none()
-                    if paper:
-                        pa_title = paper.title
-            
-            if conflict.paper_b_id:
-                pp_result = await db.execute(
-                    select(ProjectPaper).where(ProjectPaper.id == conflict.paper_b_id)
-                )
-                pp = pp_result.scalar_one_or_none()
-                if pp:
-                    paper_result = await db.execute(
-                        select(Paper).where(Paper.id == pp.paper_id)
+                    pp = pp_result.scalar_one_or_none()
+                    if pp:
+                        paper_result = await db.execute(
+                            select(Paper).where(Paper.id == pp.paper_id)
+                        )
+                        paper = paper_result.scalar_one_or_none()
+                        if paper:
+                            pa_title = paper.title
+                
+                if conflict.paper_b_id:
+                    pp_result = await db.execute(
+                        select(ProjectPaper).where(ProjectPaper.id == conflict.paper_b_id)
                     )
-                    paper = paper_result.scalar_one_or_none()
-                    if paper:
-                        pb_title = paper.title
+                    pp = pp_result.scalar_one_or_none()
+                    if pp:
+                        paper_result = await db.execute(
+                            select(Paper).where(Paper.id == pp.paper_id)
+                        )
+                        paper = paper_result.scalar_one_or_none()
+                        if paper:
+                            pb_title = paper.title
+                
+                conflict_list.append({
+                    "conflict_id": str(conflict.id),
+                    "title": conflict.title,
+                    "description": conflict.description,
+                    "paper_ids": [
+                        str(conflict.paper_a_id) if conflict.paper_a_id else None,
+                        str(conflict.paper_b_id) if conflict.paper_b_id else None,
+                    ],
+                    "paper_titles": [pa_title, pb_title],
+                    "severity": conflict.confidence,
+                    "shared_context": conflict.shared_context,
+                    "claim_a": conflict.claim_a,
+                    "claim_b": conflict.claim_b,
+                    "possible_explanation": conflict.possible_explanation,
+                })
             
-            conflict_list.append({
-                "conflict_id": str(conflict.id),
-                "title": conflict.title,
-                "description": conflict.description,
-                "paper_ids": [
-                    str(conflict.paper_a_id) if conflict.paper_a_id else None,
-                    str(conflict.paper_b_id) if conflict.paper_b_id else None,
-                ],
-                "paper_titles": [pa_title, pb_title],
-                "severity": conflict.confidence,
-                "shared_context": conflict.shared_context,
-                "claim_a": conflict.claim_a,
-                "claim_b": conflict.claim_b,
-                "possible_explanation": conflict.possible_explanation,
-            })
-        
-        return _ok_result(
-            f"Found {len(conflict_list)} conflicts",
-            {"conflicts": conflict_list}
-        )
+            return _ok_result(
+                f"Found {len(conflict_list)} conflicts",
+                {"conflicts": conflict_list}
+            )
         
     except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")
