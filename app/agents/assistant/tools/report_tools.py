@@ -296,7 +296,7 @@ async def _get_report_impl(
 
         from sqlalchemy import select
 
-        from app.db.models import Project, ReportCitation, ReviewReport
+        from app.db.models import Project, ReviewCitation, ReviewReport
         from app.db.session import async_session_factory
         from app.services.report_generation import _build_references
         
@@ -323,7 +323,7 @@ async def _get_report_impl(
                 return _error_result("REPORT_NOT_FOUND", f"Report {report_id} not found")
             
             # Get citations
-            citation_stmt = select(ReportCitation).where(ReportCitation.report_id == rid)
+            citation_stmt = select(ReviewCitation).where(ReviewCitation.report_id == rid)
             citation_result = await db.execute(citation_stmt)
             citations = citation_result.scalars().all()
             
