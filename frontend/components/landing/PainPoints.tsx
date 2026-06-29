@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -16,14 +17,13 @@ const stats = [
 export function PainPoints() {
   const sectionRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const ctx = gsap.context(() => {
-      const heading = sectionRef.current!.querySelector(".pp-heading");
-      const statCards = sectionRef.current!.querySelectorAll(".stat-card");
-      const pills = sectionRef.current!.querySelectorAll(".trust-pill");
-      const arrows = sectionRef.current!.querySelectorAll(".trust-arrow");
+    const heading = sectionRef.current.querySelector(".pp-heading");
+    const statCards = sectionRef.current.querySelectorAll(".stat-card");
+    const pills = sectionRef.current.querySelectorAll(".trust-pill");
+    const arrows = sectionRef.current.querySelectorAll(".trust-arrow");
 
       if (heading) {
         const h2 = heading.querySelector("h2");
@@ -50,7 +50,7 @@ export function PainPoints() {
       }
 
       // Counters
-      const statValues = sectionRef.current!.querySelectorAll(".stat-value");
+      const statValues = sectionRef.current.querySelectorAll(".stat-value");
       statValues.forEach((el) => {
         const target = parseInt(el.getAttribute("data-target") || "0", 10);
         const counter = { value: 0 };
@@ -80,12 +80,10 @@ export function PainPoints() {
           scale: 1, opacity: 1, stagger: 0.08, ease: "back.out(2)", duration: 0.4, delay: 0.2,
           scrollTrigger: { trigger: ".trust-chain", start: "top 85%", toggleActions: "play none none none" },
         });
-      }
-    }, sectionRef);
+    }
 
     ScrollTrigger.refresh();
-    return () => ctx.revert();
-  }, []);
+  }, { scope: sectionRef });
 
   return (
     <section ref={sectionRef} id="pain-points" className="bg-surface-dark py-24 lg:py-32">

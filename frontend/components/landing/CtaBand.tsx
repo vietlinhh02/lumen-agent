@@ -3,6 +3,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useGSAP } from "@gsap/react";
 import { isTokenExpired } from "@/lib/jwt";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import gsap from "gsap";
@@ -21,13 +22,12 @@ export function CtaBand() {
     setLoggedIn(!!token && !isTokenExpired(token));
   }, [token]);
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const ctx = gsap.context(() => {
-      const heading = sectionRef.current!.querySelector(".cta-heading");
-      const subtitle = sectionRef.current!.querySelector(".cta-subtitle");
-      const ctaButtons = sectionRef.current!.querySelector(".cta-buttons");
+    const heading = sectionRef.current.querySelector(".cta-heading");
+    const subtitle = sectionRef.current.querySelector(".cta-subtitle");
+    const ctaButtons = sectionRef.current.querySelector(".cta-buttons");
 
       if (heading) {
         const h2 = heading.querySelector("h2");
@@ -45,13 +45,13 @@ export function CtaBand() {
       if (ctaButtons && ctaButtons.children.length) gsap.set(ctaButtons.children, { scale: 0.8, opacity: 0 });
 
       // Gradient pulse
-      const gradient = sectionRef.current!.querySelector(".cta-gradient");
+      const gradient = sectionRef.current.querySelector(".cta-gradient");
       if (gradient) {
         gsap.to(gradient, { scale: 1.1, opacity: 0.7, duration: 3, repeat: -1, yoyo: true, ease: "sine.inOut" });
       }
 
       // Floating circles
-      const circles = sectionRef.current!.querySelectorAll(".floating-circle");
+      const circles = sectionRef.current.querySelectorAll(".floating-circle");
       circles.forEach((circle, i) => {
         gsap.to(circle, { y: `random(-30, 30)`, x: `random(-20, 20)`, duration: `random(3, 5)`, repeat: -1, yoyo: true, ease: "sine.inOut", delay: i * 0.5 });
       });
@@ -76,12 +76,10 @@ export function CtaBand() {
           scale: 1, opacity: 1, ease: "back.out(2)", stagger: 0.15, duration: 0.6,
           scrollTrigger: { trigger: sectionRef.current, start: "top 65%", toggleActions: "play none none none" },
         });
-      }
-    }, sectionRef);
+    }
 
     ScrollTrigger.refresh();
-    return () => ctx.revert();
-  }, []);
+  }, { scope: sectionRef });
 
   return (
     <section ref={sectionRef} className="relative overflow-hidden bg-primary py-24 lg:py-32">

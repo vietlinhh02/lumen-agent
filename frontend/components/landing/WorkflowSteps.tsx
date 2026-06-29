@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -99,13 +100,12 @@ const steps = [
 export function WorkflowSteps() {
   const sectionRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const ctx = gsap.context(() => {
-      const heading = sectionRef.current!.querySelector(".steps-heading");
-      const cards = sectionRef.current!.querySelectorAll(".step-card");
-      const icons = sectionRef.current!.querySelectorAll(".step-icon");
+    const heading = sectionRef.current.querySelector(".steps-heading");
+    const cards = sectionRef.current.querySelectorAll(".step-card");
+    const icons = sectionRef.current.querySelectorAll(".step-icon");
 
       // Split heading text
       if (heading) {
@@ -174,12 +174,10 @@ export function WorkflowSteps() {
             toggleActions: "play none none none",
           },
         });
-      }
-    }, sectionRef);
+    }
 
     ScrollTrigger.refresh();
-    return () => ctx.revert();
-  }, []);
+  }, { scope: sectionRef });
 
   return (
     <section

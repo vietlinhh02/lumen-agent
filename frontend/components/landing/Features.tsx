@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -36,13 +37,12 @@ const features = [
 export function Features() {
   const sectionRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!sectionRef.current) return;
 
-    const ctx = gsap.context(() => {
-      const heading = sectionRef.current!.querySelector(".features-heading");
-      const cards = sectionRef.current!.querySelectorAll(".feature-card");
-      const secondaryCards = sectionRef.current!.querySelectorAll(".secondary-card");
+    const heading = sectionRef.current.querySelector(".features-heading");
+    const cards = sectionRef.current.querySelectorAll(".feature-card");
+    const secondaryCards = sectionRef.current.querySelectorAll(".secondary-card");
 
       if (heading) {
         const h2 = heading.querySelector("h2");
@@ -82,7 +82,7 @@ export function Features() {
       }
 
       // Image parallax
-      const images = sectionRef.current!.querySelectorAll(".feature-img");
+      const images = sectionRef.current.querySelectorAll(".feature-img");
       images.forEach((img) => {
         gsap.to(img, {
           y: -20, ease: "none",
@@ -107,12 +107,10 @@ export function Features() {
           y: 0, opacity: 1, stagger: 0.1, ease: "power2.out", duration: 0.5,
           scrollTrigger: { trigger: sectionRef.current, start: "top 60%", toggleActions: "play none none none" },
         });
-      }
-    }, sectionRef);
+    }
 
     ScrollTrigger.refresh();
-    return () => ctx.revert();
-  }, []);
+  }, { scope: sectionRef });
 
   return (
     <section ref={sectionRef} id="features" className="py-24 lg:py-32">
