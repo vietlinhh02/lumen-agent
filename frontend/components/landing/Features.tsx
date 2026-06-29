@@ -44,17 +44,6 @@ export function Features() {
     const cards = sectionRef.current.querySelectorAll(".feature-card");
     const secondaryCards = sectionRef.current.querySelectorAll(".secondary-card");
 
-      if (heading) {
-        const h2 = heading.querySelector("h2");
-        if (h2) {
-          const text = h2.textContent || "";
-          h2.innerHTML = text
-            .split(" ")
-            .map((w) => `<span class="word">${w}&nbsp;</span>`)
-            .join("");
-        }
-      }
-
       const words = heading?.querySelectorAll(".word") || [];
 
       // SET hidden
@@ -118,7 +107,9 @@ export function Features() {
         <div className="features-heading mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">Core capabilities</p>
           <h2 className="font-display text-4xl font-bold leading-[1.0] tracking-tight text-ink sm:text-5xl" style={{ letterSpacing: "-1px" }}>
-            Everything you need. Nothing you don&rsquo;t.
+            {"Everything you need. Nothing you don't.".split(" ").map((w, i) => (
+              <span key={i} className="word inline-block">{w}&nbsp;</span>
+            ))}
           </h2>
           <p className="mt-4 text-lg text-body">Eight features, zero fluff. Every capability supports the evidence chain from search to export.</p>
         </div>

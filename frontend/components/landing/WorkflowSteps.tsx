@@ -107,21 +107,6 @@ export function WorkflowSteps() {
     const cards = sectionRef.current.querySelectorAll(".step-card");
     const icons = sectionRef.current.querySelectorAll(".step-icon");
 
-      // Split heading text
-      if (heading) {
-        const h2 = heading.querySelector("h2");
-        if (h2) {
-          const text = h2.textContent || "";
-          h2.innerHTML = text
-            .split(" ")
-            .map(
-              (w) =>
-                `<span class="word">${w}&nbsp;</span>`
-            )
-            .join("");
-        }
-      }
-
       const words = heading?.querySelectorAll(".word") || [];
 
       // 1. SET hidden state immediately (before any scroll)
@@ -194,7 +179,9 @@ export function WorkflowSteps() {
             className="font-display text-4xl font-bold leading-[1.0] tracking-tight text-ink sm:text-5xl"
             style={{ letterSpacing: "-1px" }}
           >
-            From search to export in six steps.
+            {"From search to export in six steps.".split(" ").map((w, i) => (
+              <span key={i} className="word inline-block">{w}&nbsp;</span>
+            ))}
           </h2>
           <p className="mt-4 text-lg text-body">
             Every step produces a visible, editable artifact. No black boxes.

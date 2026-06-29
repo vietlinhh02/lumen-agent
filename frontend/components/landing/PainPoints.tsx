@@ -25,14 +25,6 @@ export function PainPoints() {
     const pills = sectionRef.current.querySelectorAll(".trust-pill");
     const arrows = sectionRef.current.querySelectorAll(".trust-arrow");
 
-      if (heading) {
-        const h2 = heading.querySelector("h2");
-        if (h2) {
-          const text = h2.textContent || "";
-          h2.innerHTML = text.split(" ").map((w) => `<span class="word">${w}&nbsp;</span>`).join("");
-        }
-      }
-
       const words = heading?.querySelectorAll(".word") || [];
 
       // SET hidden
@@ -91,7 +83,9 @@ export function PainPoints() {
         <div className="pp-heading mb-16 max-w-2xl">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-primary">The problem</p>
           <h2 className="font-display text-4xl font-bold leading-[1.0] text-on-dark sm:text-5xl" style={{ letterSpacing: "-1px" }}>
-            Literature reviews are broken. Here&rsquo;s why.
+            {"Literature reviews are broken. Here's why.".split(" ").map((w, i) => (
+              <span key={i} className="word inline-block">{w}&nbsp;</span>
+            ))}
           </h2>
         </div>
 

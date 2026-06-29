@@ -34,18 +34,6 @@ export function Hero() {
     const cta = ctaRef.current;
     const screenshot = screenshotRef.current;
 
-    // Split heading text into words
-    if (heading) {
-      const text = heading.textContent || "";
-      heading.innerHTML = text
-        .split(" ")
-        .map(
-          (w) =>
-            `<span class="word inline-block">${w}&nbsp;</span>`
-        )
-        .join("");
-    }
-
     // Gradient mesh pulse — infinite
     const mesh = sectionRef.current.querySelector(".gradient-mesh");
     if (mesh) {
@@ -145,7 +133,9 @@ export function Hero() {
           className="font-display text-4xl font-bold leading-[1.1] tracking-tight text-ink sm:text-5xl lg:text-6xl"
           style={{ letterSpacing: "-1.5px" }}
         >
-          Stop losing weeks to literature reviews.
+          {"Stop losing weeks to literature reviews.".split(" ").map((w, i) => (
+            <span key={i} className="word inline-block">{w}&nbsp;</span>
+          ))}
         </h1>
 
         <p

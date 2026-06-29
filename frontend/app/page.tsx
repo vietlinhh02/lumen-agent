@@ -16,11 +16,20 @@ import { CustomCursor } from "@/components/landing/CustomCursor";
 gsap.registerPlugin(ScrollTrigger);
 
 export default function LandingPage() {
-  // Force scroll to top on mount (F5 / page load)
   useEffect(() => {
-    window.scrollTo(0, 0);
-    // Refresh ScrollTrigger after scroll to top
-    setTimeout(() => ScrollTrigger.refresh(), 100);
+    // Let the browser handle scroll restoration, or reset it:
+    if (typeof window !== "undefined" && window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+    
+    // Refresh ScrollTrigger after a slight delay to allow layout to settle
+    const t1 = setTimeout(() => ScrollTrigger.refresh(), 100);
+    const t2 = setTimeout(() => ScrollTrigger.refresh(), 500); // safety net
+    
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, []);
 
   return (

@@ -29,14 +29,6 @@ export function CtaBand() {
     const subtitle = sectionRef.current.querySelector(".cta-subtitle");
     const ctaButtons = sectionRef.current.querySelector(".cta-buttons");
 
-      if (heading) {
-        const h2 = heading.querySelector("h2");
-        if (h2) {
-          const text = h2.textContent || "";
-          h2.innerHTML = text.split(" ").map((w) => `<span class="word">${w}&nbsp;</span>`).join("");
-        }
-      }
-
       const words = heading?.querySelectorAll(".word") || [];
 
       // SET hidden
@@ -92,7 +84,9 @@ export function CtaBand() {
       <div className="relative mx-auto max-w-7xl px-6 text-center">
         <div className="cta-heading">
           <h2 className="font-display text-4xl font-bold leading-[1.0] text-on-dark sm:text-5xl lg:text-6xl" style={{ letterSpacing: "-1.5px" }}>
-            Ready to illuminate your research?
+            {"Ready to illuminate your research?".split(" ").map((w, i) => (
+              <span key={i} className="word inline-block">{w}&nbsp;</span>
+            ))}
           </h2>
         </div>
         <p className="cta-subtitle mx-auto mt-6 max-w-md text-lg text-on-dark-mute">
