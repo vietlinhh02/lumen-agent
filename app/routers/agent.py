@@ -9,79 +9,16 @@ from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.graph import run_research_workflow, stream_research_workflow
+from app.agents.graph import run_research_workflow
 from app.core.security import get_current_user
 from app.db.models import Project, User
 from app.db.session import get_db
 from app.schemas.agent import StartWorkflowRequest, WorkflowStatusResponse
-import json
-from sse_starlette.sse import EventSourceResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agents"])
 
-@router.post("/stream")
-async def stream_workflow(
-    body: StartWorkflowRequest,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Run the full research workflow and stream progress via SSE."""
-    import uuid
-
-    # Verify project ownership
-    project_result = await db.execute(
-        select(Project).where(Project.id == uuid.UUID(body.project_id), Project.owner_id == user.id)
-    )
-    project = project_result.scalar_one_or_none()
-    if project is None:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND,
-            detail="Project not found",
-        )
-
-    # If project has no topic yet, update it
-    if not project.topic or project.topic.strip() == "":
-        project.topic = body.topic
-    if body.research_question:
-        project.research_question = body.research_question
-    await db.commit()
-
-    async def event_generator():
-        try:
-            async for output in stream_research_workflow(
-                project_id=str(project.id),
-                user_id=str(user.id),
-                topic=body.topic,
-                research_question=body.research_question,
-            ):
-                # Clean up state to only include lightweight status fields for the UI
-                state = output.get("state", {})
-                safe_state = {
-                    "current_node": state.get("current_node"),
-                    "completed": state.get("completed", False),
-                    "papers_found": len(state.get("raw_papers", [])),
-                    "matrix_rows": len(state.get("matrix_rows", [])),
-                    "gaps_count": len(state.get("gaps", [])),
-                    "report_sections": len(state.get("report_sections", [])),
-                }
-                yield {
-                    "event": "update",
-                    "data": json.dumps({"node": output.get("node"), "state": safe_state})
-                }
-            yield {
-                "event": "complete",
-                "data": json.dumps({"status": "done"})
-            }
-        except Exception as exc:
-            logger.exception("Streaming workflow failed for project %s", body.project_id)
-            yield {
-                "event": "error",
-                "data": json.dumps({"detail": str(exc)})
-            }
-
-    return EventSourceResponse(event_generator())
 
 @router.post("/run", response_model=WorkflowStatusResponse)
 async def start_workflow(

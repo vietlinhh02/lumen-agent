@@ -141,34 +141,6 @@ async def run_research_workflow(
     )
     return ResearchState(**final_state)
 
-
-async def stream_research_workflow(
-    project_id: str,
-    user_id: str,
-    topic: str,
-    research_question: str | None = None,
-):
-    """Execute the full research workflow and yield states as SSE events."""
-    import uuid
-
-    initial_state = ResearchState(
-        project_id=uuid.UUID(project_id),
-        user_id=uuid.UUID(user_id),
-        user_topic=topic,
-        research_question=research_question,
-    )
-
-    logger.info("Starting streaming research workflow for project %s", project_id)
-    async for output in _research_graph.astream(initial_state):
-        # output is a dict like {'query_planner': {'current_node': 'query_planner', ...}}
-        for node_name, state_update in output.items():
-            yield {
-                "node": node_name,
-                "state": state_update
-            }
-
-
-
 async def run_partial_workflow(
     state: ResearchState,
     from_node: str,
