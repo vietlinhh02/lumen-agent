@@ -220,46 +220,46 @@ async def _list_gaps_impl(
             result = await db.execute(stmt)
             gaps = result.scalars().all()
         
-        gap_list = []
-        for gap in gaps:
-            # Load evidence
-            evidence_list = []
-            for ev in gap.evidence_entries:
-                # Get paper title
-                pp_result = await db.execute(
-                    select(ProjectPaper).where(ProjectPaper.id == ev.project_paper_id)
-                )
-                pp = pp_result.scalar_one_or_none()
-                paper_title = ""
-                if pp:
-                    paper_result = await db.execute(
-                        select(Paper).where(Paper.id == pp.paper_id)
+            gap_list = []
+            for gap in gaps:
+                # Load evidence
+                evidence_list = []
+                for ev in gap.evidence_entries:
+                    # Get paper title
+                    pp_result = await db.execute(
+                        select(ProjectPaper).where(ProjectPaper.id == ev.project_paper_id)
                     )
-                    paper = paper_result.scalar_one_or_none()
-                    if paper:
-                        paper_title = paper.title
+                    pp = pp_result.scalar_one_or_none()
+                    paper_title = ""
+                    if pp:
+                        paper_result = await db.execute(
+                            select(Paper).where(Paper.id == pp.paper_id)
+                        )
+                        paper = paper_result.scalar_one_or_none()
+                        if paper:
+                            paper_title = paper.title
+                    
+                    evidence_list.append({
+                        "project_paper_id": str(ev.project_paper_id),
+                        "title": paper_title,
+                        "evidence_type": ev.evidence_type,
+                        "note": ev.note,
+                    })
                 
-                evidence_list.append({
-                    "project_paper_id": str(ev.project_paper_id),
-                    "title": paper_title,
-                    "evidence_type": ev.evidence_type,
-                    "note": ev.note,
+                gap_list.append({
+                    "gap_id": str(gap.id),
+                    "title": gap.title,
+                    "description": gap.description,
+                    "severity": gap.confidence,  # Map confidence to severity
+                    "evidence": evidence_list,
+                    "suggested_direction": gap.suggested_direction,
+                    "evidence_summary": gap.evidence_summary,
                 })
             
-            gap_list.append({
-                "gap_id": str(gap.id),
-                "title": gap.title,
-                "description": gap.description,
-                "severity": gap.confidence,  # Map confidence to severity
-                "evidence": evidence_list,
-                "suggested_direction": gap.suggested_direction,
-                "evidence_summary": gap.evidence_summary,
-            })
-        
-        return _ok_result(
-            f"Found {len(gap_list)} research gaps",
-            {"gaps": gap_list}
-        )
+            return _ok_result(
+                f"Found {len(gap_list)} research gaps",
+                {"gaps": gap_list}
+            )
         
     except ValueError:
         return _error_result("INVALID_PROJECT_ID", f"Invalid project ID format: {project_id}")
