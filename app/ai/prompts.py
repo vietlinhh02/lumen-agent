@@ -748,3 +748,34 @@ Research query: {query}
 
 Detect language and generate optimized search variants.
 """
+
+METHODOLOGY_SYSTEM = """\
+You are an academic writing assistant specializing in systematic literature review methodology sections.
+Write ONE concise paragraph (4–7 sentences) that describes the review methodology used to produce
+a systematic literature review report. The paragraph must:
+- Be written in formal, third-person academic prose.
+- State the total number of curated scholarly sources consulted.
+- Mention the structured data records available (extraction matrix rows).
+- Note the number of identified research gaps and conflicting findings recorded.
+- Briefly describe how sections were organized (thematically around the research question).
+- Note that paragraph-level citations were validated against saved evidence identifiers.
+- Note that peer-reviewed and preprint scholarly sources are prioritized for empirical claims,
+  while web commentary, vendor material, and leaderboard sources are treated only as contextual
+  industry evidence.
+- If fewer extraction records than total sources exist, acknowledge that claims are weighted toward
+  those structured records while the remaining sources are treated as supplementary material.
+Output ONLY the paragraph text. No headings, no bullet points, no preamble.
+"""
+
+METHODOLOGY_USER = """\
+Research topic: {topic}
+Research question: {research_question}
+
+Corpus statistics:
+- Curated sources: {saved_papers}
+- Structured extraction records (matrix rows): {matrix_rows}
+- Research-gap records: {research_gaps}
+- Conflicting-finding records: {conflicts}
+
+Write the methodology paragraph describing how this literature review was conducted.
+"""

@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.prompts import (
+    METHODOLOGY_SYSTEM,
+    METHODOLOGY_USER,
     REVIEW_WRITER_CHUNK_SYSTEM,
     REVIEW_WRITER_CHUNK_USER,
     format_protocol_for_prompt,
@@ -834,8 +836,10 @@ async def generate_report(
                     cited_ids.add(pid)
     references = await _build_references(db, cited_ids)
 
-    # 13. Build markdown from cleaned sections
-    methodology = _build_methodology_summary(
+    # 13. Generate methodology section via LLM (fallback to template on failure)
+    methodology_text = await _generate_methodology_with_llm(
+        topic=topic,
+        research_question=research_question,
         saved_papers=len(project_papers),
         matrix_rows=len(matrix_rows),
         research_gaps=len(gaps),
@@ -844,7 +848,7 @@ async def generate_report(
     content_markdown = _build_content_markdown(
         cleaned_sections,
         references,
-        methodology=methodology,
+        methodology_text=methodology_text,
     )
 
     # 14. Persist
@@ -1179,22 +1183,10 @@ def _format_reference_line(ref: Mapping[str, object]) -> str:
     return f"{ref['citation_label']} {authors} ({year}). *{title}*{link_part}\n"
 
 
-def _build_methodology_summary(
-    saved_papers: int,
-    matrix_rows: int,
-    research_gaps: int,
-    conflicts: int,
-) -> dict[str, int]:
-    """Return deterministic report-method metadata for markdown rendering."""
-    return {
-        "saved_papers": saved_papers,
-        "matrix_rows": matrix_rows,
-        "research_gaps": research_gaps,
-        "conflicts": conflicts,
-    }
 
 
 def _render_methodology(methodology: Mapping[str, int]) -> str:
+    """Fallback template used when the LLM call fails."""
     saved_papers = methodology.get("saved_papers", 0)
     matrix_rows = methodology.get("matrix_rows", 0)
     research_gaps = methodology.get("research_gaps", 0)
@@ -1222,6 +1214,52 @@ def _render_methodology(methodology: Mapping[str, int]) -> str:
         "separate 'Industry Commentary' section."
         f"{coverage_note}"
     )
+
+
+async def _generate_methodology_with_llm(
+    topic: str,
+    research_question: str | None,
+    saved_papers: int,
+    matrix_rows: int,
+    research_gaps: int,
+    conflicts: int,
+) -> str:
+    """Generate the Methodology paragraph via LLM.
+
+    Falls back to the deterministic template if the LLM call fails for any
+    reason so the report always contains a Methodology section.
+    """
+    fallback_stats: Mapping[str, int] = {
+        "saved_papers": saved_papers,
+        "matrix_rows": matrix_rows,
+        "research_gaps": research_gaps,
+        "conflicts": conflicts,
+    }
+    try:
+        provider = get_provider()
+        user_msg = METHODOLOGY_USER.format(
+            topic=topic,
+            research_question=research_question or "Not specified",
+            saved_papers=saved_papers,
+            matrix_rows=matrix_rows,
+            research_gaps=research_gaps,
+            conflicts=conflicts,
+        )
+        text = await provider.complete(
+            messages=[{"role": "user", "content": user_msg}],
+            system=METHODOLOGY_SYSTEM,
+            max_tokens=3200,
+        )
+        text = text.strip()
+        if not text:
+            raise ValueError("LLM returned empty methodology text")
+        logger.info("LLM-generated methodology section (%d chars)", len(text))
+        return text
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Methodology LLM call failed (%s); falling back to template", exc
+        )
+        return _render_methodology(fallback_stats)
 
 
 def _is_methodology_heading(heading: object) -> bool:
@@ -1700,7 +1738,7 @@ def _audit_claim_grounding(
 def _build_content_markdown(
     sections: list[dict],
     references: list[dict],
-    methodology: Mapping[str, int] | None = None,
+    methodology_text: str | None = None,
 ) -> str:
     """Convert validated sections + references into rich Markdown.
 
@@ -1728,16 +1766,16 @@ def _build_content_markdown(
 
     parts: list[str] = []
 
-    if methodology:
+    if methodology_text:
         parts.append("## Methodology\n")
-        parts.append(f"{_render_methodology(methodology)}\n")
+        parts.append(f"{methodology_text}\n")
         if sections:
             parts.append("\n---\n")
 
     rendered_sections = [
         section
         for section in sections
-        if not (methodology and _is_methodology_heading(section.get("heading")))
+        if not (methodology_text and _is_methodology_heading(section.get("heading")))
     ]
 
     for i, section in enumerate(rendered_sections):
