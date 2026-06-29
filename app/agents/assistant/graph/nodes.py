@@ -23,7 +23,6 @@ from app.agents.assistant.events import (
     ErrorEvent,
     IterationEvent,
     MessageEvent,
-    ThoughtEvent,
     ToolEvent,
     WaitEvent,
 )
@@ -414,9 +413,7 @@ async def react_loop_node(
         ):
             if isinstance(chunk, TextChunk):
                 response_text += chunk.delta
-                # Emit as ThoughtEvent so preamble/reasoning is hidden in the thinking block
-                # rather than polluting the main chat UI before a tool call.
-                emit(ThoughtEvent(delta=chunk.delta, iteration=iteration))
+                emit(AssistantDeltaEvent(delta=chunk.delta, is_final=False))
 
             elif isinstance(chunk, ToolCallStart):
                 tool_call_args[chunk.call_id] = {"name": chunk.name, "args_str": ""}
@@ -455,17 +452,11 @@ async def react_loop_node(
         logger.error("stream_with_tools failed: %s", exc)
         emit(ErrorEvent(code="PROVIDER_ERROR", message=f"Provider stream failed: {exc}"))
 
+    if response_text:
+        emit(AssistantDeltaEvent(delta="", is_final=True))
+
     # Check for tool calls
     if not tool_calls_found:
-        if response_text:
-            # If no tools were called, this is the final answer.
-            # We emit it as AssistantDeltaEvent so the frontend displays it as a final message.
-            # We chunk it to simulate a fast stream.
-            chunk_size = 20
-            for i in range(0, len(response_text), chunk_size):
-                emit(AssistantDeltaEvent(delta=response_text[i:i+chunk_size], is_final=False))
-            emit(AssistantDeltaEvent(delta="", is_final=True))
-
         # No tools - graph will proceed to final_answer_node
         return {
             "iteration": iteration + 1,

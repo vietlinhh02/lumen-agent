@@ -78,8 +78,8 @@ async def test_simple_chat_streams_visible_tokens_before_final(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_react_loop_does_not_stream_intermediate_tool_text(monkeypatch) -> None:
-    """Intermediate ReAct text before a tool call is not a visible chat delta."""
+async def test_react_loop_streams_intermediate_tool_text(monkeypatch) -> None:
+    """Intermediate ReAct text before a tool call is streamed as a visible chat delta."""
     emitted: list[object] = []
     provider = FakeToolStreamingProvider(
         [
@@ -94,7 +94,8 @@ async def test_react_loop_does_not_stream_intermediate_tool_text(monkeypatch) ->
 
     result = await react_loop_node(_state())
 
-    assert not any(isinstance(event, AssistantDeltaEvent) for event in emitted)
+    deltas = [event for event in emitted if isinstance(event, AssistantDeltaEvent)]
+    assert [event.delta for event in deltas] == ["I need to get the report.", ""]
     assert any(isinstance(event, ToolEvent) for event in emitted)
     assert result["messages"][0]["content"] == "I need to get the report."
 
@@ -117,7 +118,7 @@ async def test_react_loop_streams_visible_text_when_no_tool_call(monkeypatch) ->
     result = await react_loop_node(_state())
 
     deltas = [event for event in emitted if isinstance(event, AssistantDeltaEvent)]
-    assert [event.delta for event in deltas] == ["Here is the final su", "mmary.", ""]
+    assert [event.delta for event in deltas] == ["Here is ", "the final summary.", ""]
     assert deltas[-1].is_final is True
     assert result["messages"] == [
         {"role": "assistant", "content": "Here is the final summary."}
