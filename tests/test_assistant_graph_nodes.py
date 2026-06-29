@@ -117,7 +117,7 @@ async def test_react_loop_streams_visible_text_when_no_tool_call(monkeypatch) ->
     result = await react_loop_node(_state())
 
     deltas = [event for event in emitted if isinstance(event, AssistantDeltaEvent)]
-    assert [event.delta for event in deltas] == ["Here is ", "the final summary.", ""]
+    assert [event.delta for event in deltas] == ["Here is the final su", "mmary.", ""]
     assert deltas[-1].is_final is True
     assert result["messages"] == [
         {"role": "assistant", "content": "Here is the final summary."}

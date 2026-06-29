@@ -25,7 +25,6 @@ from app.agents.assistant.graph.nodes import (
     direct_tool_node,
     final_answer_node,
     react_loop_node,
-    research_pipeline_node,
     should_continue_react,
     simple_chat_node,
 )
@@ -48,7 +47,6 @@ def build_assistant_graph(
                     │
                     ├── chitchat ──→ simple_chat ──→ END
                     ├── list_* ──────→ direct_tool ──→ END
-                    ├── research_pipeline ──→ research_pipeline_node ──→ END
                     └── other ───────→ react_loop ──┬─→ react_loop (more iterations)
                                                    └─→ final_answer → END
 
@@ -66,7 +64,6 @@ def build_assistant_graph(
     graph.add_node("simple_chat", simple_chat_node)
     graph.add_node("deep_search", deep_search_node)
     graph.add_node("direct_tool", direct_tool_node)
-    graph.add_node("research_pipeline", research_pipeline_node)
     graph.add_node("react_loop", react_loop_node)
     graph.add_node("final_answer", final_answer_node)
 
@@ -83,8 +80,6 @@ def build_assistant_graph(
             return "deep_search"
         elif intent.startswith("list_"):
             return "direct_tool"
-        elif intent == "research_pipeline":
-            return "research_pipeline"
         else:
             return "react_loop"
 
@@ -95,7 +90,6 @@ def build_assistant_graph(
             "simple_chat": "simple_chat",
             "deep_search": "deep_search",
             "direct_tool": "direct_tool",
-            "research_pipeline": "research_pipeline",
             "react_loop": "react_loop",
         },
     )
@@ -104,7 +98,6 @@ def build_assistant_graph(
     graph.add_edge("simple_chat", END)
     graph.add_edge("deep_search", END)
     graph.add_edge("direct_tool", END)
-    graph.add_edge("research_pipeline", END)
 
     # ── ReAct loop with conditional continuation ────────────────────────────
     def route_from_react_loop(state: AssistantGraphState) -> Literal["react_loop", "final_answer"]:

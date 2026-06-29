@@ -2,7 +2,7 @@
 Tests for assistant paper tools.
 
 Verifies:
-- search_papers tool structure
+- search_web tool structure
 - save_paper_to_project tool structure
 - remove_paper_from_project tool structure
 - list_project_papers tool structure
@@ -22,11 +22,11 @@ from app.agents.assistant.tools.paper_tools import (
     _ok_result,
     _remove_paper_impl,
     _save_paper_impl,
-    _search_papers_impl,
+    _search_web_impl,
     list_project_papers,
     remove_paper_from_project,
     save_paper_to_project,
-    search_papers,
+    search_web,
 )
 
 
@@ -62,10 +62,10 @@ class TestOkErrorResults:
 class TestLangChainTools:
     """Tests for the LangChain tool decorators."""
 
-    def test_search_papers_tool_callable(self):
-        """search_papers is a valid LangChain tool."""
-        assert hasattr(search_papers, "invoke")
-        assert callable(search_papers.invoke)
+    def test_search_web_tool_callable(self):
+        """search_web is a valid LangChain tool."""
+        assert hasattr(search_web, "invoke")
+        assert callable(search_web.invoke)
 
     def test_save_paper_tool_callable(self):
         """save_paper_to_project is a valid LangChain tool."""
@@ -84,20 +84,20 @@ class TestLangChainTools:
 
     def test_tools_have_correct_names(self):
         """Tools have expected names."""
-        assert search_papers.name == "search_papers"
+        assert search_web.name == "search_web"
         assert save_paper_to_project.name == "save_paper_to_project"
         assert remove_paper_from_project.name == "remove_paper_from_project"
         assert list_project_papers.name == "list_project_papers"
 
     def test_tools_have_schema_with_params(self):
         """Tools have arg schemas describing their parameters."""
-        assert hasattr(search_papers, "args")
+        assert hasattr(search_web, "args")
         assert hasattr(save_paper_to_project, "args")
         assert hasattr(remove_paper_from_project, "args")
         assert hasattr(list_project_papers, "args")
 
-        # search_papers should have query param
-        assert "query" in search_papers.args
+        # search_web should have query param
+        assert "query" in search_web.args
 
         # save_paper requires project_id and paper
         save_args = save_paper_to_project.args
@@ -109,14 +109,14 @@ class TestLangChainTools:
         assert "project_id" in remove_args
         assert "project_paper_id" in remove_args
 
-    def test_search_papers_default_limit(self):
-        """search_papers has default limit of 20."""
+    def test_search_web_default_limit(self):
+        """search_web has default limit of 20."""
         # Default is set in the function signature
-        assert search_papers.args["limit"]["default"] == 20
+        assert search_web.args["limit"]["default"] == 20
 
-    def test_search_papers_default_sources(self):
-        """search_papers has semantic_scholar as default source."""
-        assert search_papers.args["sources"]["default"] == ["semantic_scholar"]
+    def test_search_web_default_sources(self):
+        """search_web has exa as default source."""
+        assert search_web.args["sources"]["default"] == ["exa"]
 
     def test_list_papers_default_status(self):
         """list_project_papers has default status of saved."""
@@ -124,8 +124,8 @@ class TestLangChainTools:
 
     def test_tools_have_descriptions(self):
         """Tools have descriptions for LLM."""
-        assert hasattr(search_papers, "description")
-        assert len(search_papers.description) > 10
+        assert hasattr(search_web, "description")
+        assert len(search_web.description) > 10
         assert hasattr(save_paper_to_project, "description")
         assert len(save_paper_to_project.description) > 10
 
@@ -155,10 +155,10 @@ class TestToolErrorHandling:
 
 @pytest.mark.asyncio
 class TestSearchPapersImplementation:
-    """Test _search_papers_impl function."""
+    """Test _search_web_impl function."""
 
-    async def test_search_papers_success(self):
-        """_search_papers_impl returns search results."""
+    async def test_search_web_success(self):
+        """_search_web_impl returns search results."""
         mock_raw_paper = MagicMock()
         mock_raw_paper.semantic_scholar_id = "ss-123"
         mock_raw_paper.arxiv_id = None
@@ -179,7 +179,7 @@ class TestSearchPapersImplementation:
         with patch("app.services.paper_search.search_and_download", new_callable=AsyncMock) as mock_search:
             mock_search.return_value = mock_outcome
 
-            result = await _search_papers_impl(
+            result = await _search_web_impl(
                 query="RAG medical",
                 sources=["semantic_scholar"],
                 year_from=2020,
@@ -192,13 +192,13 @@ class TestSearchPapersImplementation:
         assert "papers" in result["data"]
         assert len(result["data"]["papers"]) == 1
 
-    async def test_search_papers_timeout(self):
-        """_search_papers_impl handles timeout."""
+    async def test_search_web_timeout(self):
+        """_search_web_impl handles timeout."""
 
         with patch("app.services.paper_search.search_and_download", new_callable=AsyncMock) as mock_search:
             mock_search.side_effect = TimeoutError()
 
-            result = await _search_papers_impl(
+            result = await _search_web_impl(
                 query="test",
                 sources=["semantic_scholar"],
                 year_from=None,
@@ -209,12 +209,12 @@ class TestSearchPapersImplementation:
         assert result["ok"] is False
         assert result["error_code"] == "SEARCH_TIMEOUT"
 
-    async def test_search_papers_service_exception(self):
-        """_search_papers_impl handles service exceptions."""
+    async def test_search_web_service_exception(self):
+        """_search_web_impl handles service exceptions."""
         with patch("app.services.paper_search.search_and_download", new_callable=AsyncMock) as mock_search:
             mock_search.side_effect = Exception("Search failed")
 
-            result = await _search_papers_impl(
+            result = await _search_web_impl(
                 query="test",
                 sources=["semantic_scholar"],
                 year_from=None,

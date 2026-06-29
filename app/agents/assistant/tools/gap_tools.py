@@ -410,4 +410,4 @@ class GapToolkit(BaseToolkit):
     """Toolkit for research gap detection."""
 
     def get_tools(self):
-        return [detect_research_gaps, list_gaps, delete_gap]
+        return [list_gaps]

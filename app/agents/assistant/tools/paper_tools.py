@@ -43,7 +43,7 @@ def _error_result(error_code: str, message: str, details: dict[str, Any] | None 
 # ── Paper Search ───────────────────────────────────────────────────────────
 
 
-async def _search_papers_impl(
+async def _search_web_impl(
     query: str,
     sources: list[str],
     year_from: int | None,
@@ -300,18 +300,19 @@ async def _list_project_papers_impl(
 
 
 @tool
-async def search_papers(
+async def search_web(
     query: str,
-    sources: list[str] = Field(default=["semantic_scholar"]),
+    sources: list[str] = Field(default=["exa"]),
     year_from: int | None = None,
     year_to: int | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
     """
-    Search for academic papers from multiple sources.
+    Search for information on the web/Google.
 
-    Use this when the user wants to find papers on a specific topic or research question.
-    Search runs in parallel across all specified sources.
+    Use this when the user wants to search the internet for information,
+    find references, or look up general topics.
+    Search runs using the exa web search engine.
 
     Sources:
     - semantic_scholar: Academic paper search (default)
@@ -328,7 +329,7 @@ async def search_papers(
         year_to: Filter papers until this year.
         limit: Maximum papers per source (default 20, max 100).
     """
-    return await _search_papers_impl(query, sources, year_from, year_to, limit)
+    return await _search_web_impl(query, sources, year_from, year_to, limit)
 
 
 @tool
@@ -419,8 +420,6 @@ class PaperToolkit(BaseToolkit):
 
     def get_tools(self) -> list[BaseTool]:
         return [
-            search_papers,
-            save_paper_to_project,
-            remove_paper_from_project,
+            search_web,
             list_project_papers,
         ]

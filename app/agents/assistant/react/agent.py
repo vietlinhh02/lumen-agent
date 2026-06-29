@@ -44,7 +44,6 @@ from app.agents.assistant.events import (
     ToolEvent,
     WaitEvent,
 )
-from app.agents.assistant.pipelines import ResearchPipeline, ResearchPipelineConfig
 from app.agents.assistant.react.intent_classifier import IntentClassifier
 from app.agents.assistant.react.memory import Scratchpad
 from app.agents.assistant.react.prompts import (
@@ -244,34 +243,7 @@ class ReActAgent:
             # ── 2. Dispatch by intent ───────────────────────────────────────
             intent = classification.intent
 
-            # research_pipeline: run full deterministic pipeline
-            if intent == "research_pipeline":
-                # Determine project_id: use classified override, or session project
-                project_id = (
-                    classification.project_id
-                    or self.project_context.project_id
-                )
 
-                if not project_id:
-                    # Ask user to pick a project
-                    projects = await self._list_project_summaries()
-                    yield WaitEvent(
-                        question="Which project should I use for the research?",
-                        options=projects,
-                        placeholder="Select a project or say 'create new'",
-                    )
-                    yield DoneEvent(summary="Awaiting project selection.")
-                    return
-
-                query = classification.query or classification.topic_hint or message
-
-                async for event in self._run_research_pipeline(
-                    query=query,
-                    project_id=project_id,
-                    cancel_event=cancel_event,
-                ):
-                    yield event
-                return
 
             # search_only: run ReAct loop with search as primary action
             if intent == "search_only":

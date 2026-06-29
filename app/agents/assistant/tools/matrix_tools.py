@@ -448,4 +448,4 @@ class MatrixToolkit(BaseToolkit):
     """Toolkit for literature matrix generation."""
 
     def get_tools(self):
-        return [generate_matrix, list_matrix_rows, update_matrix_row]
+        return [list_matrix_rows]

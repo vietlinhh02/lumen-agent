@@ -297,6 +297,5 @@ class ProjectToolkit(BaseToolkit):
         return [
             list_projects,
             get_project,
-            create_project,
             ask_user_clarification,
         ]

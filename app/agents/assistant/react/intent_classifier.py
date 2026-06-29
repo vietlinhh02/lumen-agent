@@ -38,9 +38,7 @@ class IntentOutput(BaseModel):
 
     intent: str = Field(
         description=(
-            "One of: research_pipeline | search_only | matrix_only | "
-            "gap_only | report_only | qa | list | create_project | "
-            "chitchat | ambiguous"
+            "One of: search_only | qa | list | chitchat | ambiguous"
         )
     )
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence score.")
@@ -68,42 +66,16 @@ message and return structured JSON matching the IntentOutput schema.
 
 INTENT DEFINITIONS:
 
-- research_pipeline: User wants end-to-end research: search papers, save them
-  to a project, extract a literature matrix, detect gaps, and generate a report.
-  Signals: "do research", "research on X", "conduct research", "phân tích về X",
-  "tìm hiểu về", "nghiên cứu về", "khảo sát X", "explore X", "investigate X",
-  "systematic review", "literature review". ANY message with a clear research
-  topic and no qualifier like "just search" or "only find papers" = research_pipeline.
-  If unclear whether user wants full pipeline or just search, default to
-  research_pipeline.
-
-- search_only: User only wants to find papers without saving or analyzing.
-  Signals: "find papers about X", "search for X papers", "show me papers on X",
-  "chỉ tìm paper", "chỉ tìm bài báo". Explicit qualifier "just", "only", "chỉ".
-
-- matrix_only: User wants to generate a literature matrix from papers already
-  saved in a project. Signals: "generate matrix", "extract matrix", "build matrix",
-  "tạo ma trận", "xây dựng ma trận".
-
-- gap_only: User wants to detect research gaps from an existing matrix.
-  Signals: "find gaps", "detect gaps", "identify gaps", "phát hiện lỗ hổng",
-  "tìm gaps".
-
-- report_only: User wants to generate a literature review report.
-  Signals: "write report", "generate report", "create report", "write literature review",
-  "tạo báo cáo", "viết báo cáo".
+- search_only: User wants to search for general information on the web/Google.
+  Signals: "search for X", "tìm kiếm thông tin X", "tìm hiểu về X", "Google X".
 
 - qa: User asks a specific question about content in papers already saved in
   their project. Signals: "what does paper X say about Y?", "summarize my papers",
   "what methods were used", "tóm tắt papers của tôi", "phương pháp nào được dùng".
 
-- list: User wants to list or retrieve existing data (projects, papers, reports,
+- list: User wants to list or retrieve existing data (projects, papers, matrices, reports,
   gaps). Signals: "list my projects", "show papers", "what papers do I have",
-  "danh sách project", "xem báo cáo".
-
-- create_project: User wants to create a new project.
-  Signals: "create project", "new project", "start a project", "tạo dự án mới",
-  "tạo project mới".
+  "danh sách project", "xem báo cáo", "show me the matrix".
 
 - chitchat: Greeting, thanks, off-topic, meta questions about the assistant.
   Signals: "hi", "hello", "thanks", "thank you", "how are you", "what can you do",
@@ -128,14 +100,9 @@ Always return a valid IntentOutput JSON object.
 
 # Valid intent values (for validation after parsing)
 VALID_INTENTS = frozenset([
-    "research_pipeline",
     "search_only",
-    "matrix_only",
-    "gap_only",
-    "report_only",
     "qa",
     "list",
-    "create_project",
     "chitchat",
     "ambiguous",
 ])

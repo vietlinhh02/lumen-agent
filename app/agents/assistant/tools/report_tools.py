@@ -525,4 +525,4 @@ class ReportToolkit(BaseToolkit):
     """Toolkit for report generation."""
 
     def get_tools(self):
-        return [generate_report, list_reports, get_report, export_report_markdown]
+        return [list_reports, get_report, export_report_markdown]

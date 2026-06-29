@@ -20,19 +20,7 @@ class TestIntentClassifierParseResult:
         self.mock_provider = MagicMock()
         self.classifier = IntentClassifier(self.mock_provider)
 
-    def test_valid_research_pipeline_intent(self) -> None:
-        result = self.classifier._parse_result({
-            "intent": "research_pipeline",
-            "confidence": 0.95,
-            "reasoning": "User wants full research pipeline",
-            "query": "LLM evaluation",
-            "project_id": None,
-            "topic_hint": "LLM evaluation metrics",
-        })
-        assert result.intent == "research_pipeline"
-        assert result.confidence == 0.95
-        assert result.query == "LLM evaluation"
-        assert result.topic_hint == "LLM evaluation metrics"
+
 
     def test_valid_search_only_intent(self) -> None:
         result = self.classifier._parse_result({
@@ -46,38 +34,7 @@ class TestIntentClassifierParseResult:
         assert result.intent == "search_only"
         assert result.query == "AI in healthcare"
 
-    def test_valid_matrix_only_intent(self) -> None:
-        result = self.classifier._parse_result({
-            "intent": "matrix_only",
-            "confidence": 0.90,
-            "reasoning": "User wants to generate matrix",
-            "query": None,
-            "project_id": None,
-            "topic_hint": None,
-        })
-        assert result.intent == "matrix_only"
 
-    def test_valid_gap_only_intent(self) -> None:
-        result = self.classifier._parse_result({
-            "intent": "gap_only",
-            "confidence": 0.85,
-            "reasoning": "User wants to detect gaps",
-            "query": None,
-            "project_id": None,
-            "topic_hint": None,
-        })
-        assert result.intent == "gap_only"
-
-    def test_valid_report_only_intent(self) -> None:
-        result = self.classifier._parse_result({
-            "intent": "report_only",
-            "confidence": 0.90,
-            "reasoning": "User wants to generate report",
-            "query": None,
-            "project_id": None,
-            "topic_hint": None,
-        })
-        assert result.intent == "report_only"
 
     def test_valid_qa_intent(self) -> None:
         result = self.classifier._parse_result({
@@ -101,16 +58,7 @@ class TestIntentClassifierParseResult:
         })
         assert result.intent == "list"
 
-    def test_valid_create_project_intent(self) -> None:
-        result = self.classifier._parse_result({
-            "intent": "create_project",
-            "confidence": 0.90,
-            "reasoning": "User wants to create a new project",
-            "query": None,
-            "project_id": None,
-            "topic_hint": None,
-        })
-        assert result.intent == "create_project"
+
 
     def test_valid_chitchat_intent(self) -> None:
         result = self.classifier._parse_result({
@@ -155,11 +103,11 @@ class TestIntentClassifierParseResult:
 
     def test_missing_optional_fields_accepted(self) -> None:
         result = self.classifier._parse_result({
-            "intent": "research_pipeline",
+            "intent": "search_only",
             "confidence": 0.8,
-            "reasoning": "User wants to research",
+            "reasoning": "User wants to search",
         })
-        assert result.intent == "research_pipeline"
+        assert result.intent == "search_only"
         assert result.query is None
         assert result.project_id is None
         assert result.topic_hint is None
@@ -170,20 +118,20 @@ class TestIntentOutputModel:
 
     def test_valid_intent_output(self) -> None:
         output = IntentOutput(
-            intent="research_pipeline",
+            intent="search_only",
             confidence=0.95,
-            reasoning="User wants to research LLM evaluation",
+            reasoning="User wants to search LLM evaluation",
             query="LLM evaluation",
             project_id=None,
             topic_hint="LLM evaluation methods",
         )
-        assert output.intent == "research_pipeline"
+        assert output.intent == "search_only"
         assert output.confidence == 0.95
 
     def test_confidence_must_be_0_to_1(self) -> None:
         with pytest.raises(ValueError):  # Pydantic validation error
             IntentOutput(
-                intent="research_pipeline",
+                intent="search_only",
                 confidence=1.5,  # Invalid: > 1.0
                 reasoning="test",
             )
@@ -232,16 +180,16 @@ class TestIntentClassifierClassify:
     async def test_classify_success(self) -> None:
         mock_provider = MagicMock()
         mock_provider.complete_structured = AsyncMock(return_value={
-            "intent": "research_pipeline",
+            "intent": "search_only",
             "confidence": 0.95,
-            "reasoning": "User wants full research",
+            "reasoning": "User wants to search",
             "query": "LLM evaluation",
             "project_id": None,
             "topic_hint": "LLM evaluation",
         })
         classifier = IntentClassifier(mock_provider)
-        result = await classifier.classify("do research on LLM evaluation")
-        assert result.intent == "research_pipeline"
+        result = await classifier.classify("search on LLM evaluation")
+        assert result.intent == "search_only"
         assert result.query == "LLM evaluation"
         mock_provider.complete_structured.assert_called_once()
 
