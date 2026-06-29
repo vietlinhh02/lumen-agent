@@ -6,7 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import { isTokenExpired } from "@/lib/jwt";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { MagneticButton } from "./MagneticButton";
+
+gsap.registerPlugin(ScrollTrigger);
 
 export function CtaBand() {
   const router = useRouter();
@@ -76,6 +79,7 @@ export function CtaBand() {
       }
     }, sectionRef);
 
+    ScrollTrigger.refresh();
     return () => ctx.revert();
   }, []);
 

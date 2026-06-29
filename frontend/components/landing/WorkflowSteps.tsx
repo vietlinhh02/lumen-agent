@@ -2,6 +2,9 @@
 
 import { useRef, useEffect } from "react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 
 const steps = [
   {
@@ -174,6 +177,7 @@ export function WorkflowSteps() {
       }
     }, sectionRef);
 
+    ScrollTrigger.refresh();
     return () => ctx.revert();
   }, []);
 

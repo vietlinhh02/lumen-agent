@@ -2,6 +2,9 @@
 
 import { useRef, useEffect } from "react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 
 const features = [
   {
@@ -107,6 +110,7 @@ export function Features() {
       }
     }, sectionRef);
 
+    ScrollTrigger.refresh();
     return () => ctx.revert();
   }, []);
 

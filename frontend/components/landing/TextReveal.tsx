@@ -3,6 +3,9 @@
 import { useRef } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 
 interface TextRevealProps {
   children: string;
@@ -41,6 +44,8 @@ export function TextReveal({
         toggleActions: "play none none none",
       },
     });
+
+    ScrollTrigger.refresh();
   }, { scope: ref });
 
   const words = children.split(" ").map((w, i) => (

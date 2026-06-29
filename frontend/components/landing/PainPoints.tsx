@@ -2,6 +2,9 @@
 
 import { useRef, useEffect } from "react";
 import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 
 const stats = [
   { value: 72, suffix: "%", label: "of AI-generated citations are fabricated", source: "Athaluri et al., 2024" },
@@ -80,6 +83,7 @@ export function PainPoints() {
       }
     }, sectionRef);
 
+    ScrollTrigger.refresh();
     return () => ctx.revert();
   }, []);
 

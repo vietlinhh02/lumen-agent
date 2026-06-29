@@ -10,6 +10,8 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { MagneticButton } from "./MagneticButton";
 
+gsap.registerPlugin(ScrollTrigger);
+
 export function Hero() {
   const router = useRouter();
   const token = useAuthStore((s) => s.token);
@@ -124,6 +126,8 @@ export function Hero() {
         },
       });
     }
+
+    ScrollTrigger.refresh();
   }, { scope: sectionRef });
 
   return (
