@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FileText,
   MagnifyingGlass,
@@ -27,6 +27,7 @@ import { useReportsStore } from "@/lib/stores/reports-store";
 import { useKnowledgeMapStore } from "@/lib/stores/knowledge-map-store";
 import { formatDate, relativeTime } from "@/lib/utils";
 import { ProjectOnboardingTour } from "@/components/onboarding/ProjectOnboardingTour";
+import { AutoRunModal } from "@/components/projects/AutoRunModal";
 
 
 
@@ -36,6 +37,8 @@ export default function ProjectOverviewPage() {
 
   const project = useProjectsStore((s) => s.currentProject);
   const papers = useProjectsStore((s) => s.currentPapers);
+  
+  const [isAutoRunOpen, setIsAutoRunOpen] = useState(false);
   const matrixRows = useMatrixStore((s) => s.rows);
   const loadingMatrix = useMatrixStore((s) => s.loading);
   const gaps = useGapsStore((s) => s.gaps);
@@ -88,6 +91,16 @@ export default function ProjectOverviewPage() {
   return (
     <div data-tour="project-welcome" className="space-y-5 sm:space-y-6 animate-slide-up">
       <ProjectOnboardingTour />
+      
+      {project && (
+        <AutoRunModal 
+          projectId={project.id} 
+          topic={project.topic || ""} 
+          researchQuestion={project.research_question}
+          isOpen={isAutoRunOpen} 
+          onClose={() => setIsAutoRunOpen(false)} 
+        />
+      )}
       
       {/* Workspace Snapshot Pill */}
       <section data-tour="project-snapshot">
@@ -179,6 +192,14 @@ export default function ProjectOverviewPage() {
           >
             View All Papers
           </Link>
+          
+          <button
+            onClick={() => setIsAutoRunOpen(true)}
+            className="focus-ring ml-auto inline-flex h-9 sm:h-10 items-center gap-1.5 sm:gap-2 rounded-full border border-primary text-primary px-4 sm:px-5 font-ui text-[12px] sm:text-[13px] font-semibold hover:bg-primary hover:text-on-primary transition-all duration-300 shadow-[0_0_10px_rgba(234,40,4,0.1)] hover:shadow-[0_0_15px_rgba(234,40,4,0.3)] active:scale-[0.98]"
+          >
+            <Lightning size={14} weight="fill" className="animate-pulse" />
+            Auto-Run Everything
+          </button>
         </div>
       </section>
 
