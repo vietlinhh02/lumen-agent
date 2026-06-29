@@ -320,12 +320,11 @@ def test_build_content_markdown_adds_methodology_section():
                 "reference_group": "scholarly",
             }
         ],
-        methodology={
-            "saved_papers": 12,
-            "matrix_rows": 10,
-            "research_gaps": 2,
-            "conflicts": 1,
-        },
+        methodology_text=(
+            "This narrative synthesis is built on the project's curated scholarly "
+            "corpus. The review draws on 12 curated sources, 10 structured extraction "
+            "records, 2 research-gap records, and 1 conflicting-finding records."
+        ),
     )
 
     assert md.startswith("## Methodology\n")
@@ -373,12 +372,7 @@ def test_build_content_markdown_drops_llm_methodology_when_app_injects_one():
                 "reference_group": "scholarly",
             }
         ],
-        methodology={
-            "saved_papers": 50,
-            "matrix_rows": 11,
-            "research_gaps": 3,
-            "conflicts": 0,
-        },
+        methodology_text="This narrative synthesis is built on 50 curated sources, 11 of 50 corpus entries...",
     )
 
     assert md.count("## Methodology") == 1
