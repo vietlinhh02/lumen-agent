@@ -160,20 +160,16 @@ async def search_and_download(
         # ── 2. Build source query map ───────────────────────────────────
         t0 = time.monotonic()
 
-        # Override variants to FORCE arXiv for now to optimize speed
-        variants = [
-            QueryVariant(source="arxiv", query=request.query, language="en"),
-        ]
-
-        _CANONICAL_SOURCES = {"semantic_scholar", "arxiv", "exa", "firecrawl", "openalex"}
+        # Let the AI detection determine the query formatting
+        # But force the source to be arxiv if not already.
+        # If detection fails, we fallback to the raw query.
+        _CANONICAL_SOURCES = {"arxiv"}
         source_query_map: dict[str, str] = {}
         for v in variants:
-            canonical = _normalize_source_name(v.source, _CANONICAL_SOURCES)
-            if canonical and canonical not in source_query_map:
-                source_query_map[canonical] = v.query
+            source_query_map["arxiv"] = v.query
 
         if not source_query_map:
-            source_query_map["semantic_scholar"] = request.query
+            source_query_map["arxiv"] = request.query
 
         # ── 3. Search all sources in parallel with early exit ────────────
         all_raw, source_diagnostics = await _search_sources_parallel(
