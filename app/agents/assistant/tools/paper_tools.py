@@ -302,7 +302,7 @@ async def _list_project_papers_impl(
 @tool
 async def search_web(
     query: str,
-    sources: list[str] = Field(default=["exa"]),
+    sources: list[str] = Field(default=["arxiv"]),
     year_from: int | None = None,
     year_to: int | None = None,
     limit: int = 20,
@@ -315,7 +315,8 @@ async def search_web(
     Search runs using the exa web search engine.
 
     Sources:
-    - semantic_scholar: Academic paper search (default)
+    - arxiv: Academic paper search from ArXiv (Fastest & most robust)
+    - semantic_scholar: Academic paper search (Deprecated for now)
     - paperhub: Additional paper source
     - exa: Web-based paper search
 

@@ -81,6 +81,7 @@ export function PaperCard({
   saved,
   rejected,
   score,
+  isProcessing = false,
 }: {
   paper: PaperResult;
   projectId: string | null;
@@ -96,6 +97,7 @@ export function PaperCard({
   saved: boolean;
   rejected?: boolean;
   score?: string;
+  isProcessing?: boolean;
 }) {
   const authorsStr = formatAuthors(paper.authors);
   const isDownloaded = paper.pdf_downloaded;
@@ -108,6 +110,7 @@ export function PaperCard({
 
   const [showLowRelevanceModal, setShowLowRelevanceModal] = useState(false);
   const [exclusionReason, setExclusionReason] = useState("insufficient_relevance");
+  const [expandedAbstract, setExpandedAbstract] = useState(false);
 
   const handleSaveClick = () => {
     if (score === "low") {
@@ -167,7 +170,19 @@ export function PaperCard({
         {paper.venue && <span className="inline-flex items-center gap-1"><Buildings size={11} />{paper.venue}</span>}
         {paper.year && <span className="inline-flex items-center gap-1"><Calendar size={11} />{paper.year}</span>}
       </div>
-      {paper.abstract && <p className="mt-2.5 text-[13px] leading-[1.6] text-body line-clamp-3"><MathText text={paper.abstract} /></p>}
+      {paper.abstract && (
+        <div className="mt-2.5">
+          <p className={`text-[13px] leading-[1.6] text-body ${expandedAbstract ? "" : "line-clamp-3"}`}>
+            <MathText text={paper.abstract} />
+          </p>
+          <button
+            onClick={() => setExpandedAbstract(!expandedAbstract)}
+            className="text-[12px] font-medium text-emerald-600 hover:text-emerald-700 mt-1 focus:outline-none"
+          >
+            {expandedAbstract ? "Show less" : "Read more"}
+          </button>
+        </div>
+      )}
       <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
         <SourceBadges paper={paper} />
         <div className="flex items-center gap-2">
@@ -218,10 +233,18 @@ export function PaperCard({
               Rejected
             </span>
           ) : saved ? (
-            <button onClick={() => onUnsave(paper)} disabled={saving}
-              className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
-              <BookmarkSimple size={14} weight="fill" />Saved
-            </button>
+            <div className="flex items-center gap-2">
+              {isProcessing && (
+                <span className="font-ui inline-flex items-center gap-1.5 h-[34px] px-2 text-[12px] font-medium text-ash">
+                  <Spinner size={12} className="animate-spin" />
+                  Processing PDF...
+                </span>
+              )}
+              <button onClick={() => onUnsave(paper)} disabled={saving}
+                className="focus-ring font-ui inline-flex items-center gap-1.5 h-[34px] rounded-full bg-green-50 px-4 text-[13px] font-semibold text-green-700 transition-all duration-200 hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+                <BookmarkSimple size={14} weight="fill" />Saved
+              </button>
+            </div>
           ) : (
             <>
               {score === "low" && onReject && (

@@ -29,6 +29,7 @@ export default function ProjectSearchPage() {
   const projectId = id ?? "";
 
   const project = useProjectsStore((s) => s.currentProject);
+  const currentPapers = useProjectsStore((s) => s.currentPapers);
   const fetchProjectPapers = useProjectsStore((s) => s.fetchProjectPapers);
   const setSelectedProjectId = useSearchStore((s) => s.setSelectedProjectId);
 
@@ -206,9 +207,26 @@ export default function ProjectSearchPage() {
 
   // Load previous search sessions for this project
   useEffect(() => {
-    if (projectId) void loadSessions();
+    if (projectId) {
+      void loadSessions();
+      void fetchProjectPapers(projectId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  // Poll for papers if any is processing
+  const hasInProgressPaper = currentPapers.some(
+    (p) => p.full_text_status === "pending" || p.full_text_status === "normalizing" || p.full_text_status === "raw_extracted",
+  );
+
+  useEffect(() => {
+    if (!projectId || !hasInProgressPaper) return;
+    const interval = setInterval(() => {
+      void fetchProjectPapers(projectId);
+    }, 2500);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, hasInProgressPaper]);
 
   useEffect(() => {
     if (!pageLoading && sessionData) {
@@ -537,9 +555,25 @@ export default function ProjectSearchPage() {
         {(loading || pageLoading) ? (
           <div className="space-y-3">{[0, 1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}</div>
         ) : !sessionId && !loading ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <MagnifyingGlass size={32} className="text-stone mb-3" weight="light" />
-            <p className="font-ui text-[13px] font-semibold text-charcoal">Enter a query above to search papers</p>
+          <div className="flex flex-col items-center justify-center py-16 text-center animate-slide-up">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Sparkle size={28} weight="fill" />
+            </div>
+            <h3 className="font-display text-[18px] font-bold text-ink mb-2">Want to save time?</h3>
+            <p className="font-ui text-[14px] text-charcoal max-w-[400px] mb-6">
+              Let AI do the heavy lifting! Just click <strong>Auto Search</strong> and we will generate the best queries, scan academic databases, and automatically save the top papers for your literature review.
+            </p>
+            <button
+              onClick={() => handleAutoSearch(5)}
+              disabled={isAutoSearching}
+              className="focus-ring font-ui inline-flex h-[40px] items-center gap-2 rounded-full bg-primary px-6 text-[14px] font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95 disabled:opacity-50"
+            >
+              <Sparkle size={16} weight="fill" />
+              {isAutoSearching ? "Auto-searching..." : "Auto Search Now (5 papers)"}
+            </button>
+            <p className="mt-6 font-ui text-[12px] text-ash">
+              Or enter a query in the search bar above to browse manually.
+            </p>
           </div>
         ) : sessionData && papers.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center animate-slide-up">
@@ -550,23 +584,31 @@ export default function ProjectSearchPage() {
         ) : sessionData ? (
           <>
             <div className="space-y-3">
-              {papers.map((paper, i) => (
-                <PaperCard
-                  key={paperKey(paper) || `${paper.title}-${i}`}
-                  paper={paper}
-                  projectId={projectId}
-                  onSave={handleSave}
-                  onReject={handleReject}
-                  onUnsave={handleUnsave}
-                  onDownload={handleDownloadPDF}
-                  onPreview={handlePreview}
-                  saving={savingId === paperKey(paper)}
-                  savingPdf={downloadingKey === paperKey(paper)}
-                  saved={isSaved(paper)}
-                  rejected={isRejected(paper)}
-                  score={scores[(page - 1) * PAGE_SIZE + i]}
-                />
-              ))}
+              {papers.map((paper, i) => {
+                const isProcessing = currentPapers.some((p) =>
+                  (p.semantic_scholar_id === paper.semantic_scholar_id || p.arxiv_id === paper.arxiv_id || p.title === paper.title) &&
+                  (p.full_text_status === "pending" || p.full_text_status === "normalizing" || p.full_text_status === "raw_extracted")
+                );
+
+                return (
+                  <PaperCard
+                    key={paperKey(paper) || `${paper.title}-${i}`}
+                    paper={paper}
+                    projectId={projectId}
+                    onSave={handleSave}
+                    onReject={handleReject}
+                    onUnsave={handleUnsave}
+                    onDownload={handleDownloadPDF}
+                    onPreview={handlePreview}
+                    saving={savingId === paperKey(paper)}
+                    savingPdf={downloadingKey === paperKey(paper)}
+                    saved={isSaved(paper)}
+                    rejected={isRejected(paper)}
+                    score={scores[(page - 1) * PAGE_SIZE + i]}
+                    isProcessing={isProcessing}
+                  />
+                );
+              })}
             </div>
             {totalPages > 1 && <Pagination page={page} totalPages={totalPages} onGoPage={handleGoPage} />}
           </>

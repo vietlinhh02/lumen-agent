@@ -152,14 +152,19 @@ async def search_and_download(
             )
         except Exception as exc:
             logger.warning("Language bias detection failed: %s", exc)
-            # Fallback: use default English variants for common sources
+            # Fallback: force arXiv as the default source
             variants = [
-                QueryVariant(source="semantic_scholar", query=request.query, language="en"),
                 QueryVariant(source="arxiv", query=request.query, language="en"),
             ]
 
         # ── 2. Build source query map ───────────────────────────────────
         t0 = time.monotonic()
+
+        # Override variants to FORCE arXiv for now to optimize speed
+        variants = [
+            QueryVariant(source="arxiv", query=request.query, language="en"),
+        ]
+
         _CANONICAL_SOURCES = {"semantic_scholar", "arxiv", "exa", "firecrawl", "openalex"}
         source_query_map: dict[str, str] = {}
         for v in variants:
