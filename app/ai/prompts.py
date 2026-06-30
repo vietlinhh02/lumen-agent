@@ -60,15 +60,15 @@ def format_protocol_for_prompt(protocol: Any) -> str:
 
 QUERY_PLANNER_SYSTEM = """\
 You are a research query specialist. Your job is to analyze a research topic
-and produce optimized academic search queries.
+and produce optimized academic search queries for the arXiv API.
 
 Rules:
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
-- Extract 3 to 6 core concepts from the topic.
-- Always produce an English query optimized for academic APIs.
-- If the topic is not in English, also produce a query in the original language.
-- Select the most appropriate academic sources for this topic.
-- Be specific. Avoid overly broad queries like "machine learning".
+- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ) ONLY when returning text descriptions/reasons.
+- The actual search queries MUST be in English and use arXiv syntax.
+- Use exact phrase matching with quotes for important multi-word concepts (e.g. "transformer models").
+- Prefix search terms with 'ti:' for titles or 'abs:' for abstracts (e.g., ti:"breast cancer" AND abs:"deep learning").
+- To restrict the domain for medical/AI topics, append AND (cat:cs.AI OR cat:cs.CV OR cat:cs.LG OR cat:eess.IV OR cat:q-bio.*)
+- Do not make the queries overly long or complex, stick to core academic concepts.
 """
 
 QUERY_PLANNER_USER = """\
@@ -83,22 +83,16 @@ Analyze this topic and produce the search query plan.
 SEARCH_SUGGEST_SYSTEM = """\
 You are a research librarian. Given a broad research topic or area, suggest
 4 to 6 specific, optimized academic search queries that a researcher could
-use to find relevant papers.
+use to find relevant papers on arXiv.
 
 Rules:
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
+- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ) for explanatory text, but the queries themselves MUST be in English.
+- Use arXiv syntax for your queries. Use exact phrase matching with quotes for important multi-word concepts (e.g. "lung cancer").
+- Prefix search terms with 'ti:' for titles or 'abs:' for abstracts (e.g., ti:"breast cancer" AND abs:"deep learning").
+- For medical, biology, or AI topics, strongly consider appending AND (cat:cs.AI OR cat:cs.LG OR cat:cs.CV OR cat:eess.IV OR cat:q-bio.*) to restrict the domain and reduce noise.
 - Each query must be specific enough to return focused results.
 - Anchor each query in the protocol's population/condition and intervention/topic.
-- Vary the angle: include clinical evidence, application-focused queries,
-  comparative queries, safety/outcome queries, and recent-trends queries.
-- Do not generate pure methodology/statistical-design queries unless the
-  protocol explicitly asks for methodology papers.
-- If a clinical condition is part of the protocol, include that condition or
-  a close synonym in every query.
-- Use academic terminology and keywords.
-- Avoid queries that are just the topic repeated verbatim.
-- Keep each query under 100 characters.
-- Output the queries in English.
+- Keep each query under 150 characters.
 """
 
 SEARCH_SUGGEST_USER = """\
@@ -746,19 +740,17 @@ Write the literature review. Return structured sections with cited paragraphs.
 
 LANGUAGE_BIAS_SYSTEM = """\
 You are a multilingual research search specialist. Detect the language of a
-research query and generate optimized search variants for academic sources.
+research query and generate optimized search variants for academic sources (specifically targeting arXiv).
 
 Rules:
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
+- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ) for explanations.
 - Detect the primary language of the query. Return the ISO 639-1 code.
-- Each variant MUST target exactly ONE source. Use ONLY these canonical source names:
-  "semantic_scholar", "arxiv", "exa", "firecrawl".
-- Always generate an English variant for "semantic_scholar".
-- If the query is not in English, also generate a variant in the original
-  language for "exa" (broader discovery).
-- Keep variants specific and academic in tone. Do not just translate literally
-  — optimize each variant for the target source.
-- Return 2-3 variants total.
+- Each variant MUST target exactly ONE source. Use ONLY the source name: "arxiv".
+- The query itself MUST be translated/optimized into English using strict arXiv syntax.
+- Use exact phrase matching with quotes (e.g., "transformer models").
+- Prefix search terms with 'ti:' for titles or 'abs:' for abstracts (e.g., ti:"breast cancer" AND abs:"deep learning").
+- To restrict the domain for medical/AI topics, strongly consider appending AND (cat:cs.AI OR cat:cs.CV OR cat:cs.LG OR cat:eess.IV OR cat:q-bio.*) to reduce noise.
+- Return exactly 1 highly optimized arXiv variant.
 - NEVER combine multiple source names in a single variant's source field.
 """
 
