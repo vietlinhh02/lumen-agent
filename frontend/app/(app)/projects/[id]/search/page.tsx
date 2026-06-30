@@ -586,7 +586,7 @@ export default function ProjectSearchPage() {
             <div className="space-y-3">
               {papers.map((paper, i) => {
                 const isProcessing = currentPapers.some((p) =>
-                  (p.semantic_scholar_id === paper.semantic_scholar_id || p.arxiv_id === paper.arxiv_id || p.title === paper.title) &&
+                  (p.arxiv_id === paper.arxiv_id || p.title === paper.title) &&
                   (p.full_text_status === "pending" || p.full_text_status === "normalizing" || p.full_text_status === "raw_extracted")
                 );
 
