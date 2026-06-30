@@ -31,6 +31,13 @@ export default function ProjectReportsPage() {
   const exportReport = useReportsStore((s) => s.exportReport);
 
   const { poll } = useJobPolling({
+    onProgress: (progress, total, details) => {
+      // Return a string to show in toast, or use store to show inline
+      if (details?.current) {
+        return `Generating section: ${details.current}`;
+      }
+      return "Generating literature review...";
+    },
     onSuccess: (result) => {
       const vs = result.validation_status as string;
       const tc = (result.total_citations as number) ?? 0;
