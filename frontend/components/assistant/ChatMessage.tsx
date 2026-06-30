@@ -45,7 +45,10 @@ export function ChatMessage({ event, userName, allEvents, isStreaming, isLastAss
   // Handle thought events - render ThoughtBubble with turn-specific text
   if (event.type === "thought") {
     const isLastEvent = allEvents ? allEvents[allEvents.length - 1].id === event.id : false;
-    const content = allEvents ? getAccumulatedThought(event as any, allEvents) : (event as any).delta;
+    // For single ThoughtBubble mode we just want the delta passed into the buffer
+    // and rely on store ThoughtBuffer for the current streaming iteration
+    // The previous component relied on this text being accumulated, but we can just pass delta since the store clears buffers
+    const content = (event as any).delta;
     return (
       <ThoughtBubble
         iteration={event.iteration}
@@ -62,32 +65,6 @@ export function ChatMessage({ event, userName, allEvents, isStreaming, isLastAss
   }
   
   return null;
-}
-
-/* ── Helper: Accumulate thought tokens for specific iteration & message turn ── */
-
-function getAccumulatedThought(event: any, allEvents: AssistantEventData[]): string {
-  const index = allEvents.findIndex((e) => e.id === event.id);
-  if (index === -1) return event.delta || "";
-
-  // Find the last user message index before this event
-  let lastUserMsgIndex = 0;
-  for (let i = index - 1; i >= 0; i--) {
-    if (allEvents[i].type === "message" && (allEvents[i] as any).role === "user") {
-      lastUserMsgIndex = i;
-      break;
-    }
-  }
-
-  // Accumulate all deltas for thought events in the same iteration between lastUserMsgIndex and index
-  let text = "";
-  for (let i = lastUserMsgIndex; i <= index; i++) {
-    const e = allEvents[i];
-    if (e.type === "thought" && (e as any).iteration === event.iteration) {
-      text += (e as any).delta || "";
-    }
-  }
-  return text;
 }
 
 /* ── Helper: Parse ReAct Thought & Action ───────────────────────────────────── */

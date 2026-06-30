@@ -392,6 +392,13 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         isStreaming: true,
         error: null,
         currentToolArtifact: null,
+        _thoughtBuffers: new Map(),
+        _currentIteration: 0,
+        _currentPhase: null,
+        _lastToolUsed: null,
+        _progressStages: new Map(),
+        _streamingAssistantMessageId: null,
+        _assistantDeltaBuffer: "",
       };
     });
 
@@ -440,6 +447,8 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         // Accumulate thought tokens into buffer for this iteration
         set((state) => {
           const buffers = new Map(state._thoughtBuffers);
+          // Only maintain the most recent thought buffer (clear previous ones)
+          buffers.clear();
           const currentBuffer = buffers.get(event.iteration) || "";
           buffers.set(event.iteration, currentBuffer + event.delta);
           return { _thoughtBuffers: buffers };
@@ -450,6 +459,8 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         // Reset thought buffer for new iteration if not final
         set((state) => {
           const buffers = new Map(state._thoughtBuffers);
+          // Clear previous thought buffers on new iteration
+          buffers.clear();
           // Clear thought buffer for new iterations
           if (!buffers.has(event.n)) {
             buffers.set(event.n, "");
@@ -459,6 +470,8 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
             _maxIterations: event.max,
             _currentPhase: event.phase,
             _thoughtBuffers: buffers,
+            // Clear last tool used on new iteration
+            _lastToolUsed: null,
           };
         });
       },
