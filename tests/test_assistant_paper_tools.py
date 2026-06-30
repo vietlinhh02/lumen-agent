@@ -115,8 +115,8 @@ class TestLangChainTools:
         assert search_web.args["limit"]["default"] == 20
 
     def test_search_web_default_sources(self):
-        """search_web has exa as default source."""
-        assert search_web.args["sources"]["default"] == ["exa"]
+        """search_web has arxiv as default source."""
+        assert search_web.args["sources"]["default"] == ["arxiv"]
 
     def test_list_papers_default_status(self):
         """list_project_papers has default status of saved."""
