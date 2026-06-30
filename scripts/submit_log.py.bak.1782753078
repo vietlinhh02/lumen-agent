@@ -12,7 +12,6 @@ If the POST fails, the pending file is restored so nothing is lost.
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 import urllib.request
@@ -25,31 +24,6 @@ try:
     load_dotenv()
 except ImportError:
     pass
-
-ALLOWED_REPO_ROOT = Path("/home/eddiesngu/Desktop/VinUni/C2-App-053").resolve()
-
-
-def git_root() -> Path | None:
-    try:
-        out = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except Exception:
-        return None
-    return Path(out).resolve() if out else None
-
-
-def guard_repo():
-    root = git_root()
-    if root != ALLOWED_REPO_ROOT:
-        print(
-            f"[ai-log] Not in {ALLOWED_REPO_ROOT} (got {root}); skipping submit.",
-            file=sys.stderr,
-        )
-        sys.exit(0)
-
 
 SERVER_URL = os.environ.get("AI_LOG_SERVER", "")
 API_KEY = os.environ.get("AI_LOG_API_KEY", "")
@@ -94,8 +68,6 @@ def _restore_pending(pending: Path) -> None:
 
 
 def main():
-    guard_repo()
-
     if not SERVER_URL:
         print("[ai-log] AI_LOG_SERVER not set — skipping submission.", file=sys.stderr)
         sys.exit(0)
