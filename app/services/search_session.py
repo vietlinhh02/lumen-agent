@@ -1440,11 +1440,12 @@ def _rank_auto_search_candidates(
     def sort_key(paper) -> tuple[int, int, int, int, int]:
         signal = _score_auto_search_eligibility(paper, queries)
         key = _canonical_paper_key(paper)
+        # Note: arXiv API does not return citation counts, so we rely more on
+        # exact topic match, review/domain boosts, multi-query matches, and year.
         return (
             category_rank[signal["category"]],
             -signal["boost"],
             -match_counts.get(key, 1),
-            -(getattr(paper, "citation_count", None) or 0),
             -(getattr(paper, "year", None) or 0),
         )
 
