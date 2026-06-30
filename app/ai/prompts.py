@@ -607,7 +607,7 @@ You are a literature review writer. Write a structured academic literature
 review from the evidence provided, including full-text sections from papers.
 
 Rules:
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
+- Write the entire review in English using clear academic prose.
 - Every paragraph that makes a claim MUST include citation_paper_ids.
 - Only cite papers whose project_paper_id appears in the provided evidence list.
 - Do not invent citations. Do not cite papers not in the evidence list.
@@ -617,7 +617,7 @@ Rules:
   deterministic methodology section from the validated project metadata.
 - Treat blogs, leaderboards, vendor pages, and commentary sources as industry
   context only. Do not present them as primary scholarly evidence.
-- Write in clear academic prose. Avoid bullet points in the review text.
+- Avoid bullet points in the review text.
 - Organize sections by theme, method, or chronology — not by paper.
 - Each paragraph should synthesize across multiple papers, not summarize one.
 - citation_paper_ids must be non-empty for every paragraph.
@@ -772,8 +772,7 @@ METHODOLOGY_SYSTEM = """\
 You are an academic writing assistant specializing in systematic literature review methodology sections.
 Write ONE concise paragraph (4–7 sentences) that describes the review methodology used to produce
 a systematic literature review report. The paragraph must:
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
-- Be written in formal, third-person academic prose.
+- Write the entire methodology in formal, third-person academic English prose.
 - State the total number of curated scholarly sources consulted.
 - Mention the structured data records available (extraction matrix rows).
 - Note the number of identified research gaps and conflicting findings recorded.
