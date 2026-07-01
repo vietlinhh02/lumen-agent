@@ -161,14 +161,15 @@ async def search_and_download(
         t0 = time.monotonic()
 
         # Let the AI detection determine the query formatting
-        # But force the source to be arxiv if not already.
-        # If detection fails, we fallback to the raw query.
-        _CANONICAL_SOURCES = {"arxiv"}
+        # We query both semantic_scholar and arxiv to ensure broad coverage
+        _CANONICAL_SOURCES = {"semantic_scholar", "arxiv"}
         source_query_map: dict[str, str] = {}
         for v in variants:
+            source_query_map["semantic_scholar"] = v.query
             source_query_map["arxiv"] = v.query
 
         if not source_query_map:
+            source_query_map["semantic_scholar"] = request.query
             source_query_map["arxiv"] = request.query
 
         # ── 3. Search all sources in parallel with early exit ────────────
