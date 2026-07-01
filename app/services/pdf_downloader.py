@@ -11,14 +11,12 @@ import logging
 import re
 from pathlib import Path
 
-import aiohttp
+
 import httpx
-from paperhub_cli.reader.fetcher import PaperReadError, fetch_paper_by_id
 
 from app.core.config import get_settings
 from app.services.html_extractor import fetch_arxiv_html, fetch_europepmc_xml
 from app.sources.base import RawPaper
-from app.sources.paperhub import _configure_paperhub_environment
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +55,6 @@ class PDFDownloader:
         if ss_pdf:
             return ss_pdf
 
-        # 3) DOI/OpenAlex metadata fallback through PaperHub.
-        paperhub_pdf = await _resolve_with_paperhub(paper)
-        if paperhub_pdf:
-            return paperhub_pdf
 
         return None
 
@@ -168,33 +162,3 @@ def _make_filename(paper: RawPaper) -> str:
     digest = hashlib.md5(paper.title.encode()).hexdigest()[:8]
     return f"{slug}_{digest}.pdf"
 
-
-async def _resolve_with_paperhub(paper: RawPaper) -> str | None:
-    settings = get_settings()
-    _configure_paperhub_environment(settings)
-    lookup_ids = _paperhub_lookup_ids(paper)
-    if not lookup_ids:
-        return None
-
-    async with aiohttp.ClientSession() as session:
-        for lookup_id in lookup_ids:
-            try:
-                resolved = await fetch_paper_by_id(lookup_id, session)
-            except (PaperReadError, aiohttp.ClientError, TimeoutError):
-                continue
-            pdf_url = str((resolved.extra or {}).get("pdf_url") or "")
-            if pdf_url:
-                return pdf_url
-    return None
-
-
-def _paperhub_lookup_ids(paper: RawPaper) -> list[str]:
-    lookup_ids: list[str] = []
-    if paper.doi:
-        lookup_ids.append(f"doi:{paper.doi}")
-    if paper.openalex_id:
-        lookup_ids.append(f"openalex:{paper.openalex_id}")
-    paperhub_id = paper.source_specific.get("paperhub_id")
-    if isinstance(paperhub_id, str) and paperhub_id:
-        lookup_ids.append(paperhub_id)
-    return lookup_ids

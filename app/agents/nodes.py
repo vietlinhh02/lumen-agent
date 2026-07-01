@@ -279,10 +279,10 @@ def _make_source(source_name: str, timeout: float) -> Any | None:
         from app.sources.exa import ExaSource
 
         return ExaSource()
-    if source_name == "paperhub":
-        from app.sources.paperhub import PaperHubSource
+    if source_name == "arxiv":
+        from app.sources.arxiv import ArxivSource
 
-        return PaperHubSource()
+        return ArxivSource()
     return None
 
 

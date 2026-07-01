@@ -145,7 +145,7 @@ class SearchPapersInput(BaseModel):
     query: str = Field(..., description="Search query", min_length=1)
     sources: list[str] = Field(
         default=["semantic_scholar"],
-        description="Sources to search: semantic_scholar, paperhub",
+        description="Sources to search: semantic_scholar, arxiv",
     )
     year_from: int | None = Field(
         default=None, description="Filter papers from this year"

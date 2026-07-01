@@ -459,7 +459,7 @@ async def _run_auto_save_job(
                         paper_url=paper_dict.get("url"),
                         paper_citation_count=paper_dict.get("citation_count"),
                         paper_authors=authors_mapped,
-                        paper_source_names=paper_dict.get("source_names") or ["paperhub"],
+                        paper_source_names=paper_dict.get("source_names") or ["arxiv"],
                         download_pdf=True,
                         source_specific=paper_dict.get("source_specific") or {},
                     )
@@ -1165,7 +1165,7 @@ async def _run_auto_search_job(
                         paper_url=paper.url,
                         paper_citation_count=paper.citation_count,
                         paper_authors=authors_mapped,
-                        paper_source_names=[paper.source_name] if paper.source_name else ["paperhub"],
+                        paper_source_names=[paper.source_name] if paper.source_name else ["arxiv"],
                         download_pdf=True,
                         source_specific=paper.source_specific or {},
                     )

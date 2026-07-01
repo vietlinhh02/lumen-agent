@@ -36,8 +36,8 @@ from app.services.language_bias import (
 )
 from app.services.pdf_downloader import PDFDownloader
 from app.sources.base import RawPaper
+from app.sources.arxiv import ArxivSource
 from app.sources.exa import ExaSource
-from app.sources.paperhub import PaperHubSource
 
 logger = logging.getLogger(__name__)
 
@@ -429,7 +429,7 @@ def dict_to_raw_paper(paper_dict: dict) -> RawPaper:
         url=paper_dict.get("url"),
         citation_count=paper_dict.get("citation_count"),
         authors=paper_dict.get("authors") or [],
-        source_name=(paper_dict.get("source_names") or ["paperhub"])[0],
+        source_name=(paper_dict.get("source_names") or ["arxiv"])[0],
         source_specific=paper_dict.get("source_specific") or {},
     )
 
@@ -468,8 +468,8 @@ async def _search_sources_parallel(
                     api_key=s2_settings.semantic_scholar_api_key or None,
                     timeout=30,  # Reduced from 45s
                 )
-            elif src_name in ("arxiv", "openalex"):
-                source = PaperHubSource(provider_names=(src_name,))
+            elif src_name == "arxiv":
+                source = ArxivSource()
             elif src_name == "exa":
                 source = ExaSource()
             else:

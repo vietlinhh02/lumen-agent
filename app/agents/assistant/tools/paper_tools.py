@@ -57,7 +57,7 @@ async def _search_web_impl(
 
     Args:
         query: Search query string.
-        sources: List of sources to search (e.g., semantic_scholar, paperhub).
+        sources: List of sources to search (e.g., semantic_scholar, arxiv).
         year_from: Filter papers from this year.
         year_to: Filter papers until this year.
         limit: Maximum results per source.
@@ -317,7 +317,7 @@ async def search_web(
     Sources:
     - arxiv: Academic paper search from ArXiv (Fastest & most robust)
     - semantic_scholar: Academic paper search (Deprecated for now)
-    - paperhub: Additional paper source
+
     - exa: Web-based paper search
 
     Returns:
