@@ -88,7 +88,7 @@ export function Navbar() {
           {loggedIn ? (
             <button
               onClick={handleDashboardClick}
-              className="cursor-pointer rounded-full bg-primary px-5 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep"
+              className="cursor-pointer rounded-full bg-primary px-5 py-2 text-sm font-semibold text-on-primary transition-all duration-300 hover:bg-primary-deep active:scale-95"
             >
               Dashboard
             </button>
@@ -96,13 +96,13 @@ export function Navbar() {
             <>
               <button
                 onClick={handleAuthClick}
-                className="cursor-pointer rounded-full px-5 py-2 text-sm font-semibold text-ink transition-colors hover:bg-surface-bone"
+                className="cursor-pointer rounded-full px-5 py-2 text-sm font-semibold text-ink transition-all duration-300 hover:bg-surface-bone active:scale-95"
               >
                 Sign in
               </button>
               <button
                 onClick={handleAuthClick}
-                className="cursor-pointer rounded-full bg-primary px-5 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep"
+                className="cursor-pointer rounded-full bg-primary px-5 py-2 text-sm font-semibold text-on-primary transition-all duration-300 hover:bg-primary-deep active:scale-95"
               >
                 Get Started
               </button>
@@ -136,7 +136,7 @@ export function Navbar() {
               {loggedIn ? (
                 <button
                   onClick={() => { setMobileOpen(false); handleDashboardClick(); }}
-                  className="cursor-pointer rounded-full bg-primary px-5 py-2 text-center text-sm font-semibold text-on-primary"
+                  className="cursor-pointer rounded-full bg-primary px-5 py-2 text-center text-sm font-semibold text-on-primary transition-all duration-300 hover:bg-primary-deep active:scale-95"
                 >
                   Dashboard
                 </button>
@@ -144,13 +144,13 @@ export function Navbar() {
                 <>
                   <button
                     onClick={() => { setMobileOpen(false); handleAuthClick(); }}
-                    className="cursor-pointer rounded-full border border-hairline-strong px-5 py-2 text-center text-sm font-semibold text-ink"
+                    className="cursor-pointer rounded-full border border-hairline-strong px-5 py-2 text-center text-sm font-semibold text-ink transition-all duration-300 hover:bg-surface-bone active:scale-95"
                   >
                     Sign in
                   </button>
                   <button
                     onClick={() => { setMobileOpen(false); handleAuthClick(); }}
-                    className="cursor-pointer rounded-full bg-primary px-5 py-2 text-center text-sm font-semibold text-on-primary"
+                    className="cursor-pointer rounded-full bg-primary px-5 py-2 text-center text-sm font-semibold text-on-primary transition-all duration-300 hover:bg-primary-deep active:scale-95"
                   >
                     Get Started
                   </button>

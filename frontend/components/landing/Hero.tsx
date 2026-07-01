@@ -101,13 +101,13 @@ export function Hero() {
         >
           <MagneticButton
             onClick={() => router.push(loggedIn ? "/dashboard" : "/login")}
-            className="inline-flex h-11 cursor-pointer items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep"
+            className="inline-flex h-11 cursor-pointer items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-on-primary transition-all duration-300 hover:bg-primary-deep hover:shadow-lg hover:shadow-primary/20 active:scale-95"
           >
             {loggedIn ? "Go to Dashboard" : "Start for free"}
           </MagneticButton>
           <a
             href="#workflow"
-            className="inline-flex h-11 items-center justify-center rounded-full border border-hairline-strong bg-surface-card px-7 text-sm font-semibold text-ink transition-colors hover:bg-surface-bone"
+            className="inline-flex h-11 items-center justify-center rounded-full border border-hairline-strong bg-surface-card px-7 text-sm font-semibold text-ink transition-all duration-300 hover:bg-surface-bone hover:shadow-md active:scale-95"
           >
             See how it works
           </a>

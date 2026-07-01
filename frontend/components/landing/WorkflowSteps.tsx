@@ -139,10 +139,10 @@ export function WorkflowSteps() {
           {steps.map((step) => (
             <div
               key={step.number}
-              className="step-card group relative rounded-xl border border-hairline bg-surface-card p-6 transition-all hover:border-hairline-strong hover:shadow-lg"
+              className="step-card group relative rounded-xl border border-hairline bg-surface-card p-6 transition-all duration-500 hover:border-hairline-strong hover:shadow-lg hover:-translate-y-1"
             >
               <div className="mb-4 flex items-center gap-3">
-                <div className="step-icon flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-charcoal transition-colors group-hover:bg-primary group-hover:text-on-primary">
+                <div className="step-icon flex h-10 w-10 items-center justify-center rounded-full bg-canvas text-charcoal transition-colors duration-500 group-hover:bg-primary group-hover:text-on-primary">
                   {step.icon}
                 </div>
                 <span className="text-xs font-bold text-ash">

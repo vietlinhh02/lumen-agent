@@ -42,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
+      className={cn("h-full scrollbar-hide", "antialiased", googleSans.variable, inter.variable, interTight.variable, geistMono.variable, "font-sans", geist.variable)}
       suppressHydrationWarning
     >
       <head>
@@ -51,7 +51,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap"
         />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col scrollbar-hide">
         {children}
         <Toaster position="top-right" toastOptions={{ style: { fontFamily: "var(--font-body)" } }} />
       </body>

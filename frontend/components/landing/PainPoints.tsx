@@ -42,7 +42,7 @@ export function PainPoints() {
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, i) => (
-            <div key={i} className="stat-card rounded-xl border border-[rgba(255,255,255,0.1)] p-6">
+            <div key={i} className="stat-card rounded-xl border border-[rgba(255,255,255,0.1)] p-6 transition-colors duration-500 hover:border-[rgba(255,255,255,0.3)] hover:bg-[rgba(255,255,255,0.02)]">
               <p className="stat-value font-display text-4xl font-bold text-primary" style={{ letterSpacing: "-1px" }} data-target={stat.value}>{stat.value}</p>
               <p className="mt-2 text-sm leading-relaxed text-on-dark">{stat.suffix && <span className="stat-suffix">{stat.suffix}</span>} {stat.label}</p>
               <p className="mt-3 text-xs text-on-dark-mute">{stat.source}</p>

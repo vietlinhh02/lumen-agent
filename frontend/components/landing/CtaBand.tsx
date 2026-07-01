@@ -62,10 +62,10 @@ export function CtaBand() {
           Build defensible literature reviews with real papers, structured evidence, and validated citations.
         </p>
         <div className="cta-buttons mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <MagneticButton onClick={() => router.push(loggedIn ? "/dashboard" : "/login")} className="inline-flex h-12 cursor-pointer items-center justify-center rounded-full bg-surface-dark px-8 text-base font-semibold text-on-dark transition-colors hover:bg-surface-deep">
+          <MagneticButton onClick={() => router.push(loggedIn ? "/dashboard" : "/login")} className="inline-flex h-12 cursor-pointer items-center justify-center rounded-full bg-surface-dark px-8 text-base font-semibold text-on-dark transition-all duration-300 hover:bg-surface-deep hover:shadow-lg active:scale-95">
             {loggedIn ? "Go to Dashboard" : "Get started free"}
           </MagneticButton>
-          <a href="#workflow" className="inline-flex h-12 items-center justify-center rounded-full border border-[rgba(255,255,255,0.3)] px-8 text-base font-semibold text-on-dark transition-colors hover:bg-[rgba(255,255,255,0.1)]">
+          <a href="#workflow" className="inline-flex h-12 items-center justify-center rounded-full border border-[rgba(255,255,255,0.3)] px-8 text-base font-semibold text-on-dark transition-all duration-300 hover:bg-[rgba(255,255,255,0.1)] active:scale-95">
             Learn more
           </a>
         </div>

@@ -9,7 +9,6 @@
 html,
 body {
   height: 100%;
-  overflow: hidden;
 }
 
 :root {
@@ -149,6 +148,15 @@ html, body {
   color: var(--ink);
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif, "Noto Color Emoji";
   -webkit-font-smoothing: antialiased;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Focus ring utility */
@@ -289,42 +297,30 @@ html, body {
   transform: scale(0.95);
 }
 
-/* ── Global Custom Scrollbar (thin) ── */
+/* ── Global Custom Scrollbar (hidden) ── */
 /* Firefox */
 @supports (-moz-appearance:none) {
   * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(141, 141, 141, 0.45) transparent;
+    scrollbar-width: none !important;
   }
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+  display: none !important;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(141, 141, 141, 0.45);
-  border-radius: 10px;
-  border: none;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(82, 82, 82, 0.7);
-}
-
-::-webkit-scrollbar-thumb:active {
-  background: rgba(234, 40, 4, 0.7);
+  display: none !important;
 }
 
 ::-webkit-scrollbar-corner {
-  background: transparent;
+  display: none !important;
 }
 
 @layer base {

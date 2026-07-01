@@ -62,7 +62,7 @@ export function Features() {
 
         <div className="grid gap-8 lg:grid-cols-3">
           {features.map((feature, i) => (
-            <div key={i} className="feature-card group overflow-hidden rounded-xl border border-hairline bg-surface-card transition-all hover:border-hairline-strong hover:shadow-lg">
+            <div key={i} className="feature-card group overflow-hidden rounded-xl border border-hairline bg-surface-card transition-all duration-500 hover:border-hairline-strong hover:shadow-xl hover:-translate-y-1">
               <div className="relative h-48 overflow-hidden">
                 <img src={feature.image} alt={feature.imageAlt} className="feature-img h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                 <div className="absolute inset-0 bg-gradient-to-t from-surface-dark/40 to-transparent" />
@@ -88,7 +88,7 @@ export function Features() {
             { title: "PDF Ingestion", desc: "Download, extract, and chunk full-text PDFs." },
             { title: "Agent Audit", desc: "Full LangGraph workflow transparency." },
           ].map((item, i) => (
-            <div key={i} className="secondary-card rounded-xl border border-hairline bg-surface-card p-4">
+            <div key={i} className="secondary-card rounded-xl border border-hairline bg-surface-card p-4 transition-colors duration-500 hover:border-hairline-strong hover:bg-surface-bone">
               <h4 className="mb-1 text-sm font-semibold text-ink">{item.title}</h4>
               <p className="text-xs leading-relaxed text-charcoal">{item.desc}</p>
             </div>
