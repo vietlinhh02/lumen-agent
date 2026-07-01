@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { Lock, Sun, Moon, CheckCircle, XCircle, CaretDown } from "@phosphor-icons/react";
+import { Lock, Sun, Moon, CheckCircle, XCircle, CaretDown, Eye, EyeSlash } from "@phosphor-icons/react";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useSettingsStore } from "@/lib/stores/settings-store";
 import { formatDate } from "@/lib/utils";
@@ -19,6 +19,7 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
   const [confirmPw, setConfirmPw] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   async function handleUpdateProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -130,15 +131,30 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
           <div>
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">Current Password</label>
-            <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone px-4 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required />
+            <div className="relative">
+              <input type={showPw ? "text" : "password"} value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required />
+              <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal hover:text-ink focus:outline-none" tabIndex={-1}>
+                {showPw ? <EyeSlash size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">New Password</label>
-            <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone px-4 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
+            <div className="relative">
+              <input type={showPw ? "text" : "password"} value={newPw} onChange={(e) => setNewPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
+              <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal hover:text-ink focus:outline-none" tabIndex={-1}>
+                {showPw ? <EyeSlash size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">Confirm New Password</label>
-            <input type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone px-4 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
+            <div className="relative">
+              <input type={showPw ? "text" : "password"} value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
+              <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal hover:text-ink focus:outline-none" tabIndex={-1}>
+                {showPw ? <EyeSlash size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           <button type="submit" disabled={saving} className="focus-ring font-ui h-[44px] rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50">
             {saving ? "Saving…" : "Update Password"}
