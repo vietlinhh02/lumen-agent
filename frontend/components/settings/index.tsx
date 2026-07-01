@@ -128,8 +128,8 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
 
       <div className="rounded-[12px] bg-surface-card p-6" style={{ border: "1px solid var(--hairline)" }}>
         <h2 className="font-ui text-base font-semibold text-ink mb-4 flex items-center gap-2"><Lock size={18} />Change Password</h2>
-        <form onSubmit={handleChangePassword} className="space-y-4 max-w-sm">
-          <div>
+        <form onSubmit={handleChangePassword} className="flex flex-col md:flex-row md:items-end gap-4 md:gap-6 w-full">
+          <div className="flex-1 w-full">
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">Current Password</label>
             <div className="relative">
               <input type={showPw ? "text" : "password"} value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required />
@@ -138,7 +138,7 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
               </button>
             </div>
           </div>
-          <div>
+          <div className="flex-1 w-full">
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">New Password</label>
             <div className="relative">
               <input type={showPw ? "text" : "password"} value={newPw} onChange={(e) => setNewPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
@@ -147,7 +147,7 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
               </button>
             </div>
           </div>
-          <div>
+          <div className="flex-1 w-full">
             <label className="font-ui block text-[12px] font-semibold text-charcoal mb-1.5">Confirm New Password</label>
             <div className="relative">
               <input type={showPw ? "text" : "password"} value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className="focus-ring h-[44px] w-full rounded-full bg-surface-bone pl-4 pr-10 font-ui text-sm text-ink outline-none" style={{ border: "1px solid var(--hairline)" }} required minLength={6} />
@@ -156,7 +156,7 @@ export function ProfileSection({ profile }: { profile: UserProfile }) {
               </button>
             </div>
           </div>
-          <button type="submit" disabled={saving} className="focus-ring font-ui h-[44px] rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50">
+          <button type="submit" disabled={saving} className="focus-ring font-ui h-[44px] shrink-0 w-full md:w-auto rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-deep disabled:opacity-50">
             {saving ? "Saving…" : "Update Password"}
           </button>
         </form>
