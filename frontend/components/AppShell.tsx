@@ -426,21 +426,7 @@ function AssistantHeaderControls() {
         />
       </button>
 
-      {/* View tool (toggle right tool panel) */}
-      <button
-        type="button"
-        onClick={toggleToolPanel}
-        className={`flex h-9 w-9 sm:w-auto sm:px-2.5 items-center justify-center gap-1.5 rounded-lg transition-all duration-150 active:scale-95 ${
-          toolPanelOpen
-            ? "bg-primary/10 text-primary"
-            : "text-charcoal hover:text-ink hover:bg-surface-bone"
-        }`}
-        title="Toggle tool panel"
-        aria-label="Toggle tool panel"
-      >
-        <Sliders size={18} weight="bold" />
-        <span className="hidden sm:inline font-ui text-sm font-medium">View tool</span>
-      </button>
+
 
       {/* Dropdown — always rendered so we get a smooth enter animation.
           `pointer-events-none` keeps it inert when hidden. `overflow-hidden`

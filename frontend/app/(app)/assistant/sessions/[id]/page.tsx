@@ -20,7 +20,6 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { ChatMessage } from "@/components/assistant";
 import { ChatBox } from "@/components/assistant/ChatBox";
-import { ToolPanel } from "@/components/assistant/ToolPanel";
 
 import { SessionList } from "@/components/assistant/SessionList";
 import type {
@@ -45,10 +44,6 @@ export default function AssistantSessionPage() {
   const createSession = useAssistantStore((s) => s.createSession);
   const events = useAssistantStore((s) => s.events);
   const currentSession = useAssistantStore((s) => s.currentSession);
-
-  // Tool panel state lives in the global UI store
-  const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
-  const setToolPanelOpen = useUIStore((s) => s.setAssistantToolPanelOpen);
 
   const [jumpToLatest, setJumpToLatest] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -193,13 +188,11 @@ export default function AssistantSessionPage() {
 
   return (
     <div className="relative flex h-full min-h-0">
-      {/* Left Collapsible Sessions Panel (desktop only) */}
       <aside
         data-tour="assistant-sessions"
-        className="hidden xl:block w-64 flex-shrink-0 bg-canvas border-r"
-        style={{ borderColor: "var(--hairline)" }}
+        className="hidden xl:block w-64 h-full flex-shrink-0 bg-canvas border-r border-charcoal/20"
       >
-        <div className="h-full w-64 overflow-y-auto scrollbar-hide">
+        <div className="h-full w-full overflow-y-auto scrollbar-hide">
           <SessionList
             compact
             isCurrentSessionNew={isCurrentSessionNew}
@@ -211,25 +204,12 @@ export default function AssistantSessionPage() {
         </div>
       </aside>
 
-      {/* Mobile backdrop for tool panel */}
-      {toolPanelOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
-          onClick={() => setToolPanelOpen(false)}
-          aria-label="Close tool panel"
-        />
-      )}
-
-      {/* Chat area takes the full width; no in-page sidebar/topbar */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Chat Area */}
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className={`min-h-0 flex-1 overflow-y-auto scroll-smooth px-3 py-4 pb-8 sm:px-4 ${
-            !toolPanelOpen ? "xl:pr-[256px]" : ""
-          }`}
+          className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-3 py-4 pb-8 sm:px-4 xl:pr-[256px]"
         >
           <div className="relative">
             {/* Chat column - centered in the viewport, full width up to
@@ -338,7 +318,7 @@ export default function AssistantSessionPage() {
 
         {/* Chat Box */}
         <div
-          className={`shrink-0 border-t bg-canvas ${!toolPanelOpen ? "xl:pr-[256px]" : ""}`}
+          className="shrink-0 border-t bg-canvas xl:pr-[256px]"
           style={{ borderColor: "var(--hairline)" }}
         >
           <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
@@ -346,24 +326,6 @@ export default function AssistantSessionPage() {
           </div>
         </div>
       </div>
-
-      {/* Right Tool Panel (mobile: drawer below the header; desktop: inline panel) */}
-      <aside
-        className={`${
-          toolPanelOpen
-            ? "w-80 translate-x-0"
-            : "w-0 lg:translate-x-0 translate-x-full"
-        } ${
-          toolPanelOpen
-            ? "fixed top-[60px] right-0 bottom-0 z-40 lg:relative lg:top-0"
-            : ""
-        } transition-all duration-300 overflow-hidden flex-shrink-0 bg-canvas border-l`}
-        style={{ borderColor: "var(--hairline)" }}
-      >
-        <div className="h-full overflow-y-auto">
-          <ToolPanel onClose={() => setToolPanelOpen(false)} />
-        </div>
-      </aside>
     </div>
   );
 }

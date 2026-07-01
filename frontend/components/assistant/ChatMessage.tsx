@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -269,6 +269,29 @@ function MessageBubble({
     }
   }
 
+  const [activeToast, setActiveToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isLastAssistantMessage && toolsForThisMessage.length > 0) {
+      const lastTool = toolsForThisMessage[toolsForThisMessage.length - 1];
+      const nameMap: Record<string, string> = {
+        list_projects: "Projects",
+        search_papers: "Search Results",
+        list_project_papers: "Saved Papers",
+        list_matrix_rows: "Matrix",
+        list_gaps: "Research Gaps",
+        list_conflicts: "Conflicts",
+        get_report: "Report",
+        retrieve_evidence: "Evidence",
+      };
+      const label = nameMap[lastTool.function] || lastTool.function.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      
+      setActiveToast(`Using ${label}...`);
+      const t = setTimeout(() => setActiveToast(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [toolsForThisMessage.length, isLastAssistantMessage]);
+
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
       <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-surface-bone">
@@ -300,36 +323,10 @@ function MessageBubble({
           />
         )}
 
-        {toolsForThisMessage.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {toolsForThisMessage.map((tool, idx) => {
-              // Pretty print tool names
-              const nameMap: Record<string, string> = {
-                list_projects: "Projects",
-                search_papers: "Search Results",
-                list_project_papers: "Saved Papers",
-                list_matrix_rows: "Matrix",
-                list_gaps: "Research Gaps",
-                list_conflicts: "Conflicts",
-                get_report: "Report",
-                retrieve_evidence: "Evidence",
-              };
-              const label = nameMap[tool.function] || tool.function.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-              
-              return (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    extractToolArtifact(tool);
-                    setToolPanelOpen(true);
-                  }}
-                  className="flex items-center gap-1.5 rounded bg-surface-bone/80 px-2.5 py-1.5 font-ui text-xs font-medium text-charcoal hover:bg-surface-bone hover:text-ink transition-colors border border-charcoal/5"
-                >
-                  <ArrowSquareOut size={13} />
-                  View {label}
-                </button>
-              );
-            })}
+        {activeToast && (
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 font-ui text-xs font-semibold text-primary animate-fade-in shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+            {activeToast}
           </div>
         )}
 
