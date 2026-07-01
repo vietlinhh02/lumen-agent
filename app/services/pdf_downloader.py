@@ -14,7 +14,6 @@ from pathlib import Path
 
 import httpx
 
-from app.core.config import get_settings
 from app.services.html_extractor import fetch_arxiv_html, fetch_europepmc_xml
 from app.sources.base import RawPaper
 
