@@ -119,27 +119,29 @@ export default function ProjectsPage() {
     <div data-tour="projects-list-welcome" className="animate-fade-in">
       <ProjectsListOnboardingTour />
       <div className="mb-10">
-        <div className="flex items-end justify-between">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1
-              className="font-display text-[40px] font-bold leading-[1.0] text-ink"
+              className="font-display text-3xl sm:text-[40px] font-bold leading-[1.0] text-ink"
               style={{ letterSpacing: "-1px" }}
             >
               Projects
             </h1>
-            <p className="mt-2 max-w-lg text-base leading-[1.6] text-charcoal">
+            <p className="mt-2 max-w-lg text-sm sm:text-base leading-[1.6] text-charcoal">
               Organize your literature reviews. Each project holds its own collection of papers, notes, and analysis.
             </p>
           </div>
 
-          <button
-            data-tour="projects-list-new"
-            onClick={() => router.push("/projects/new")}
-            className="focus-ring font-ui inline-flex items-center gap-2 h-[44px] rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95"
-          >
-            <Plus size={18} weight="bold" />
-            New Project
-          </button>
+          {projects.length > 0 && (
+            <button
+              data-tour="projects-list-new"
+              onClick={() => router.push("/projects/new")}
+              className="focus-ring font-ui inline-flex shrink-0 items-center gap-2 h-[40px] sm:h-[44px] rounded-full bg-primary px-4 sm:px-5 text-sm font-semibold text-on-primary transition-all duration-200 hover:bg-primary-deep active:scale-95"
+            >
+              <Plus size={18} weight="bold" />
+              New Project
+            </button>
+          )}
         </div>
       </div>
 

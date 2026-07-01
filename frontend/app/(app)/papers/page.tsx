@@ -31,7 +31,7 @@ export default function PapersPage() {
   }, [token]);
 
   return (
-    <div data-tour="papers-welcome" className="px-4 sm:px-6 py-6">
+    <div data-tour="papers-welcome" className="animate-fade-in">
       <PapersOnboardingTour />
       <div className="flex flex-col gap-5">
         <div>

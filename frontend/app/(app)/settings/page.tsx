@@ -23,11 +23,10 @@ export default function SettingsPage() {
   }, [token]);
 
   return (
-    <div data-tour="settings-welcome" className="min-h-screen bg-canvas">
+    <div data-tour="settings-welcome" className="animate-fade-in">
       <SettingsOnboardingTour />
-      <div className="px-4 sm:px-6 py-6">
-        <div className="flex flex-col gap-6">
-          <div>
+      <div className="flex flex-col gap-6">
+        <div>
             <h1 className="font-display text-[32px] font-bold leading-[1.0] text-ink" style={{ letterSpacing: "-1px" }}>Settings</h1>
             <p className="mt-2 text-sm text-charcoal">Manage your account and application preferences.</p>
           </div>
@@ -69,7 +68,6 @@ export default function SettingsPage() {
             {activeTab === "usage" && isAdmin && <UsageSection />}
           </div>
         </div>
-      </div>
     </div>
   );
 }

@@ -172,54 +172,113 @@ const Header = memo(function Header({ onMenuClick }: { onMenuClick: () => void }
           </button>
 
           {projectSwitcherOpen && (
-            <div
-              className="absolute left-0 top-[44px] z-50 w-[280px] rounded-[12px] bg-surface-card shadow-2xl overflow-hidden animate-scale-in"
-              style={{ border: "1px solid var(--hairline)" }}
-            >
-              <div className="px-3 py-2" style={{ borderBottom: "1px solid var(--hairline)" }}>
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-ash">
-                  Switch project
-                </p>
-              </div>
-              <div className="max-h-[320px] overflow-y-auto p-1">
-                {projects.slice(0, 12).map((p) => {
-                  const isActive = p.id === activeProjectId;
-                  return (
+            <>
+              {/* Desktop Dropdown */}
+              <div
+                className="hidden sm:block absolute left-0 top-[44px] z-50 w-[280px] rounded-[12px] bg-surface-card shadow-2xl overflow-hidden animate-scale-in"
+                style={{ border: "1px solid var(--hairline)" }}
+              >
+                <div className="px-3 py-2" style={{ borderBottom: "1px solid var(--hairline)" }}>
+                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-ash">
+                    Switch project
+                  </p>
+                </div>
+                <div className="max-h-[320px] overflow-y-auto p-1">
+                  {projects.slice(0, 12).map((p) => {
+                    const isActive = p.id === activeProjectId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handlePickProject(p.id)}
+                        className={`flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left ${
+                          isActive ? "bg-primary/10 text-primary" : "text-ink hover:bg-surface-bone"
+                        }`}
+                      >
+                        <Folder size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : "text-ash"} />
+                        <span className="truncate flex-1">{p.title}</span>
+                        <span className="font-ui text-[10px] text-ash">{p.paper_count}p</span>
+                      </button>
+                    );
+                  })}
+                  {projects.length > 12 && (
                     <button
-                      key={p.id}
                       type="button"
-                      onClick={() => handlePickProject(p.id)}
-                      className={`flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left ${
-                        isActive ? "bg-primary/10 text-primary" : "text-ink hover:bg-surface-bone"
-                      }`}
+                      onClick={() => { setProjectSwitcherOpen(false); router.push("/projects"); }}
+                      className="flex w-full items-center justify-center rounded-[8px] py-2 font-ui text-[12px] font-medium text-charcoal hover:bg-surface-bone"
                     >
-                      <Folder size={14} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : "text-ash"} />
-                      <span className="truncate flex-1">{p.title}</span>
-                      <span className="font-ui text-[10px] text-ash">{p.paper_count}p</span>
+                      View all {projects.length} projects →
                     </button>
-                  );
-                })}
-                {projects.length > 12 && (
+                  )}
+                </div>
+                <div className="p-1" style={{ borderTop: "1px solid var(--hairline)" }}>
                   <button
                     type="button"
-                    onClick={() => { setProjectSwitcherOpen(false); router.push("/projects"); }}
-                    className="flex w-full items-center justify-center rounded-[8px] py-2 font-ui text-[12px] font-medium text-charcoal hover:bg-surface-bone"
+                    onClick={handleNewProject}
+                    className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] font-semibold text-primary hover:bg-primary/10 transition-colors"
                   >
-                    View all {projects.length} projects →
+                    <Plus size={14} weight="bold" />
+                    New Project
                   </button>
-                )}
+                </div>
               </div>
-              <div className="p-1" style={{ borderTop: "1px solid var(--hairline)" }}>
-                <button
-                  type="button"
-                  onClick={handleNewProject}
-                  className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] font-semibold text-primary hover:bg-primary/10 transition-colors"
+
+              {/* Mobile Modal Popup */}
+              <div 
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:hidden animate-fade-in" 
+                onClick={() => setProjectSwitcherOpen(false)}
+              >
+                <div
+                  className="w-[94vw] max-w-[380px] rounded-[14px] bg-surface-card shadow-2xl overflow-hidden animate-scale-in"
+                  style={{ border: "1px solid var(--hairline)" }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <Plus size={14} weight="bold" />
-                  New Project
-                </button>
+                  <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--hairline)" }}>
+                    <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.14em] text-ash">
+                      Switch project
+                    </p>
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto p-1.5">
+                    {projects.slice(0, 12).map((p) => {
+                      const isActive = p.id === activeProjectId;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handlePickProject(p.id)}
+                          className={`flex w-full items-center gap-3 rounded-[10px] px-3 py-3.5 font-ui text-[15px] transition-colors text-left ${
+                            isActive ? "bg-primary/10 text-primary" : "text-ink hover:bg-surface-bone"
+                          }`}
+                        >
+                          <Folder size={18} weight={isActive ? "fill" : "regular"} className={isActive ? "text-primary" : "text-ash"} />
+                          <span className="truncate flex-1">{p.title}</span>
+                          <span className="font-ui text-[12px] text-ash">{p.paper_count}p</span>
+                        </button>
+                      );
+                    })}
+                    {projects.length > 12 && (
+                      <button
+                        type="button"
+                        onClick={() => { setProjectSwitcherOpen(false); router.push("/projects"); }}
+                        className="flex w-full items-center justify-center rounded-[10px] py-3.5 font-ui text-[14px] font-medium text-charcoal hover:bg-surface-bone"
+                      >
+                        View all {projects.length} projects →
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-1.5" style={{ borderTop: "1px solid var(--hairline)" }}>
+                    <button
+                      type="button"
+                      onClick={handleNewProject}
+                      className="flex w-full items-center justify-center gap-2 rounded-[10px] px-3 py-3.5 font-ui text-[15px] font-semibold text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <Plus size={18} weight="bold" />
+                      New Project
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       )}
