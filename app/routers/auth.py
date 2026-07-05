@@ -116,3 +116,15 @@ async def change_password(
     user.password_hash = hash_password(new)
     await db.commit()
     return {"message": "Password updated"}
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(user: User = Depends(get_current_user)) -> TokenResponse:
+    """Re-issue a fresh access token for the currently authenticated user.
+
+    The client must supply the existing (still-valid) Bearer token.  This
+    allows silent background refreshes before expiry without requiring the
+    user to re-enter credentials.
+    """
+    token = create_access_token(user.id, user.email)
+    return TokenResponse(access_token=token)

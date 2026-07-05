@@ -19,7 +19,12 @@ export default function AssistantLayout({
   return (
     <div
       className="fixed inset-x-0 top-[60px] bottom-0 xl:left-[56px] overflow-hidden bg-canvas"
-      style={{ zIndex: 1 }}
+      style={{
+        zIndex: 1,
+        // On mobile, dvh shrinks when the virtual keyboard opens so the
+        // chat input stays above the keyboard. Falls back gracefully.
+        height: "calc(100dvh - 60px)",
+      }}
     >
       <AssistantOnboardingTour />
       {children}

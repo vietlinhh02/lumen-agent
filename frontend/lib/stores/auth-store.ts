@@ -4,7 +4,29 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { apiFetch } from "@/lib/api";
-import { TOKEN_KEY } from "@/lib/jwt";
+import { TOKEN_KEY, decodeTokenPayload } from "@/lib/jwt";
+
+/** Schedule a silent token refresh ~5 min before expiry. */
+let _refreshTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleTokenRefresh(token: string, onRefreshed: (newToken: string) => void) {
+  if (_refreshTimer) clearTimeout(_refreshTimer);
+  const payload = decodeTokenPayload(token);
+  if (!payload?.exp) return;
+  // Refresh 5 minutes before expiry
+  const msUntilRefresh = payload.exp * 1000 - Date.now() - 5 * 60 * 1000;
+  if (msUntilRefresh <= 0) return; // already too late
+  _refreshTimer = setTimeout(async () => {
+    try {
+      const data = await apiFetch<{ access_token: string }>("/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      onRefreshed(data.access_token);
+    } catch {
+      // Silently ignore — user will get a 401 on next API call
+    }
+  }, msUntilRefresh);
+}
 
 export interface AuthUser {
   id: string;
@@ -110,6 +132,14 @@ export const useAuthStore = create<AuthState>()(
         localStorage.setItem(TOKEN_KEY, data.access_token);
         setTokenCookie(data.access_token);
         set({ token: data.access_token });
+        // Schedule proactive token refresh
+        const onLoginRefresh = (newToken: string) => {
+          localStorage.setItem(TOKEN_KEY, newToken);
+          setTokenCookie(newToken);
+          set({ token: newToken });
+          scheduleTokenRefresh(newToken, onLoginRefresh);
+        };
+        scheduleTokenRefresh(data.access_token, onLoginRefresh);
         // Fetch user profile
         try {
           const user = await apiFetch<AuthUser>("/auth/me", {
@@ -176,6 +206,16 @@ export const useAuthStore = create<AuthState>()(
       },
       onRehydrateStorage: () => (state) => {
         setTokenCookie(state?.token ?? null);
+        // Resume proactive refresh after page reload
+        if (state?.token) {
+          const onReloadRefresh = (newToken: string) => {
+            localStorage.setItem(TOKEN_KEY, newToken);
+            setTokenCookie(newToken);
+            useAuthStore.setState({ token: newToken });
+            scheduleTokenRefresh(newToken, onReloadRefresh);
+          };
+          scheduleTokenRefresh(state.token, onReloadRefresh);
+        }
       },
     },
   ),
