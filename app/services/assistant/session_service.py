@@ -1162,6 +1162,28 @@ class AssistantSessionService:
 
     # ── Internal Helpers ───────────────────────────────────────────────────────
 
+    async def _handle_hitl_or_auto_create_project(
+        self,
+        session: DBAssistantSession,
+        message: str,
+        user: User,
+    ) -> BaseEvent | None:
+        """
+        Instead of immediately auto-creating, we emit an ActionEvent asking the user to confirm project details.
+        """
+        title, topic, research_question = await self._extract_project_metadata(message)
+        
+        # In Phase 1 we send HITL to Frontend
+        return ActionEvent(
+            action_type="confirm_project",
+            data={
+                "title": title,
+                "topic": topic,
+                "research_question": research_question,
+                "message": "Do you want to start a deep research with these details?"
+            }
+        )
+
     async def _auto_create_project(
         self,
         session: DBAssistantSession,

@@ -272,6 +272,102 @@ export function chat(
   };
 }
 
+export function research(
+  sessionId: string,
+  message: string,
+  handlers: ChatEventHandlers = {},
+  clientMessageId?: string,
+  action: string = "start"
+): ChatResult {
+  const controller = new AbortController();
+  
+  const finished = new Promise<void>((resolve, reject) => {
+    (async () => {
+      const signal = controller.signal;
+      
+      try {
+        const token = getToken();
+        if (!token) {
+          throw new Error("Authentication required");
+        }
+
+        const requestBody: any = { query: message, thread_id: sessionId, action: action };
+        if (action === "continue") {
+          requestBody.edited_plan = message;
+        }
+        if (clientMessageId) {
+          requestBody.client_message_id = clientMessageId;
+        }
+
+        await fetchEventSource(`/api/research`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal,
+          openWhenHidden: true,
+          async onopen(response) {
+            if (response.ok) {
+              return;
+            }
+
+            const errorData = await response.json().catch(() => ({}));
+            const detail = errorData.detail ?? `Request failed (${response.status})`;
+            throw new Error(
+              typeof detail === "string" ? detail : JSON.stringify(detail)
+            );
+          },
+          onmessage(event) {
+            if (!event.data) {
+              return;
+            }
+
+            try {
+              const eventName = event.event || "message";
+              const eventData = JSON.parse(event.data) as Partial<AssistantEventData>;
+              dispatchEvent(
+                {
+                  event: eventName,
+                  data: {
+                    type: eventName,
+                    ...eventData,
+                  } as AssistantEventData,
+                },
+                handlers
+              );
+            } catch {
+              // Ignore malformed events; the stream may continue with valid events.
+            }
+          },
+          onerror(error) {
+            throw error;
+          },
+          onclose() {
+            resolve();
+          }
+        });
+        
+        resolve();
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          resolve();
+        } else {
+          reject(err);
+        }
+      }
+    })();
+  });
+  
+  return {
+    cancel: () => {
+      controller.abort();
+    },
+    finished,
+  };
+}
+
 /**
  * Dispatch an SSE event to the appropriate handler.
  */

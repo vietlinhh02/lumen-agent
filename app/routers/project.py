@@ -97,7 +97,7 @@ async def update_project_endpoint(
     return project
 
 
-@router.delete("/{project_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}", status_code=http_status.HTTP_200_OK)
 async def delete_project_endpoint(
     project_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -369,7 +369,7 @@ async def confirm_uploads_endpoint(
     return {"status": "ok"}
 
 
-@router.post("/{project_id}/papers:discard-uploads", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.post("/{project_id}/papers:discard-uploads", status_code=http_status.HTTP_200_OK)
 async def discard_uploads_endpoint(
     project_id: UUID,
     body: DiscardUploadsRequest,
@@ -468,7 +468,7 @@ async def update_paper_endpoint(
 
 
 @router.delete(
-    "/{project_id}/papers/{project_paper_id}", status_code=http_status.HTTP_204_NO_CONTENT
+    "/{project_id}/papers/{project_paper_id}", status_code=http_status.HTTP_200_OK
 )
 async def remove_paper_endpoint(
     project_id: UUID,

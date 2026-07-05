@@ -257,7 +257,7 @@ async def get_session(
 
 @router.delete(
     "/sessions/{session_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     responses={
         401: {"model": ErrorResponse},
         404: {"model": ErrorResponse},
@@ -594,7 +594,7 @@ async def chat(
 
 @router.post(
     "/sessions/{session_id}/stop",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_200_OK,
     responses={
         401: {"model": ErrorResponse},
         404: {"model": ErrorResponse},

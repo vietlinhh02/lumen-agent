@@ -506,6 +506,164 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
   },
 
   /**
+   * Send a research message and stream events.
+   */
+  async sendResearchMessage(message: string) {
+    const state = get();
+    const sessionId = state.activeSessionId;
+
+    if (!sessionId) {
+      set({ error: "No active session. Create or select a session first." });
+      return;
+    }
+
+    const sessionEvents = state.events.get(sessionId) ?? [];
+    const lastEvent = sessionEvents.length > 0 ? sessionEvents[sessionEvents.length - 1] : null;
+    const isWaiting = lastEvent?.type === "wait";
+    const action = isWaiting ? "continue" : "start";
+
+    // Generate client message ID for deduplication
+    const clientMessageId = crypto.randomUUID();
+
+    // Add optimistic user message to events immediately with client ID
+    const userMessageEvent: MessageEvent = {
+      id: clientMessageId,
+      timestamp: new Date().toISOString(),
+      type: "message",
+      role: "user",
+      content: message,
+    };
+
+    set((state) => {
+      const eventsMap = new Map(state.events);
+      const sessionEvents = [...(eventsMap.get(sessionId) ?? []), userMessageEvent];
+      eventsMap.set(sessionId, sessionEvents);
+      
+      // Also add to messagesBySession for stable chat rendering
+      const messagesMap = new Map(state.messagesBySession);
+      const sessionMessages = [...(messagesMap.get(sessionId) ?? []), userMessageEvent];
+      messagesMap.set(sessionId, sessionMessages);
+      
+      return {
+        events: eventsMap,
+        messagesBySession: messagesMap,
+        isStreaming: true,
+        error: null,
+        currentToolArtifact: null,
+        _thoughtBuffers: new Map(),
+        _currentIteration: 0,
+        _currentPhase: null,
+        _lastToolUsed: null,
+        _progressStages: new Map(),
+        _streamingAssistantMessageId: null,
+        _assistantDeltaBuffer: "",
+      };
+    });
+
+    // Start SSE stream with client message ID
+    const chatResult = api.research(sessionId, message, {
+      onMessage: (event: MessageEvent) => {
+        // Apply to messages map for chat rendering
+        get()._applyMessageEvent(sessionId, event);
+        // Also apply to events map for audit/debug
+        get()._applyEventToSession(sessionId, event);
+      },
+      onTitle: (event: TitleEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Update session title in list
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, title: event.title } : s
+          ),
+          currentSession:
+            state.currentSession?.id === sessionId
+              ? { ...state.currentSession, title: event.title, question: "Lumen AI is connecting to the session. This usually takes just a moment..." }
+              : state.currentSession,
+        }));
+      },
+      onTool: (event: ToolEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Extract tool artifact for preview
+        if (event.status === "called" && event.result) {
+          get()._extractToolArtifact(event);
+        }
+      },
+      onDone: (event: DoneEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        set({ isStreaming: false });
+      },
+      onError: (event: ErrorEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        set({ isStreaming: false, error: event.message });
+      },
+      onWait: (event: WaitEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        set({ isStreaming: false });
+      },
+      onThought: (event: ThoughtEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Accumulate thought tokens into buffer for this iteration
+        set((state) => {
+          const buffers = new Map(state._thoughtBuffers);
+          // Only maintain the most recent thought buffer (clear previous ones)
+          buffers.clear();
+          const currentBuffer = buffers.get(event.iteration) || "";
+          buffers.set(event.iteration, currentBuffer + event.delta);
+          return { _thoughtBuffers: buffers };
+        });
+      },
+      onIteration: (event: IterationEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        // Reset thought buffer for new iteration if not final
+        set((state) => {
+          const buffers = new Map(state._thoughtBuffers);
+          // Clear previous thought buffers on new iteration
+          buffers.clear();
+          // Clear thought buffer for new iterations
+          if (!buffers.has(event.n)) {
+            buffers.set(event.n, "");
+          }
+          return {
+            _currentIteration: event.n,
+            _maxIterations: event.max,
+            _currentPhase: event.phase,
+            _thoughtBuffers: buffers,
+            // Clear last tool used on new iteration
+            _lastToolUsed: null,
+          };
+        });
+      },
+      onMessageAck: (event: MessageAckEvent) => {
+        // Replace optimistic message with canonical one
+        get()._replaceOptimisticMessage(sessionId, event.client_message_id, event.canonical_id);
+      },
+      onAssistantDelta: (event: AssistantDeltaEvent) => {
+        get()._applyAssistantDelta(sessionId, event);
+      },
+      onProgress: (event: ProgressEvent) => {
+        get()._applyProgress(event);
+      },
+    }, clientMessageId, action);
+
+    // Handle stream completion
+    chatResult.finished
+      .catch((err) => {
+        if (err instanceof Error && err.name !== "AbortError") {
+          set({
+            isStreaming: false,
+            error: err.message,
+          });
+        }
+      })
+      .finally(() => {
+        set({ isStreaming: false });
+      });
+
+    // Store cancel function for stopStream
+    set({ _chatResult: chatResult });
+  },
+
+  /**
    * Stop the current stream.
    */
   stopStream() {

@@ -430,6 +430,7 @@ export interface AssistantState {
   selectSession: (id: string) => Promise<void>;
   deleteSession: (id: string) => Promise<boolean>;
   sendMessage: (message: string) => Promise<void>;
+  sendResearchMessage: (message: string) => Promise<void>;
   stopStream: () => void;
   applyEvent: (event: AssistantEventData) => void;
   clearUnread: (sessionId: string) => void;

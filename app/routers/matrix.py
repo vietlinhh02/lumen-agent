@@ -335,7 +335,7 @@ async def update_matrix_row(
 # ── Delete Matrix Row ────────────────────────────────────────────────────
 
 
-@router.delete("/{project_id}/matrix/{row_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}/matrix/{row_id}", status_code=http_status.HTTP_200_OK)
 async def delete_matrix_row(
     project_id: UUID,
     row_id: UUID,

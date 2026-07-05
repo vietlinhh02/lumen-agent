@@ -21,9 +21,12 @@ import { useUIStore } from "@/lib/stores/ui-store";
 import { ChatMessage } from "@/components/assistant";
 import { ChatBox } from "@/components/assistant/ChatBox";
 
+import { ThinkingPanel } from "@/components/assistant/ThinkingPanel";
+
 import { SessionList } from "@/components/assistant/SessionList";
 import type {
   MessageEvent,
+  WaitEvent,
 } from "@/lib/types/assistant";
 import {
   PaperPlaneTilt,
@@ -171,9 +174,18 @@ export default function AssistantSessionPage() {
   };
 
   // Handle send message
-  const handleSend = async (message: string) => {
+  const handleSend = async (message: string, isDeepResearch?: boolean) => {
     const store = useAssistantStore.getState();
-    await store.sendMessage(message);
+    const sessionId = store.activeSessionId;
+    const sessionEvents = sessionId ? (store.events.get(sessionId) ?? []) : [];
+    const lastEvent = sessionEvents.length > 0 ? sessionEvents[sessionEvents.length - 1] : null;
+    const isWaiting = lastEvent?.type === "wait";
+
+    if (isDeepResearch || isWaiting) {
+      await store.sendResearchMessage(message);
+    } else {
+      await store.sendMessage(message);
+    }
   };
 
   // Handle stop
@@ -283,13 +295,10 @@ export default function AssistantSessionPage() {
                   );
                 })}
 
-                {/* Streaming indicator */}
-                {isStreaming && (
-                  <div className="flex items-center gap-2 text-charcoal font-ui text-sm py-2">
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-                    Thinking...
-                  </div>
-                )}
+                {/* Thinking Panel for Deep Research */}
+                <ThinkingPanel events={sessionEvents} isStreaming={isStreaming} />
+
+                {/* Wait Events are now natively handled without a panel */}
             </div>
 
 

@@ -7,10 +7,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
 import { ChatProjectPicker } from "./ChatProjectPicker";
-import { PaperPlaneTilt, Stop, Plus } from "@phosphor-icons/react";
+import { PaperPlaneTilt, Stop, Plus, Globe } from "@phosphor-icons/react";
 
 interface ChatBoxProps {
-  onSend: (message: string) => Promise<void>;
+  onSend: (message: string, isDeepResearch: boolean) => Promise<void>;
   onStop: () => void;
   onNewChat?: () => void;
 }
@@ -21,6 +21,7 @@ const MAX_LENGTH = 10000;
 export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
   const [message, setMessage] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useAssistantStore((s) => s.isStreaming);
   const error = useAssistantStore((s) => s.error);
@@ -44,13 +45,16 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
     if (!trimmed || isStreaming) return;
 
     setMessage("");
-    await onSend(trimmed);
+    await onSend(trimmed, isDeepResearch);
+    if (isDeepResearch) {
+      setIsDeepResearch(false);
+    }
 
     // Refocus textarea
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 0);
-  }, [message, isStreaming, onSend]);
+  }, [message, isStreaming, onSend, isDeepResearch]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Submit on Enter (but not Shift+Enter)
@@ -93,6 +97,19 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
         {/* Project picker + character count */}
         <div className="flex items-center gap-2 min-w-0">
           <ChatProjectPicker />
+          <button
+            type="button"
+            onClick={() => setIsDeepResearch(!isDeepResearch)}
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors border ${
+              isDeepResearch
+                ? "bg-primary/10 text-primary border-primary/30"
+                : "bg-surface-elevated text-charcoal/70 border-charcoal/10 hover:bg-surface-hover"
+            }`}
+            title="Toggle Deep Research"
+          >
+            <Globe size={14} weight={isDeepResearch ? "fill" : "regular"} />
+            Deep Research
+          </button>
           <span
             className={`font-ui text-xs ${
               isOverLimit ? "text-red-500" : "text-charcoal/60"

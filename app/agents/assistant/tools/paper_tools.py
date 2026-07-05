@@ -302,7 +302,7 @@ async def _list_project_papers_impl(
 @tool
 async def search_web(
     query: str,
-    sources: list[str] = Field(default=["arxiv"]),
+    sources: list[str] = ["arxiv"],
     year_from: int | None = None,
     year_to: int | None = None,
     limit: int = 20,

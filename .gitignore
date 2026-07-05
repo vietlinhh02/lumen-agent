@@ -85,3 +85,6 @@ _bmad-output
 .agents/skills/
 .claude/skills/report_logic_analysis.md
 report_logic_analysis.md
+
+# Deep Research Reference Clones
+.deep_research_clones/
