@@ -123,6 +123,8 @@ class ChatRequest(BaseModel):
         max_length=10000,
         description="The user's message to the assistant.",
     )
+    action: str | None = Field(default=None, description="Optional action command (e.g. start_deep_research)")
+
     client_message_id: str | None = Field(
         default=None,
         description=(

@@ -673,3 +673,129 @@ async def get_metrics(
     """
     return metrics.get_summary()
 
+
+from app.db.models import DeepResearchJob
+
+@router.get(
+    "/sessions/{session_id}/research/{job_id}",
+    response_model=dict,
+)
+async def get_deep_research_job_status(
+    session_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Lấy trạng thái và chi tiết tiến độ của job deep research."""
+    from sqlalchemy import select
+    from app.services.assistant.session_service import AssistantSessionService
+
+    # Verify session ownership
+    service = AssistantSessionService(db=db)
+    session = await service.get_session(session_id, user.id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    job = await db.scalar(
+        select(DeepResearchJob).where(
+            DeepResearchJob.id == job_id,
+            DeepResearchJob.session_id == session_id
+        )
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "id": job.id,
+        "status": job.status,
+        "stage": job.stage,
+        "progress": job.progress,
+        "message": job.message,
+        "progress_json": job.progress_json,
+        "report": job.report,
+        "papers_saved": job.papers_saved,
+    }
+
+
+@router.get(
+    "/sessions/{session_id}/research/{job_id}/stream",
+    response_class=EventSourceResponse,
+)
+async def stream_deep_research_job(
+    session_id: UUID,
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stream tiến trình research job via SSE."""
+    import asyncio
+    from app.services.assistant.session_service import AssistantSessionService
+    from sqlalchemy import select
+    import json
+
+    service = AssistantSessionService(db=db)
+    session = await service.get_session(session_id, user.id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator():
+        last_progress = -1
+        while True:
+            # Re-fetch from DB inside the loop
+            job = await db.scalar(
+                select(DeepResearchJob).where(
+                    DeepResearchJob.id == job_id,
+                    DeepResearchJob.session_id == session_id
+                )
+            )
+            if not job:
+                yield {
+                    "event": "error",
+                    "data": json.dumps({"message": "Job not found."})
+                }
+                break
+                
+            if job.progress > last_progress:
+                last_progress = job.progress
+                yield {
+                    "event": "progress",
+                    "data": json.dumps({
+                        "stage": job.stage,
+                        "progress": job.progress,
+                        "message": job.message,
+                    })
+                }
+
+            if job.status in ["completed", "failed"]:
+                if job.status == "completed":
+                    # Stream the final report
+                    if job.report:
+                        # Chunk the report roughly
+                        chunk_size = 50
+                        for i in range(0, len(job.report), chunk_size):
+                            chunk = job.report[i:i+chunk_size]
+                            yield {
+                                "event": "assistant_delta",
+                                "data": json.dumps({"delta": chunk, "is_final": False})
+                            }
+                            await asyncio.sleep(0.01)
+                        # Final delta
+                        yield {
+                            "event": "assistant_delta",
+                            "data": json.dumps({"delta": "", "is_final": True})
+                        }
+                    
+                    yield {
+                        "event": "done",
+                        "data": json.dumps({"summary": "Research completed."})
+                    }
+                else:
+                    yield {
+                        "event": "error",
+                        "data": json.dumps({"message": "Research failed."})
+                    }
+                break
+
+            await asyncio.sleep(1)
+
+    return EventSourceResponse(event_generator())

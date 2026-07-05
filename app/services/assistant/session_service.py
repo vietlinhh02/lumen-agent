@@ -752,6 +752,7 @@ class AssistantSessionService:
         user_id: uuid.UUID,
         message: str,
         client_message_id: str | None = None,
+        action: str | None = None,
     ) -> AsyncGenerator[BaseEvent]:
         """
         Run the chat flow using LangGraph-based AssistantGraph.
@@ -846,6 +847,56 @@ class AssistantSessionService:
                 yield DoneEvent(summary="User not found.")
                 return
 
+
+            if action == "start_deep_research":
+                import json
+                try:
+                    action_data = json.loads(message)
+                except Exception:
+                    action_data = {}
+                    
+                title = action_data.get("title", "Deep Research")
+                topic = action_data.get("topic", "Topic")
+                research_question = action_data.get("research_question", None)
+                query = action_data.get("message", "start")
+                
+                from app.schemas.project import ProjectCreate
+                from app.services.project import create_project
+                from app.db.models import DeepResearchJob
+                import asyncio
+                from app.services.assistant.deep_research_worker import run_deep_research
+                
+                # 1. Create project
+                auto_project = await create_project(
+                    self.db,
+                    user,
+                    ProjectCreate(title=title, topic=topic, research_question=research_question)
+                )
+                session.project_id = auto_project.id
+                await self.db.commit()
+                
+                # 2. Create job
+                job_id = uuid.uuid4()
+                job = DeepResearchJob(
+                    id=job_id,
+                    session_id=session.id,
+                    project_id=auto_project.id,
+                    query=query,
+                    status="running"
+                )
+                self.db.add(job)
+                await self.db.commit()
+                
+                # 3. Trigger worker
+                asyncio.create_task(run_deep_research(str(job_id), str(auto_project.id), str(user.id), query))
+                
+                yield MessageEvent(
+                    role="assistant",
+                    content=f"Đã bắt đầu nghiên cứu sâu cho: **{title}**.\nJob ID: `{job_id}`\nTiến trình sẽ được cập nhật tự động."
+                )
+                yield DoneEvent(summary="Deep research started.")
+                return
+
             # Get tools
             tools = get_all_tools(
                 user_id=str(user_id),
@@ -895,7 +946,12 @@ class AssistantSessionService:
                     _should_create = False
 
                 if _should_create:
-                    auto_project = await self._auto_create_project(session, message, user)
+                    hitl_event = await self._handle_hitl_or_auto_create_project(session, message, user)
+                    if hitl_event:
+                        yield hitl_event
+                        yield DoneEvent(summary="Waiting for user confirmation.")
+                        return
+
                     if auto_project is not None:
                         session.project_id = auto_project.id
                         await self.db.commit()
