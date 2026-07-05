@@ -120,7 +120,7 @@ async def create_session(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Too many concurrent sessions. Maximum is 10. "
-                   f"Current: {rate_limiter.get_active_sessions(user.id)}",
+            f"Current: {rate_limiter.get_active_sessions(user.id)}",
         )
 
     service = AssistantSessionService(db=db)
@@ -227,6 +227,7 @@ async def get_session(
 
     # Build event list
     from app.services.assistant.session_service import sort_session_events
+
     sorted_events = sort_session_events(session.events)
     events = [
         SessionEvent(
@@ -380,6 +381,7 @@ async def update_session_project(
         from sqlalchemy import select
 
         from app.db.models import Project
+
         result = await db.execute(
             select(Project).where(
                 Project.id == body.project_id,
@@ -452,24 +454,27 @@ async def chat(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Message rate limit exceeded. Maximum is 100 messages per hour. "
-                   f"Remaining: {rate_limiter.get_message_remaining(user.id)}",
+            f"Remaining: {rate_limiter.get_message_remaining(user.id)}",
         )
 
     # Check session message limit to prevent token abuse
     from sqlalchemy import select, func
     from app.db.models import AssistantEvent as DBAssistantEvent
+
     stmt = select(func.count(DBAssistantEvent.id)).where(
         DBAssistantEvent.session_id == session_id,
         DBAssistantEvent.event_type == "message",
-        DBAssistantEvent.payload["role"].astext == "user"
+        DBAssistantEvent.payload["role"].astext == "user",
     )
     result = await db.execute(stmt)
     user_msg_count = result.scalar() or 0
     if user_msg_count >= 30:
-        logger.warning("Session message limit exceeded for session %s (user %s)", session_id, user.id)
+        logger.warning(
+            "Session message limit exceeded for session %s (user %s)", session_id, user.id
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This chat session has reached the maximum limit of 30 messages. Please start a new chat session to continue."
+            detail="This chat session has reached the maximum limit of 30 messages. Please start a new chat session to continue.",
         )
 
     service = AssistantSessionService(db=db)
@@ -485,7 +490,9 @@ async def chat(
 
     # Use LangGraph-based chat by default (Task 9: LangGraph integration)
     use_graph = is_graph_enabled()
-    logger.info("Using %s-based chat for session %s", "LangGraph" if use_graph else "ReActAgent", session_id)
+    logger.info(
+        "Using %s-based chat for session %s", "LangGraph" if use_graph else "ReActAgent", session_id
+    )
 
     # Create event generator with metrics tracking
     async def event_generator() -> AsyncGenerator[dict]:
@@ -494,15 +501,17 @@ async def chat(
 
         try:
             # Use graph-based chat if enabled (Task 9)
-            if use_graph and hasattr(service, 'chat_with_graph'):
+            if use_graph and hasattr(service, "chat_with_graph"):
                 chat_generator = service.chat_with_graph(
-                    session_id, user.id, body.message, client_message_id=body.client_message_id
+                    session_id,
+                    user.id,
+                    body.message,
+                    client_message_id=body.client_message_id,
+                    action=body.action,
                 )
             else:
-                chat_generator = service.chat(
-                    session_id, user.id, body.message, client_message_id=body.client_message_id
-                )
-            
+                chat_generator = service.chat(session_id, user.id, body.message)
+
             async for event in chat_generator:
                 event_dict = None
                 try:
@@ -523,14 +532,14 @@ async def chat(
                     tool_name = sse_data.get("data", {}).get("tool", "unknown")
                     tool_calls[tool_name] += 1
                     metrics.record_tool_call(tool_name)
-                    
+
                 if hasattr(event, "usage") and getattr(event, "usage", None):
                     usage_dict = event.usage
                     try:
                         usage_obj = LLMUsage(
                             input_tokens=usage_dict.get("input_tokens", 0),
                             output_tokens=usage_dict.get("output_tokens", 0),
-                            model=usage_dict.get("model", "unknown")
+                            model=usage_dict.get("model", "unknown"),
                         )
                         # Fire and forget logging (db.add is sync within async session)
                         await log_llm_usage(db, user.id, usage_obj, context="assistant")
@@ -567,6 +576,7 @@ async def chat(
             )
             # Record into eval counters for /api/stats/eval
             from app.services.eval_counters import eval_counters as _ec
+
             _ec.sessions.record(wall_time_s=wall_time, success=(final_status == "completed"))
 
     # Verify session exists
@@ -676,6 +686,7 @@ async def get_metrics(
 
 from app.db.models import DeepResearchJob
 
+
 @router.get(
     "/sessions/{session_id}/research/{job_id}",
     response_model=dict,
@@ -692,14 +703,13 @@ async def get_deep_research_job_status(
 
     # Verify session ownership
     service = AssistantSessionService(db=db)
-    session = await service.get_session(session_id, user.id)
+    session = await service.get_session(user, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
     job = await db.scalar(
         select(DeepResearchJob).where(
-            DeepResearchJob.id == job_id,
-            DeepResearchJob.session_id == session_id
+            DeepResearchJob.id == job_id, DeepResearchJob.session_id == session_id
         )
     )
     if not job:
@@ -734,7 +744,7 @@ async def stream_deep_research_job(
     import json
 
     service = AssistantSessionService(db=db)
-    session = await service.get_session(session_id, user.id)
+    session = await service.get_session(user, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -742,28 +752,28 @@ async def stream_deep_research_job(
         last_progress = -1
         while True:
             # Re-fetch from DB inside the loop
-            job = await db.scalar(
-                select(DeepResearchJob).where(
-                    DeepResearchJob.id == job_id,
-                    DeepResearchJob.session_id == session_id
+            from app.db.session import async_session_factory
+            async with async_session_factory() as temp_db:
+                job = await temp_db.scalar(
+                    select(DeepResearchJob).where(
+                        DeepResearchJob.id == job_id, DeepResearchJob.session_id == session_id
+                    )
                 )
-            )
             if not job:
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"message": "Job not found."})
-                }
+                yield {"event": "error", "data": json.dumps({"message": "Job not found."})}
                 break
-                
+
             if job.progress > last_progress:
                 last_progress = job.progress
                 yield {
                     "event": "progress",
-                    "data": json.dumps({
-                        "stage": job.stage,
-                        "progress": job.progress,
-                        "message": job.message,
-                    })
+                    "data": json.dumps(
+                        {
+                            "stage": job.stage,
+                            "progress": job.progress,
+                            "message": job.message,
+                        }
+                    ),
                 }
 
             if job.status in ["completed", "failed"]:
@@ -773,27 +783,21 @@ async def stream_deep_research_job(
                         # Chunk the report roughly
                         chunk_size = 50
                         for i in range(0, len(job.report), chunk_size):
-                            chunk = job.report[i:i+chunk_size]
+                            chunk = job.report[i : i + chunk_size]
                             yield {
                                 "event": "assistant_delta",
-                                "data": json.dumps({"delta": chunk, "is_final": False})
+                                "data": json.dumps({"delta": chunk, "is_final": False}),
                             }
                             await asyncio.sleep(0.01)
                         # Final delta
                         yield {
                             "event": "assistant_delta",
-                            "data": json.dumps({"delta": "", "is_final": True})
+                            "data": json.dumps({"delta": "", "is_final": True}),
                         }
-                    
-                    yield {
-                        "event": "done",
-                        "data": json.dumps({"summary": "Research completed."})
-                    }
+
+                    yield {"event": "done", "data": json.dumps({"summary": "Research completed."})}
                 else:
-                    yield {
-                        "event": "error",
-                        "data": json.dumps({"message": "Research failed."})
-                    }
+                    yield {"event": "error", "data": json.dumps({"message": "Research failed."})}
                 break
 
             await asyncio.sleep(1)

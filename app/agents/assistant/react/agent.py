@@ -562,7 +562,7 @@ class ReActAgent:
         system = (
             "You are a friendly research assistant. Keep your response brief and helpful. "
             "If the user greets you, greet them back and briefly mention what you can help with. "
-            "ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ). "
+            "ALWAYS respond in the user's language (e.g. if the user greets you in English, respond in English; if in Vietnamese, respond in Vietnamese). "
             "Do NOT use emoji, pictograms, decorative icons, emoticons, or Unicode symbol bullets. "
             "Use ASCII bullets (-) if a list is needed."
         )

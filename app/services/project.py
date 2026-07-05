@@ -249,9 +249,7 @@ async def save_paper_to_project(
 
         if wait_for_ingestion:
             success = await _download_and_ingest_bg(pp.id, raw, pdf_path=prefetched)
-            if not success:
-                return None
-            full_text_status = "completed"
+            full_text_status = "completed" if success else "failed"
         else:
             asyncio.ensure_future(_download_and_ingest_bg(pp.id, raw, pdf_path=prefetched))
 
@@ -452,9 +450,13 @@ async def _download_and_ingest_bg(
 
         if pdf_result is None or not pdf_result.exists():
             async with async_session_factory() as bg_db:
-                from sqlalchemy import delete
+                from sqlalchemy import update
                 from app.db.models import ProjectPaper
-                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.execute(
+                    update(ProjectPaper)
+                    .where(ProjectPaper.id == project_paper_id)
+                    .values(full_text_status="failed")
+                )
                 await bg_db.commit()
             return False
 
@@ -470,9 +472,13 @@ async def _download_and_ingest_bg(
                 result.char_count,
             )
             if result.status in ("failed", "ocr_required"):
-                from sqlalchemy import delete
+                from sqlalchemy import update
                 from app.db.models import ProjectPaper
-                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.execute(
+                    update(ProjectPaper)
+                    .where(ProjectPaper.id == project_paper_id)
+                    .values(full_text_status="failed")
+                )
                 await bg_db.commit()
                 return False
             return True
@@ -480,9 +486,13 @@ async def _download_and_ingest_bg(
         logger.exception("Background download+ingest failed for %s: %s", project_paper_id, exc)
         try:
             async with async_session_factory() as bg_db:
-                from sqlalchemy import delete
+                from sqlalchemy import update
                 from app.db.models import ProjectPaper
-                await bg_db.execute(delete(ProjectPaper).where(ProjectPaper.id == project_paper_id))
+                await bg_db.execute(
+                    update(ProjectPaper)
+                    .where(ProjectPaper.id == project_paper_id)
+                    .values(full_text_status="failed")
+                )
                 await bg_db.commit()
         except Exception:
             pass

@@ -47,6 +47,7 @@ from sqlalchemy.orm import selectinload
 
 from app.agents.assistant.event_mapper import EventMapper
 from app.agents.assistant.events import (
+    ActionEvent,
     AssistantDeltaEvent,
     BaseEvent,
     DoneEvent,
@@ -863,7 +864,6 @@ class AssistantSessionService:
                 from app.schemas.project import ProjectCreate
                 from app.services.project import create_project
                 from app.db.models import DeepResearchJob
-                import asyncio
                 from app.services.assistant.deep_research_worker import run_deep_research
                 
                 # 1. Create project
@@ -890,11 +890,39 @@ class AssistantSessionService:
                 # 3. Trigger worker
                 asyncio.create_task(run_deep_research(str(job_id), str(auto_project.id), str(user.id), query))
                 
+                # Persist the assistant message to the database
+                content_text = f"Dạ, em đã tạo project **{title}** và đang bắt đầu chạy luồng nghiên cứu sâu rồi ạ. Anh theo dõi tiến trình chi tiết ở bảng Terminal bên phải màn hình giúp em nhé!\n<!-- Job ID: {job_id} -->"
+                msg_row = AssistantMessage(
+                    session_id=session.id,
+                    turn_id=turn_id,
+                    role="assistant",
+                    content=content_text,
+                )
+                self.db.add(msg_row)
+                await self.db.flush()
+                
+                # Also persist the message event for frontend reload compatibility
+                await self._persist_event(
+                    session_id=session.id,
+                    event_type="message",
+                    payload={
+                        "id": str(msg_row.id),
+                        "type": "message",
+                        "role": "assistant",
+                        "content": content_text,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "turn_id": turn_id,
+                    },
+                    turn_id=turn_id,
+                )
+                await self.db.commit()
+                
                 yield MessageEvent(
                     role="assistant",
-                    content=f"Đã bắt đầu nghiên cứu sâu cho: **{title}**.\nJob ID: `{job_id}`\nTiến trình sẽ được cập nhật tự động."
+                    content=content_text,
+                    turn_id=turn_id,
                 )
-                yield DoneEvent(summary="Deep research started.")
+                yield DoneEvent(summary="Deep research started.", turn_id=turn_id)
                 return
 
             # Get tools
@@ -934,13 +962,15 @@ class AssistantSessionService:
                 "gap_only", "report_only", "qa", "create_project",
             }
             auto_created_message: MessageEvent | None = None
+            _pre_intent: str | None = None
             if session.project_id is None:
                 # Classify intent first to avoid creating projects for greetings
                 from app.agents.assistant.react.intent_classifier import IntentClassifier
                 _classifier = IntentClassifier(provider)
                 try:
-                    _intent = await _classifier.classify(message, project_context or None)
-                    _should_create = _intent.intent in _RESEARCH_INTENTS
+                    _intent_obj = await _classifier.classify(message, project_context or None)
+                    _pre_intent = _intent_obj.intent
+                    _should_create = _pre_intent in _RESEARCH_INTENTS
                 except Exception as _exc:
                     logger.warning("Intent pre-check failed, skipping auto-create: %s", _exc)
                     _should_create = False
@@ -1009,6 +1039,7 @@ class AssistantSessionService:
                 project_context=project_context,
                 tools=tools,
                 provider=provider,
+                intent=_pre_intent,
             )
 
             # Save user message
@@ -1292,8 +1323,6 @@ class AssistantSessionService:
             (title, topic, research_question) tuple. research_question may
             be None if the LLM cannot infer one.
         """
-        import asyncio
-
         from pydantic import BaseModel, Field
 
         class _ProjectMeta(BaseModel):

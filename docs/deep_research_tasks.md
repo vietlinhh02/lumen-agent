@@ -38,16 +38,16 @@ Dựa trên tài liệu thiết kế `docs/deep_research.md`, tôi đã chia nh�
   - Khi hoàn thành, đọc `job.report` và yield về thành từng chunk qua `AssistantDeltaEvent` để FE làm hiệu ứng typing.
 
 ## 5. Frontend - UI/UX & Flow (PHASE 0, 1, 3, 4)
-- [ ] **Xử lý Layout Bố cục (Split View):** 
+- [x] **Xử lý Layout Bố cục (Split View):** 
   - Chia màn hình thành 2 phần khi Deep Research kích hoạt: Cột trái (Chat/Report) và Cột phải (Project Info + Terminal Logs).
-- [ ] **Nút Toggle Sidebar:** Thêm chức năng đóng/mở sidebar "Recent Chats" để người dùng mở rộng không gian đọc nghiên cứu.
-- [ ] **Project Preview Card & Confirm Button:** 
+- [x] **Nút Toggle Sidebar:** Thêm chức năng đóng/mở sidebar "Recent Chats" để người dùng mở rộng không gian đọc nghiên cứu.
+- [x] **Project Preview Card & Confirm Button:** 
   - Bắt sự kiện `ActionEvent(confirm_project)`.
   - Hiển thị UI Confirm Project Card (Title, Topic, RQ).
   - Thêm nút [Bắt đầu Deep Research] gọi về backend với action xác nhận.
-- [ ] **Consume SSE & Terminal Log UI:**
+- [x] **Consume SSE & Terminal Log UI:**
   - Gọi GET `/stream` API.
   - Cập nhật UI thanh tiến trình và danh sách "Terminal-like logs" phản hồi thời gian thực từ `progress_json` của backend.
-- [ ] **Hiển thị Báo cáo Final & Trạng thái Linked:**
+- [x] **Hiển thị Báo cáo Final & Trạng thái Linked:**
   - Bắt sự kiện `AssistantDeltaEvent` stream về từ Deep Research để hiển thị nội dung báo cáo dạng markdown.
   - Cập nhật trạng thái session sang "Linked" để những lần chat sau gọi trực tiếp vào luồng QA RAG bình thường (disable Deep Research cho lần hỏi kế).

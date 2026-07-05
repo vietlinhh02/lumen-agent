@@ -90,10 +90,11 @@ class GraphRunner:
         self,
         session_id: UUID,
         user_id: UUID,
-        project_context: dict[str, Any] | None,
-        tools: list[BaseTool],
-        provider: AIProvider,
+        tools: list[Any],
+        provider: Any,
+        project_context: dict[str, Any] | None = None,
         config: AssistantGraphConfig | None = None,
+        intent: str | None = None,
     ) -> None:
         self.session_id = session_id
         self.user_id = user_id
@@ -101,6 +102,7 @@ class GraphRunner:
         self.tools = tools
         self.provider = provider
         self.config = config or AssistantGraphConfig()
+        self.intent = intent
 
         # Initialize the compiled graph
         self._graph = get_assistant_graph(self.config, force_rebuild=USE_LANGGRAPH)
@@ -135,7 +137,6 @@ class GraphRunner:
         Yields:
             BaseEvent subclasses from events.py.
         """
-        import asyncio
 
         # Check for cancellation
         if cancel_event and cancel_event.is_set():
@@ -205,7 +206,7 @@ class GraphRunner:
         """
         from datetime import datetime
 
-        return AssistantGraphState(
+        state = AssistantGraphState(
             session_id=self.session_id,
             user_id=self.user_id,
             project_context=self.project_context,
@@ -214,6 +215,9 @@ class GraphRunner:
             max_wall_time_seconds=self.config.max_wall_time_seconds,
             start_time=datetime.now(UTC),
         )
+        if getattr(self, "intent", None) is not None:
+            state.current_intent = self.intent
+        return state
 
     def _extract_events(self, chunk: Any) -> list[BaseEvent]:
         """Extract SSE-compatible events from graph output chunk.
@@ -347,6 +351,7 @@ def create_graph_runner(
     tools: list[BaseTool],
     provider: AIProvider,
     config: AssistantGraphConfig | None = None,
+    intent: str | None = None,
 ) -> GraphRunner:
     """Create a GraphRunner instance for the assistant.
 
@@ -377,6 +382,7 @@ def create_graph_runner(
         tools=tools,
         provider=provider,
         config=config,
+        intent=intent,
     )
 
 

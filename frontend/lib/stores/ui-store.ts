@@ -22,6 +22,10 @@ interface UIState {
    */
   assistantSessionsOpen: boolean;
   /**
+   * Whether the assistant left sidebar is collapsed.
+   */
+  assistantSidebarCollapsed: boolean;
+  /**
    * Whether the header "Switch project" dropdown is open. Lives here so
    * outside-click handlers in AppShell can mutate it cleanly.
    */
@@ -39,6 +43,8 @@ interface UIState {
   toggleAssistantToolPanel: () => void;
   setAssistantSessionsOpen: (v: boolean) => void;
   toggleAssistantSessions: () => void;
+  setAssistantSidebarCollapsed: (v: boolean) => void;
+  toggleAssistantSidebarCollapsed: () => void;
   setProjectSwitcherOpen: (v: boolean) => void;
 }
 
@@ -55,6 +61,7 @@ export const useUIStore = create<UIState>()(
       userMenuOpen: false,
       assistantToolPanelOpen: false,
       assistantSessionsOpen: true,
+      assistantSidebarCollapsed: false,
       projectSwitcherOpen: false,
 
       setTheme(t) {
@@ -95,6 +102,12 @@ export const useUIStore = create<UIState>()(
       },
       toggleAssistantSessions() {
         set({ assistantSessionsOpen: !get().assistantSessionsOpen });
+      },
+      setAssistantSidebarCollapsed(v) {
+        set({ assistantSidebarCollapsed: v });
+      },
+      toggleAssistantSidebarCollapsed() {
+        set({ assistantSidebarCollapsed: !get().assistantSidebarCollapsed });
       },
       setProjectSwitcherOpen(v) {
         set({ projectSwitcherOpen: v });

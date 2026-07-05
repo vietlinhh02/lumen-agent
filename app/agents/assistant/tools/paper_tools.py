@@ -123,6 +123,8 @@ async def _save_paper_impl(
     paper: dict[str, Any],
     user_id: str | None,
     user: Any | None,
+    download_pdf: bool = False,
+    wait_for_ingestion: bool = False,
 ) -> dict[str, Any]:
     """
     Save a paper to a project.
@@ -160,11 +162,11 @@ async def _save_paper_impl(
             paper_citation_count=paper.get("citation_count"),
             paper_authors=paper.get("authors", []),
             paper_source_names=[paper.get("source", "unknown")],
-            download_pdf=False,
+            download_pdf=download_pdf,
         )
 
         async with async_session_factory() as db:
-            result = await save_paper_to_project(db, user, pid, save_request)
+            result = await save_paper_to_project(db, user, pid, save_request, wait_for_ingestion=wait_for_ingestion)
 
         if result is None:
             return _error_result("PROJECT_NOT_FOUND", f"Project {project_id} not found or access denied")

@@ -29,6 +29,7 @@ import type {
   MessageAckEvent,
   AssistantDeltaEvent,
   ProgressEvent,
+  ActionEvent,
 } from "@/lib/types/assistant";
 
 // ── Type Helpers ───────────────────────────────────────────────────────────────
@@ -153,6 +154,7 @@ export interface ChatEventHandlers {
   onMessageAck?: (event: MessageAckEvent) => void;
   onAssistantDelta?: (event: AssistantDeltaEvent) => void;
   onProgress?: (event: ProgressEvent) => void;
+  onAction?: (event: ActionEvent) => void;
   onAny?: (event: AssistantEventData, eventName: string) => void;
 }
 
@@ -181,7 +183,8 @@ export function chat(
   sessionId: string,
   message: string,
   handlers: ChatEventHandlers = {},
-  clientMessageId?: string
+  clientMessageId?: string,
+  action?: string
 ): ChatResult {
   const controller = new AbortController();
   
@@ -195,10 +198,13 @@ export function chat(
           throw new Error("Authentication required");
         }
 
-        // Build request body with optional client_message_id
-        const requestBody: ChatRequest = { message };
+        // Build request body with optional client_message_id and action
+        const requestBody: Record<string, unknown> = { message };
         if (clientMessageId) {
           requestBody.client_message_id = clientMessageId;
+        }
+        if (action) {
+          requestBody.action = action;
         }
 
         await fetchEventSource(`/api/assistant/sessions/${sessionId}/chat`, {
@@ -272,6 +278,12 @@ export function chat(
   };
 }
 
+/**
+ * Send a deep research message through the normal chat endpoint.
+ * Uses the `action` field in ChatRequest to trigger deep research flow.
+ * 
+ * @deprecated Use `chat()` with `action: "start_deep_research"` instead.
+ */
 export function research(
   sessionId: string,
   message: string,
@@ -279,93 +291,7 @@ export function research(
   clientMessageId?: string,
   action: string = "start"
 ): ChatResult {
-  const controller = new AbortController();
-  
-  const finished = new Promise<void>((resolve, reject) => {
-    (async () => {
-      const signal = controller.signal;
-      
-      try {
-        const token = getToken();
-        if (!token) {
-          throw new Error("Authentication required");
-        }
-
-        const requestBody: any = { query: message, thread_id: sessionId, action: action };
-        if (action === "continue") {
-          requestBody.edited_plan = message;
-        }
-        if (clientMessageId) {
-          requestBody.client_message_id = clientMessageId;
-        }
-
-        await fetchEventSource(`/api/research`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(requestBody),
-          signal,
-          openWhenHidden: true,
-          async onopen(response) {
-            if (response.ok) {
-              return;
-            }
-
-            const errorData = await response.json().catch(() => ({}));
-            const detail = errorData.detail ?? `Request failed (${response.status})`;
-            throw new Error(
-              typeof detail === "string" ? detail : JSON.stringify(detail)
-            );
-          },
-          onmessage(event) {
-            if (!event.data) {
-              return;
-            }
-
-            try {
-              const eventName = event.event || "message";
-              const eventData = JSON.parse(event.data) as Partial<AssistantEventData>;
-              dispatchEvent(
-                {
-                  event: eventName,
-                  data: {
-                    type: eventName,
-                    ...eventData,
-                  } as AssistantEventData,
-                },
-                handlers
-              );
-            } catch {
-              // Ignore malformed events; the stream may continue with valid events.
-            }
-          },
-          onerror(error) {
-            throw error;
-          },
-          onclose() {
-            resolve();
-          }
-        });
-        
-        resolve();
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          resolve();
-        } else {
-          reject(err);
-        }
-      }
-    })();
-  });
-  
-  return {
-    cancel: () => {
-      controller.abort();
-    },
-    finished,
-  };
+  return chat(sessionId, message, handlers, clientMessageId, action);
 }
 
 /**
@@ -413,6 +339,9 @@ function dispatchEvent(
     case "progress":
       handlers.onProgress?.(data as ProgressEvent);
       break;
+    case "action":
+      handlers.onAction?.(data as ActionEvent);
+      break;
   }
   
   // Call generic handler for any event
@@ -440,4 +369,131 @@ export type {
   MessageAckEvent,
   AssistantDeltaEvent,
   ProgressEvent,
+  ActionEvent,
 };
+
+// ── Deep Research ────────────────────────────────────────────────────────────
+
+import type {
+  DeepResearchJobResponse,
+} from "@/lib/types/assistant";
+
+/**
+ * Fetch the current status of a Deep Research job.
+ */
+export async function fetchDeepResearchJob(
+  sessionId: string,
+  jobId: string
+): Promise<DeepResearchJobResponse> {
+  return apiFetch<DeepResearchJobResponse>(
+    `/assistant/sessions/${sessionId}/research/${jobId}`,
+    { headers: authHeaders() }
+  );
+}
+
+/**
+ * Connect to the Deep Research SSE stream for real-time job progress.
+ */
+export function streamDeepResearchJob(
+  sessionId: string,
+  jobId: string,
+  handlers: {
+    onProgress?: (event: ProgressEvent) => void;
+    onAssistantDelta?: (event: AssistantDeltaEvent) => void;
+    onDone?: (event: DoneEvent) => void;
+    onError?: (event: ErrorEvent) => void;
+  }
+): ChatResult {
+  const controller = new AbortController();
+
+  const finished = new Promise<void>((resolve, reject) => {
+    (async () => {
+      const signal = controller.signal;
+
+      try {
+        const token = getToken();
+        if (!token) {
+          throw new Error("Authentication required");
+        }
+
+        await fetchEventSource(
+          `/api/assistant/sessions/${sessionId}/research/${jobId}/stream`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            signal,
+            openWhenHidden: true,
+            async onopen(response) {
+              if (response.ok) return;
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.detail ?? `Stream failed (${response.status})`);
+            },
+            onmessage(event) {
+              if (!event.data) return;
+              try {
+                const eventName = event.event || "progress";
+                const eventData = JSON.parse(event.data) as Record<string, unknown>;
+
+                switch (eventName) {
+                  case "progress":
+                    handlers.onProgress?.({
+                      type: "progress",
+                      ...eventData,
+                    } as ProgressEvent);
+                    break;
+                  case "assistant_delta":
+                    handlers.onAssistantDelta?.({
+                      type: "assistant_delta",
+                      ...eventData,
+                    } as AssistantDeltaEvent);
+                    break;
+                  case "done":
+                    handlers.onDone?.({
+                      type: "done",
+                      ...eventData,
+                    } as DoneEvent);
+                    break;
+                  case "error":
+                    handlers.onError?.({
+                      type: "error",
+                      ...eventData,
+                    } as ErrorEvent);
+                    break;
+                }
+              } catch {
+                // Ignore malformed events
+              }
+            },
+            onerror(error) {
+              console.error("streamDeepResearchJob: fetchEventSource error:", error);
+              handlers.onError?.({
+                type: "error",
+                code: "STREAM_ERROR",
+                message: error instanceof Error ? error.message : String(error),
+              } as ErrorEvent);
+              throw error;
+            },
+            onclose() {
+              resolve();
+            },
+          }
+        );
+
+        resolve();
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          resolve();
+        } else {
+          reject(err);
+        }
+      }
+    })();
+  });
+
+  return {
+    cancel: () => controller.abort(),
+    finished,
+  };
+}

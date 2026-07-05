@@ -230,6 +230,18 @@ export interface ProgressEvent extends BaseEvent {
 }
 
 /**
+ * Action event - backend requests user action (e.g., confirm project creation).
+ * Used in the Deep Research Human-in-the-Loop (HITL) flow.
+ */
+export interface ActionEvent extends BaseEvent {
+  type: "action";
+  /** Action identifier, e.g. "confirm_project" */
+  action_type: string;
+  /** Payload data for the action */
+  data: Record<string, unknown>;
+}
+
+/**
  * Union type of all possible SSE event data.
  */
 export type AssistantEventData =
@@ -243,7 +255,8 @@ export type AssistantEventData =
   | IterationEvent
   | MessageAckEvent
   | AssistantDeltaEvent
-  | ProgressEvent;
+  | ProgressEvent
+  | ActionEvent;
 
 /**
  * Discriminated union event type with event name for SSE.
@@ -267,7 +280,8 @@ export type EventType =
   | "iteration"
   | "message_ack"
   | "assistant_delta"
-  | "progress";
+  | "progress"
+  | "action";
 
 // ── Chat Result Type ───────────────────────────────────────────────────────────
 
@@ -431,8 +445,60 @@ export interface AssistantState {
   deleteSession: (id: string) => Promise<boolean>;
   sendMessage: (message: string) => Promise<void>;
   sendResearchMessage: (message: string) => Promise<void>;
+  confirmDeepResearch: (projectData: { title: string; topic: string; research_question?: string }, originalMessage: string) => Promise<void>;
+  cancelDeepResearch: () => void;
   stopStream: () => void;
   applyEvent: (event: AssistantEventData) => void;
   clearUnread: (sessionId: string) => void;
   reset: () => void;
+}
+
+// ── Deep Research Types ──────────────────────────────────────────────────────
+
+export interface DeepResearchJobState {
+  /** The job_id from the backend */
+  jobId: string;
+  /** Current status: "pending" | "running" | "completed" | "failed" */
+  status: string;
+  /** Current stage: "init" | "search" | "matrix" | "gap" | "done" */
+  stage: string;
+  /** Progress 0.0 - 1.0 */
+  progress: number;
+  /** Current message */
+  message: string;
+  /** Papers saved so far */
+  papersSaved: number;
+  /** Detailed terminal logs */
+  logs: DeepResearchLogEntry[];
+}
+
+export interface DeepResearchLogEntry {
+  timestamp: string;
+  stage: string;
+  progress: number;
+  message: string;
+}
+
+export interface ConfirmProjectData {
+  title: string;
+  topic: string;
+  research_question?: string;
+}
+
+export interface DeepResearchJobResponse {
+  id: string;
+  session_id: string;
+  project_id: string;
+  query: string;
+  status: string;
+  stage: string;
+  progress: number;
+  message: string | null;
+  progress_json: {
+    logs?: DeepResearchLogEntry[];
+  } | null;
+  report: string | null;
+  papers_saved: number;
+  created_at: string;
+  updated_at: string;
 }

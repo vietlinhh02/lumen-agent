@@ -24,6 +24,8 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
   const [isDeepResearch, setIsDeepResearch] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isStreaming = useAssistantStore((s) => s.isStreaming);
+  const deepResearchState = useAssistantStore((s) => s._deepResearchState);
+  const isDeepResearchRunning = deepResearchState?.status === "running";
   const error = useAssistantStore((s) => s.error);
   
   const isLimitReached = error?.includes("maximum limit of 30 messages");
@@ -42,19 +44,22 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
 
   const handleSubmit = useCallback(async () => {
     const trimmed = message.trim();
-    if (!trimmed || isStreaming) return;
+    if (!trimmed || isStreaming || isDeepResearchRunning) return;
 
     setMessage("");
-    await onSend(trimmed, isDeepResearch);
+
     if (isDeepResearch) {
-      setIsDeepResearch(false);
+      // Store the initial research message so ConfirmProjectPanel can use it
+      useAssistantStore.setState({ _initialResearchMessage: trimmed });
     }
+
+    await onSend(trimmed, isDeepResearch);
 
     // Refocus textarea
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 0);
-  }, [message, isStreaming, onSend, isDeepResearch]);
+  }, [message, isStreaming, isDeepResearchRunning, onSend, isDeepResearch]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Submit on Enter (but not Shift+Enter)
@@ -64,7 +69,7 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
     }
   };
 
-  const canSend = message.trim().length > 0 && !isStreaming;
+  const canSend = message.trim().length > 0 && !isStreaming && !isDeepResearchRunning;
   const charCount = message.length;
   const isOverLimit = charCount > MAX_LENGTH;
 
@@ -84,11 +89,11 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
           onKeyDown={handleKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder="Ask me anything about your research..."
+          placeholder={isDeepResearchRunning ? "Deep Research is running, please wait..." : "Ask me anything about your research..."}
           rows={1}
           className="w-full resize-none bg-transparent px-4 py-3 font-ui text-sm text-ink placeholder:text-charcoal/50 focus:outline-none disabled:opacity-50"
           style={{ minHeight: "48px", maxHeight: "150px" }}
-          disabled={isStreaming || isLimitReached}
+          disabled={isStreaming || isDeepResearchRunning || isLimitReached}
         />
       </div>
 
@@ -97,19 +102,20 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
         {/* Project picker + character count */}
         <div className="flex items-center gap-2 min-w-0">
           <ChatProjectPicker />
-          <button
-            type="button"
-            onClick={() => setIsDeepResearch(!isDeepResearch)}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors border ${
-              isDeepResearch
-                ? "bg-primary/10 text-primary border-primary/30"
-                : "bg-surface-elevated text-charcoal/70 border-charcoal/10 hover:bg-surface-hover"
-            }`}
-            title="Toggle Deep Research"
-          >
-            <Globe size={14} weight={isDeepResearch ? "fill" : "regular"} />
-            Deep Research
-          </button>
+          <div className="relative group cursor-not-allowed">
+            <button
+              type="button"
+              disabled={true}
+              className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium bg-surface-elevated text-charcoal/40 border border-charcoal/10 opacity-50 pointer-events-none"
+            >
+              <Globe size={14} weight="regular" />
+              Deep Research
+            </button>
+            <div className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 scale-95 opacity-0 transition-all duration-200 pointer-events-none group-hover:scale-100 group-hover:opacity-100 whitespace-nowrap rounded-lg bg-charcoal px-2.5 py-1 text-[10px] font-medium text-white shadow-md border border-charcoal/20">
+              Feature in development
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-charcoal" />
+            </div>
+          </div>
           <span
             className={`font-ui text-xs ${
               isOverLimit ? "text-red-500" : "text-charcoal/60"

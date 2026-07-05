@@ -34,6 +34,10 @@ import type {
   MessageAckEvent,
   AssistantDeltaEvent,
   ProgressEvent,
+  ActionEvent,
+  DeepResearchJobState,
+  DeepResearchLogEntry,
+  ConfirmProjectData,
   ChatResult,
 } from "@/lib/types/assistant";
 
@@ -70,6 +74,21 @@ interface ExtendedAssistantState extends AssistantState {
   _applyMessageEvent: (sessionId: string, event: MessageEvent) => void;
   /** Internal: apply progress event */
   _applyProgress: (event: ProgressEvent) => void;
+  /** Internal: Deep Research state */
+  _deepResearchJobId: string | null;
+  _deepResearchState: DeepResearchJobState | null;
+  _pendingAction: ActionEvent | null;
+  _initialResearchMessage: string | null;
+  /** Internal: cancel the deep research SSE stream */
+  _deepResearchStreamResult?: ChatResult;
+  /** Internal: apply action event */
+  _applyAction: (event: ActionEvent) => void;
+  /** Internal: start deep research job stream */
+  _startDeepResearchStream: (sessionId: string, jobId: string) => void;
+  /** Internal: confirm deep research - sends start action */
+  confirmDeepResearch: (projectData: ConfirmProjectData, originalMessage: string) => Promise<void>;
+  /** Internal: cancel deep research flow */
+  cancelDeepResearch: () => void;
 }
 
 function normalizePersistedEvent(
@@ -108,6 +127,10 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
   _assistantDeltaBuffer: "",
   _streamingAssistantMessageId: null,
   _progressStages: new Map(),
+  _deepResearchJobId: null,
+  _deepResearchState: null,
+  _pendingAction: null,
+  _initialResearchMessage: null,
 
   // ── Session Actions ─────────────────────────────────────────────────────────
 
@@ -311,6 +334,20 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
         currentToolArtifact: null,
       });
 
+      // Scan messages for Job ID to auto-resume deep research stream (especially on page reload)
+      let resumedJobId: string | null = null;
+      for (const msg of sessionMessages) {
+        if (msg.role === "assistant" && msg.content) {
+          const jobIdMatch = msg.content.match(/Job ID:\s*([a-f0-9-]+)/i);
+          if (jobIdMatch) {
+            resumedJobId = jobIdMatch[1];
+          }
+        }
+      }
+      if (resumedJobId) {
+        get()._startDeepResearchStream(id, resumedJobId);
+      }
+
       // Extract tool artifacts sequentially from historical events
       // so the most recent valid artifact stays active in the ToolPanel.
       for (const e of sessionEvents) {
@@ -485,6 +522,9 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       onProgress: (event: ProgressEvent) => {
         get()._applyProgress(event);
       },
+      onAction: (event: ActionEvent) => {
+        get()._applyAction(event);
+      },
     }, clientMessageId);
 
     // Handle stream completion
@@ -642,6 +682,9 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       },
       onProgress: (event: ProgressEvent) => {
         get()._applyProgress(event);
+      },
+      onAction: (event: ActionEvent) => {
+        get()._applyAction(event);
       },
     }, clientMessageId, action);
 
@@ -1052,6 +1095,181 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
     }
   },
 
+  // ── Deep Research Actions ──────────────────────────────────────────────────
+
+  /**
+   * Handle an ActionEvent from the backend (e.g. confirm_project).
+   */
+  _applyAction(event: ActionEvent) {
+    if (event.action_type === "confirm_project") {
+      set({
+        _pendingAction: event,
+        isStreaming: false,
+      });
+    }
+  },
+
+  /**
+   * User confirms the deep research project details and starts the pipeline.
+   * Sends `action: "start_deep_research"` with project metadata to the backend.
+   */
+  async confirmDeepResearch(projectData: ConfirmProjectData, originalMessage: string) {
+    const state = get();
+    const sessionId = state.activeSessionId;
+    if (!sessionId) return;
+
+    // Build the start_deep_research message as JSON
+    const startMessage = JSON.stringify({
+      title: projectData.title,
+      topic: projectData.topic,
+      research_question: projectData.research_question || projectData.topic,
+      message: originalMessage,
+    });
+
+    // Clear pending action
+    set({ _pendingAction: null, _initialResearchMessage: null });
+
+    // Send via normal chat with action param
+    set({ isStreaming: true, _currentIteration: 0, _thoughtBuffers: new Map() });
+
+    const chatResult = api.chat(sessionId, startMessage, {
+      onMessage: (event: MessageEvent) => {
+        get()._applyMessageEvent(sessionId, event);
+        get()._applyEventToSession(sessionId, event);
+        // Check for job_id in message content (backend may embed it)
+        if (event.role === "assistant" && event.content) {
+          const jobIdMatch = event.content.match(/Job ID:\s*([a-f0-9-]+)/i);
+          if (jobIdMatch) {
+            const jobId = jobIdMatch[1];
+            get()._startDeepResearchStream(sessionId, jobId);
+          }
+        }
+      },
+      onDone: () => {
+        // Check if we have a job_id from the session events
+        const events = get().events.get(sessionId) ?? [];
+        for (const e of events) {
+          if (e.type === "message") {
+            const msg = e as MessageEvent;
+            if (msg.role === "assistant" && msg.content) {
+              const jobIdMatch = msg.content.match(/Job ID:\s*([a-f0-9-]+)/i);
+              if (jobIdMatch) {
+                const jobId = jobIdMatch[1];
+                get()._startDeepResearchStream(sessionId, jobId);
+                return;
+              }
+            }
+          }
+        }
+        set({ isStreaming: false });
+      },
+      onError: (event: ErrorEvent) => {
+        get()._applyEventToSession(sessionId, event);
+        set({ isStreaming: false, error: event.message });
+      },
+    }, undefined, "start_deep_research");
+
+    set({ _chatResult: chatResult });
+
+    chatResult.finished
+      .catch((err) => {
+        if (err instanceof Error && err.name !== "AbortError") {
+          set({ isStreaming: false, error: err.message });
+        }
+      })
+      .finally(() => {
+        set({ isStreaming: false });
+      });
+  },
+
+  /**
+   * Cancel the deep research flow (dismiss confirm panel).
+   */
+  cancelDeepResearch() {
+    set({
+      _pendingAction: null,
+      _initialResearchMessage: null,
+    });
+  },
+
+  /**
+   * Connect to the Deep Research job SSE stream for real-time progress.
+   */
+  _startDeepResearchStream(sessionId: string, jobId: string) {
+    set({
+      _deepResearchJobId: jobId,
+      isStreaming: true,
+      _deepResearchState: {
+        jobId,
+        status: "running",
+        stage: "init",
+        progress: 0,
+        message: "Initializing...",
+        papersSaved: 0,
+        logs: [],
+      },
+    });
+
+    const streamResult = api.streamDeepResearchJob(sessionId, jobId, {
+      onProgress: (event: ProgressEvent) => {
+        set((state) => {
+          const current = state._deepResearchState;
+          if (!current) return state;
+
+          const newLog: DeepResearchLogEntry = {
+            timestamp: event.timestamp || new Date().toISOString(),
+            stage: event.stage,
+            progress: event.progress,
+            message: event.message,
+          };
+
+          return {
+            _deepResearchState: {
+              ...current,
+              stage: event.stage,
+              progress: event.progress,
+              message: event.message,
+              papersSaved: (event.data?.papers_saved as number) ?? current.papersSaved,
+              logs: [...current.logs, newLog].slice(-200),
+            },
+          };
+        });
+      },
+      onAssistantDelta: (event: AssistantDeltaEvent) => {
+        get()._applyAssistantDelta(sessionId, event);
+      },
+      onDone: () => {
+        set((state) => ({
+          _deepResearchState: state._deepResearchState
+            ? { ...state._deepResearchState, status: "completed", stage: "done", progress: 1 }
+            : null,
+          isStreaming: false,
+        }));
+      },
+      onError: (event: ErrorEvent) => {
+        set((state) => ({
+          _deepResearchState: state._deepResearchState
+            ? { ...state._deepResearchState, status: "failed", message: event.message }
+            : null,
+          isStreaming: false,
+        }));
+      },
+    });
+
+    set({ _deepResearchStreamResult: streamResult });
+
+    streamResult.finished.then(() => {
+      set({ _deepResearchStreamResult: undefined });
+    }).catch((err) => {
+      console.error("Deep Research stream failed:", err);
+      set({
+        _deepResearchStreamResult: undefined,
+        isStreaming: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  },
+
   // ── Reset ──────────────────────────────────────────────────────────────────
 
   reset() {
@@ -1075,6 +1293,11 @@ export const useAssistantStore = create<ExtendedAssistantState>()((set, get) => 
       _assistantDeltaBuffer: "",
       _streamingAssistantMessageId: null,
       _progressStages: new Map(),
+      _deepResearchJobId: null,
+      _deepResearchState: null,
+      _pendingAction: null,
+      _initialResearchMessage: null,
+      _deepResearchStreamResult: undefined,
     });
   },
 }));
@@ -1166,4 +1389,18 @@ export function useMessages(): MessageEvent[] {
   const messagesMap = useAssistantStore((s) => s.messagesBySession);
   if (!sessionId) return [];
   return messagesMap.get(sessionId) ?? [];
+}
+
+/**
+ * Hook to get the deep research job state.
+ */
+export function useDeepResearchState(): DeepResearchJobState | null {
+  return useAssistantStore((s) => s._deepResearchState);
+}
+
+/**
+ * Hook to get the pending action (e.g. confirm_project).
+ */
+export function usePendingAction(): ActionEvent | null {
+  return useAssistantStore((s) => s._pendingAction);
 }

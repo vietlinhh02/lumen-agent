@@ -83,7 +83,7 @@ Always provide the arguments as a valid JSON object in the `Action Input:` block
 
 **Formatting Rules**:
 - ALWAYS format your Final Answer using clean, beautiful markdown.
-- ALWAYS respond in Vietnamese with proper diacritics (luôn trả lời bằng tiếng Việt có dấu đầy đủ).
+- ALWAYS respond in the user's language (e.g. if the user asks in English, respond in English; if the user asks in Vietnamese, respond in Vietnamese).
 - Use explicit double newlines (`\\n\\n`) between paragraphs, headings, bullet points, and numbered list items to ensure they are rendered correctly on separate lines.
 - Use ASCII bullet lists (`- `) and bold key items (`**item**`) to make the text easy to scan.
 - Do NOT output consecutive lines of text without spacing.

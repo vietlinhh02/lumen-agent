@@ -69,20 +69,35 @@ async def run_deep_research(job_id: str, project_id: str, user_id: str, query: s
             await _update_job_progress(job_id, db, "search", 0.1, f"Searching the web for: {query}")
             search_res = await _search_web_impl(query=query, sources=["arxiv", "semantic_scholar"], year_from=None, year_to=None, limit=20)
             
-            if "papers" not in search_res:
+            if not search_res.get("ok"):
+                raise Exception(f"Search failed: {search_res.get('message')}")
+                
+            papers = search_res.get("data", {}).get("papers", [])
+            if not papers:
                 raise Exception("Failed to retrieve papers from search.")
                 
-            papers = search_res["papers"]
             papers_to_save = papers[:15] # Save top 15
             
             await _update_job_progress(job_id, db, "save_papers", 0.3, f"Found {len(papers)} papers. Saving {len(papers_to_save)} to project...")
             
             saved_count = 0
-            import json
-            for paper in papers_to_save:
-                # Mock the tool call logic which requires stringified JSON
-                save_res = await _save_paper_impl(project_id, json.dumps(paper))
-                if save_res.get("status") == "success":
+            import asyncio
+            
+            save_tasks = [
+                _save_paper_impl(
+                    project_id=project_id,
+                    paper=paper,
+                    user_id=user_id,
+                    user=user,
+                    download_pdf=True,
+                    wait_for_ingestion=True
+                )
+                for paper in papers_to_save
+            ]
+            save_results = await asyncio.gather(*save_tasks)
+            
+            for save_res in save_results:
+                if save_res.get("ok"):
                     saved_count += 1
             
             # Update DB with papers saved
@@ -100,23 +115,30 @@ async def run_deep_research(job_id: str, project_id: str, user_id: str, query: s
             # Fire and poll matrix generation
             # _generate_matrix_impl is async and might block or spawn its own job,
             # We wait for it here in the background task.
-            matrix_res = await _generate_matrix_impl(project_id)
-            if matrix_res.get("status") != "success":
+            matrix_res = await _generate_matrix_impl(project_id, user_id, user)
+            if not matrix_res.get("ok"):
                  raise Exception(f"Matrix generation failed: {matrix_res.get('message')}")
 
             # ---------------------------------------------------------
             # 3. Gap Detection
             # ---------------------------------------------------------
             await _update_job_progress(job_id, db, "gap", 0.7, "Detecting research gaps and conflicts...")
-            gap_res = await _detect_gaps_impl(project_id)
-            if gap_res.get("status") != "success":
+            gap_res = await _detect_gaps_impl(project_id, user_id, user)
+            if not gap_res.get("ok"):
                 raise Exception(f"Gap detection failed: {gap_res.get('message')}")
 
             # ---------------------------------------------------------
             # 4. Report Generation
             # ---------------------------------------------------------
             await _update_job_progress(job_id, db, "report", 0.9, "Synthesizing final comprehensive report...")
-            report_res = await _generate_report_impl(project_id)
+            report_res = await _generate_report_impl(
+                project_id=project_id,
+                title=None,
+                include_gap_section=True,
+                selected_gap_ids=None,
+                user_id=user_id,
+                user=user
+            )
             
             # report_res could have a job_id for background generation inside _generate_report_impl
             # Assume it completes or we need to poll
