@@ -188,6 +188,14 @@ class ProgressEvent(BaseEvent):
     )
 
 
+class ActionEvent(BaseEvent):
+    """Signals an actionable prompt for the UI (e.g. Confirm Project)."""
+
+    type: Literal["action"] = "action"
+    action_type: str = Field(..., description="Action identifier, e.g. confirm_project")
+    data: dict = Field(default_factory=dict, description="Payload data for the action")
+
+
 class MessageAckEvent(BaseEvent):
     """Acknowledges a client-generated message ID and provides the canonical ID.
 
@@ -234,6 +242,7 @@ class AssistantDeltaEvent(BaseEvent):
 # ---------------------------------------------------------------------------
 
 AssistantEvent = Union[
+    ActionEvent,
     MessageEvent,
     TitleEvent,
     ToolEvent,

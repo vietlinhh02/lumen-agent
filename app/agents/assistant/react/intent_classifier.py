@@ -38,7 +38,7 @@ class IntentOutput(BaseModel):
 
     intent: str = Field(
         description=(
-            "One of: search_only | qa | list | chitchat | ambiguous"
+            "One of: research_pipeline | search_only | qa | list | chitchat | ambiguous"
         )
     )
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence score.")
@@ -65,6 +65,8 @@ You are an intent classifier for a research assistant. Analyze the user's
 message and return structured JSON matching the IntentOutput schema.
 
 INTENT DEFINITIONS:
+
+- research_pipeline: User explicitly wants to do a deep research, literature review, systematic review, create a matrix, find gaps, or start a new research project. Signals: "do a literature review on X", "start a research on Y", "làm một bài tổng quan tài liệu về X", "viết báo cáo nghiên cứu", "tìm gaps về đề tài", "tạo literature matrix".
 
 - search_only: User wants to search for general information on the web/Google.
   Signals: "search for X", "tìm kiếm thông tin X", "tìm hiểu về X", "Google X".
@@ -100,6 +102,7 @@ Always return a valid IntentOutput JSON object.
 
 # Valid intent values (for validation after parsing)
 VALID_INTENTS = frozenset([
+    "research_pipeline",
     "search_only",
     "qa",
     "list",

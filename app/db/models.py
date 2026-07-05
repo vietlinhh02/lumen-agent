@@ -981,6 +981,29 @@ class PaperChunk(Base):
 # rows, gaps, reports, …) is still stored on the existing `Project`-scoped tables.
 
 
+class DeepResearchJob(Base):
+    """Job tracking for deep research workflow."""
+    __tablename__ = "deep_research_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assistant_sessions.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    stage: Mapped[str] = mapped_column(String(50), nullable=False, default="init")
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    message: Mapped[str] = mapped_column(Text, nullable=True)
+    progress_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    report: Mapped[str] = mapped_column(Text, nullable=True)
+    papers_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class AssistantSession(Base):
     """A single chat conversation owned by a user, optionally pinned to a project."""
 
