@@ -106,10 +106,9 @@ export function ChatBox({ onSend, onStop, onNewChat }: ChatBoxProps) {
             <button
               type="button"
               disabled={true}
-              className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium bg-surface-elevated text-charcoal/40 border border-charcoal/10 opacity-50 pointer-events-none"
+              className="flex items-center justify-center rounded-xl px-2 py-1.5 text-xs font-medium bg-surface-elevated text-charcoal/40 border border-charcoal/10 opacity-50 pointer-events-none"
             >
               <Globe size={14} weight="regular" />
-              Deep Research
             </button>
             <div className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 scale-95 opacity-0 transition-all duration-200 pointer-events-none group-hover:scale-100 group-hover:opacity-100 whitespace-nowrap rounded-lg bg-charcoal px-2.5 py-1 text-[10px] font-medium text-white shadow-md border border-charcoal/20">
               Feature in development
