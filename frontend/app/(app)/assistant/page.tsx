@@ -26,22 +26,15 @@ export default function AssistantPage() {
   useEffect(() => {
     if (!token || loadingSessions) return;
 
-    if (sessions.length === 0) {
-      const autoCreate = async () => {
-        const session = await createSession();
-        if (session) {
-          router.replace(`/assistant/sessions/${session.id}`);
-        }
-      };
-      void autoCreate();
-    } else {
-      // Navigate to most recent session
-      const mostRecent = sessions[0];
-      if (mostRecent) {
-        router.replace(`/assistant/sessions/${mostRecent.id}`);
+    // Always create a fresh session when the user navigates to /assistant
+    const autoCreate = async () => {
+      const session = await createSession();
+      if (session) {
+        router.replace(`/assistant/sessions/${session.id}`);
       }
-    }
-  }, [token, sessions, loadingSessions, router, createSession]);
+    };
+    void autoCreate();
+  }, [token, loadingSessions, router, createSession]);
 
   // Loading state (or while auto-creating session)
   return (

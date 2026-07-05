@@ -133,23 +133,19 @@ export function SessionList({
       ? "Creating chat…"
       : "New chat";
 
-  // Group sessions by project so the sidebar doesn't drown the user
-  // in a single flat list. Unlinked sessions are filtered out — they
-  // have no project context, so the assistant has no papers / matrix
-  // / gaps to reason about, and cluttering the sidebar with them
-  // adds noise. Within each group, sessions are sorted most-recent
-  // first; the groups themselves are also ordered by the most recent
-  // activity inside them.
-  const groups = useMemo(() => {
+  // Group sessions: linked ones by project, unlinked ones collected separately.
+  const { groups, unlinked } = useMemo(() => {
     const byProject = new Map<
       string,
       { id: string; title: string; sessions: SessionSummary[] }
     >();
+    const unlinkedSessions: SessionSummary[] = [];
 
     for (const s of sessions) {
-      // Hide sessions that aren't linked to a project.
-      if (!s.project_id || !s.project_title) continue;
-
+      if (!s.project_id || !s.project_title) {
+        unlinkedSessions.push(s);
+        continue;
+      }
       const existing = byProject.get(s.project_id);
       if (existing) {
         existing.sessions.push(s);
@@ -179,7 +175,10 @@ export function SessionList({
 
     projectGroups.sort((a, b) => b.latestAt - a.latestAt);
 
-    return projectGroups;
+    return {
+      groups: projectGroups,
+      unlinked: unlinkedSessions.slice().sort(sortByRecency),
+    };
   }, [sessions]);
 
   // Track which groups the user has collapsed. Default: all expanded
@@ -351,19 +350,22 @@ export function SessionList({
               No chats yet. Start a new conversation!
             </p>
           </div>
-        ) : groups.length === 0 ? (
-          <div className="text-center py-8 px-4">
-            <Folder
-              size={28}
-              className="mx-auto mb-3 text-charcoal/50"
-              weight="duotone"
-            />
-            <p className="font-ui text-xs text-charcoal">
-              No linked chats yet. Link a new chat to a project to see it here.
-            </p>
-          </div>
         ) : (
           <div className="space-y-3">
+            {/* Unlinked (no project) sessions — shown first as flat "Recent" list */}
+            {unlinked.length > 0 && (
+              <div>
+                <div className="flex w-full items-center gap-1.5 px-2 py-1.5 font-ui text-[11px] font-semibold uppercase tracking-wider text-ash">
+                  <Clock size={11} className="shrink-0" />
+                  <span>Recent</span>
+                </div>
+                <div className="mt-1 space-y-1">
+                  {unlinked.map(renderSessionRow)}
+                </div>
+              </div>
+            )}
+
+            {/* Project-grouped sessions */}
             {groups.map((group) => {
               const isCollapsed = collapsed.has(group.id);
               return (

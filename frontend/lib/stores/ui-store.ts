@@ -61,7 +61,7 @@ export const useUIStore = create<UIState>()(
       userMenuOpen: false,
       assistantToolPanelOpen: false,
       assistantSessionsOpen: true,
-      assistantSidebarCollapsed: false,
+      assistantSidebarCollapsed: true,
       projectSwitcherOpen: false,
 
       setTheme(t) {
