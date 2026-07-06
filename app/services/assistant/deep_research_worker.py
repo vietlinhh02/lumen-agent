@@ -1,13 +1,11 @@
-import asyncio
 import logging
-from typing import Any
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from datetime import datetime
 
-from app.db.models import DeepResearchJob, AssistantSession
+from app.db.models import DeepResearchJob
 from app.db.session import async_session_factory
 from app.agents.assistant.tools.paper_tools import _search_web_impl, _save_paper_impl
 from app.agents.assistant.tools.matrix_tools import _generate_matrix_impl
@@ -131,7 +129,7 @@ async def run_deep_research(job_id: str, project_id: str, user_id: str, query: s
             # 4. Report Generation
             # ---------------------------------------------------------
             await _update_job_progress(job_id, db, "report", 0.9, "Synthesizing final comprehensive report...")
-            report_res = await _generate_report_impl(
+            await _generate_report_impl(
                 project_id=project_id,
                 title=None,
                 include_gap_section=True,

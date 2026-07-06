@@ -1,6 +1,5 @@
 import pytest
 import uuid
-import json
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.assistant.deep_research_worker import run_deep_research
@@ -20,21 +19,21 @@ async def test_run_deep_research_worker():
         # User exists
         mock_db.scalar.return_value = MagicMock()
         
-        with patch("app.services.assistant.deep_research_worker._update_job_progress", new_callable=AsyncMock) as mock_update:
+        with patch("app.services.assistant.deep_research_worker._update_job_progress", new_callable=AsyncMock):
             with patch("app.services.assistant.deep_research_worker._search_web_impl", new_callable=AsyncMock) as mock_search:
-                mock_search.return_value = {"papers": [{"id": "p1"}, {"id": "p2"}]}
+                mock_search.return_value = {"ok": True, "data": {"papers": [{"id": "p1"}, {"id": "p2"}]}}
                 
                 with patch("app.services.assistant.deep_research_worker._save_paper_impl", new_callable=AsyncMock) as mock_save:
-                    mock_save.return_value = {"status": "success"}
+                    mock_save.return_value = {"ok": True}
                     
                     with patch("app.services.assistant.deep_research_worker._generate_matrix_impl", new_callable=AsyncMock) as mock_matrix:
-                        mock_matrix.return_value = {"status": "success"}
+                        mock_matrix.return_value = {"ok": True}
                         
                         with patch("app.services.assistant.deep_research_worker._detect_gaps_impl", new_callable=AsyncMock) as mock_gap:
-                            mock_gap.return_value = {"status": "success"}
+                            mock_gap.return_value = {"ok": True}
                             
                             with patch("app.services.assistant.deep_research_worker._generate_report_impl", new_callable=AsyncMock) as mock_report:
-                                mock_report.return_value = {"status": "success"}
+                                mock_report.return_value = {"ok": True}
                                 
                                 await run_deep_research(job_id, project_id, user_id, query)
                                 

@@ -108,18 +108,18 @@ async def create_session(
 
     Optionally pin the session to a project by providing `project_id`.
 
-    Rate limited: max 10 concurrent sessions per user.
+    Rate limited: max 100 concurrent sessions per user.
     """
     # Check concurrent session limit
     if not rate_limiter.check_concurrent_sessions(user.id):
         logger.warning(
             "Concurrent session limit exceeded for user %s",
             user.id,
-            extra={"user_id": str(user.id), "limit": 10},
+            extra={"user_id": str(user.id), "limit": rate_limiter.MAX_CONCURRENT_SESSIONS},
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many concurrent sessions. Maximum is 10. "
+            detail=f"Too many concurrent sessions. Maximum is {rate_limiter.MAX_CONCURRENT_SESSIONS}. "
             f"Current: {rate_limiter.get_active_sessions(user.id)}",
         )
 

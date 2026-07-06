@@ -858,7 +858,7 @@ class AssistantSessionService:
                     
                 title = action_data.get("title", "Deep Research")
                 topic = action_data.get("topic", "Topic")
-                research_question = action_data.get("research_question", None)
+                research_question = action_data.get("research_question")
                 query = action_data.get("message", "start")
                 
                 from app.schemas.project import ProjectCreate

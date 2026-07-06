@@ -131,8 +131,8 @@ class TestRateLimiter:
         """Test that sessions are allowed under the limit."""
         user_id = uuid4()
 
-        # Should allow up to 10 concurrent sessions
-        for _ in range(10):
+        # Should allow up to 100 concurrent sessions
+        for _ in range(100):
             assert rate_limiter.check_concurrent_sessions(user_id) is True
             rate_limiter.record_session_started(user_id)
 
@@ -140,11 +140,11 @@ class TestRateLimiter:
         """Test that sessions are blocked over the limit."""
         user_id = uuid4()
 
-        # Start 10 sessions (the limit)
-        for _ in range(10):
+        # Start 100 sessions (the limit)
+        for _ in range(100):
             rate_limiter.record_session_started(user_id)
 
-        # 11th session should be blocked
+        # 101st session should be blocked
         assert rate_limiter.check_concurrent_sessions(user_id) is False
 
     def test_record_session_ended(self):
@@ -212,12 +212,12 @@ class TestRateLimiter:
         """Test getting remaining session slots."""
         user_id = uuid4()
 
-        assert rate_limiter.get_concurrent_sessions_remaining(user_id) == 10
+        assert rate_limiter.get_concurrent_sessions_remaining(user_id) == 100
 
         rate_limiter.record_session_started(user_id)
         rate_limiter.record_session_started(user_id)
 
-        assert rate_limiter.get_concurrent_sessions_remaining(user_id) == 8
+        assert rate_limiter.get_concurrent_sessions_remaining(user_id) == 98
 
     def test_get_limits_info(self):
         """Test getting full limits info."""
@@ -231,8 +231,8 @@ class TestRateLimiter:
 
         assert info["user_id"] == str(user_id)
         assert info["concurrent_sessions"]["active"] == 2
-        assert info["concurrent_sessions"]["max"] == 10
-        assert info["concurrent_sessions"]["remaining"] == 8
+        assert info["concurrent_sessions"]["max"] == 100
+        assert info["concurrent_sessions"]["remaining"] == 98
         assert info["message_rate"]["remaining"] == 99
         assert info["message_rate"]["max_per_hour"] == 100
 
@@ -250,6 +250,6 @@ class TestRateLimiter:
 
     def test_max_constants(self):
         """Test that max constants are correct."""
-        assert RateLimiter.MAX_CONCURRENT_SESSIONS == 10
+        assert RateLimiter.MAX_CONCURRENT_SESSIONS == 100
         assert RateLimiter.MESSAGES_PER_HOUR == 100
         assert RateLimiter.WINDOW_SIZE_SECONDS == 3600

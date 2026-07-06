@@ -130,7 +130,7 @@ class RateLimiter:
     Thread-safe implementation using locks.
     """
     
-    MAX_CONCURRENT_SESSIONS: int = 10
+    MAX_CONCURRENT_SESSIONS: int = 100
     MESSAGES_PER_HOUR: int = 100
     WINDOW_SIZE_SECONDS: float = 3600.0  # 1 hour
     

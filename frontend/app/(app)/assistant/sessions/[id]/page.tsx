@@ -33,7 +33,6 @@ import type {
 import {
   PaperPlaneTilt,
   Folder,
-  List,
   ArrowsLeftRight,
 } from "@phosphor-icons/react";
 
@@ -60,6 +59,21 @@ export default function AssistantSessionPage() {
   const [isCreating, setIsCreating] = useState(false);
   const sidebarCollapsed = useUIStore((s) => s.assistantSidebarCollapsed);
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleAssistantSidebarCollapsed);
+  const isSessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
+  const toggleSessions = useUIStore((s) => s.toggleAssistantSessions);
+
+  const handleToggleSidebar = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 1280) {
+      toggleSessions();
+    } else {
+      toggleSidebarCollapsed();
+    }
+  };
+
+  const isCollapsed = typeof window !== "undefined" && window.innerWidth < 1280
+    ? !isSessionsOpen
+    : sidebarCollapsed;
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load sessions
@@ -179,7 +193,7 @@ export default function AssistantSessionPage() {
     }
   };
 
-  const handleSend = async (message: string, isDeepResearch?: boolean) => {
+  async function handleSend(message: string, isDeepResearch?: boolean) {
     const store = useAssistantStore.getState();
     const sessionId = store.activeSessionId;
     const sessionEvents = sessionId ? (store.events.get(sessionId) ?? []) : [];
@@ -193,7 +207,7 @@ export default function AssistantSessionPage() {
     } else {
       await store.sendMessage(message);
     }
-  };
+  }
 
   const handleStop = () => {
     const store = useAssistantStore.getState();
@@ -231,9 +245,9 @@ export default function AssistantSessionPage() {
       {/* Sidebar toggle button */}
       <button
         type="button"
-        onClick={toggleSidebarCollapsed}
+        onClick={handleToggleSidebar}
         className="absolute left-0 top-1/2 -translate-y-1/2 z-10 hidden xl:flex items-center justify-center h-10 w-5 rounded-r-lg bg-surface-card border-y border-r border-charcoal/30 hover:bg-surface-hover hover:border-primary/50 text-charcoal shadow-[4px_0_12px_rgba(0,0,0,0.05)] transition-all duration-200"
-        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        title={isCollapsed ? "Show sidebar" : "Hide sidebar"}
       >
         <ArrowsLeftRight size={14} weight="bold" />
       </button>

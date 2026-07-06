@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAssistantStore } from "@/lib/stores/assistant-store";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -13,28 +13,37 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 export default function AssistantPage() {
   const router = useRouter();
   const token = useAuthStore((s) => s.token);
-  const sessions = useAssistantStore((s) => s.sessions);
-  const loadingSessions = useAssistantStore((s) => s.loadingSessions);
   const loadSessions = useAssistantStore((s) => s.loadSessions);
   const createSession = useAssistantStore((s) => s.createSession);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   useEffect(() => {
     if (!token) return;
-    void loadSessions();
+    void loadSessions().then(() => {
+      setHasLoaded(true);
+    });
   }, [token, loadSessions]);
 
   useEffect(() => {
-    if (!token || loadingSessions) return;
+    if (!token || !hasLoaded) return;
 
-    // Always create a fresh session when the user navigates to /assistant
-    const autoCreate = async () => {
-      const session = await createSession();
-      if (session) {
-        router.replace(`/assistant/sessions/${session.id}`);
+    const autoRedirect = async () => {
+      const currentSessions = useAssistantStore.getState().sessions;
+      const emptySession = currentSessions.find(
+        (s) => s.event_count === 0 && s.status === "active"
+      );
+
+      if (emptySession) {
+        router.replace(`/assistant/sessions/${emptySession.id}`);
+      } else {
+        const session = await createSession();
+        if (session) {
+          router.replace(`/assistant/sessions/${session.id}`);
+        }
       }
     };
-    void autoCreate();
-  }, [token, loadingSessions, router, createSession]);
+    void autoRedirect();
+  }, [token, hasLoaded, router, createSession]);
 
   // Loading state (or while auto-creating session)
   return (

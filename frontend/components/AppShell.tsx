@@ -16,7 +16,6 @@ import {
   List,
   X,
   ChatCircle,
-  Sliders,
   CaretDown,
   Plus,
 } from "@phosphor-icons/react";
@@ -334,8 +333,6 @@ function AssistantHeaderControls() {
   const eventsMap = useAssistantStore((s) => s.events);
   const sessionsOpen = useUIStore((s) => s.assistantSessionsOpen);
   const setSessionsOpen = useUIStore((s) => s.setAssistantSessionsOpen);
-  const toolPanelOpen = useUIStore((s) => s.assistantToolPanelOpen);
-  const toggleToolPanel = useUIStore((s) => s.toggleAssistantToolPanel);
   const toggleSessions = useUIStore((s) => s.toggleAssistantSessions);
 
   // A "new" session is one that has no events yet. Disabling the New
@@ -428,28 +425,31 @@ function AssistantHeaderControls() {
 
 
 
-      {/* Dropdown — always rendered so we get a smooth enter animation.
-          `pointer-events-none` keeps it inert when hidden. `overflow-hidden`
-          keeps the inner SessionList clipped to the rounded corners. The
-          DeleteSessionModal is rendered via portal (see SessionList), so
-          it is NOT clipped by this overflow. Visible only on mobile/tablet (xl:hidden) */}
-      <div
-        className={`absolute right-0 top-[44px] z-50 w-[min(320px,calc(100vw-16px))] rounded-xl bg-canvas shadow-2xl overflow-hidden transition-all duration-200 ease-out origin-top-right xl:hidden ${
-          sessionsOpen
-            ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
-            : "opacity-0 -translate-y-1 scale-95 pointer-events-none"
+      {/* Mobile Drawer Backdrop */}
+      {sessionsOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setSessionsOpen(false)}
+          className="fixed inset-0 z-40 bg-black/40 xl:hidden transition-opacity duration-300"
+        />
+      )}
+
+      {/* Mobile Drawer (Session List) */}
+      <aside
+        className={`fixed top-0 left-0 bottom-0 z-50 w-[280px] bg-canvas shadow-2xl transition-transform duration-300 ease-out flex flex-col xl:hidden ${
+          sessionsOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{ border: "1px solid var(--hairline)" }}
+        style={{ borderRight: "1px solid var(--hairline)" }}
       >
         <SessionList
-          compact
           isCurrentSessionNew={isCurrentSessionNew}
           isCreating={isCreating}
           onClose={() => setSessionsOpen(false)}
           onNewChat={handleNewChat}
           onSelectSession={() => setSessionsOpen(false)}
         />
-      </div>
+      </aside>
     </div>
   );
 }

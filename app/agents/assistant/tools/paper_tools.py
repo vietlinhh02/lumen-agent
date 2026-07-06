@@ -16,7 +16,6 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import Field
 
 from app.agents.assistant.tools.context import get_user, get_user_id
 
@@ -304,7 +303,7 @@ async def _list_project_papers_impl(
 @tool
 async def search_web(
     query: str,
-    sources: list[str] = ["arxiv"],
+    sources: list[str] = ["arxiv"],  # noqa: B006
     year_from: int | None = None,
     year_to: int | None = None,
     limit: int = 20,
@@ -332,6 +331,8 @@ async def search_web(
         year_to: Filter papers until this year.
         limit: Maximum papers per source (default 20, max 100).
     """
+    if sources is None:
+        sources = ["arxiv"]
     return await _search_web_impl(query, sources, year_from, year_to, limit)
 
 

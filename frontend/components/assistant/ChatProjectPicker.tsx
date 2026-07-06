@@ -24,6 +24,7 @@ import { Folder, CaretDown } from "@phosphor-icons/react";
 export function ChatProjectPicker() {
   const currentSession = useAssistantStore((s) => s.currentSession);
   const updateSessionProject = useAssistantStore((s) => s.updateSessionProject);
+  const events = useAssistantStore((s) => s.events);
   const { projects } = useProjects();
   const fetchProjects = useProjectsStore((s) => s.fetchProjects);
 
@@ -36,10 +37,14 @@ export function ChatProjectPicker() {
     return null;
   }
 
+  const sessionEvents = events.get(currentSession.id) ?? [];
+  const isEmpty = sessionEvents.length === 0;
+
   return (
     <ProjectPicker
       projects={projects}
       currentProjectId={currentSession.project_id}
+      isEmpty={isEmpty}
       onChange={(id) => void updateSessionProject(currentSession.id, id)}
     />
   );
@@ -48,10 +53,12 @@ export function ChatProjectPicker() {
 function ProjectPicker({
   projects,
   currentProjectId,
+  isEmpty,
   onChange,
 }: {
   projects: import("@/lib/types").ProjectResponse[];
   currentProjectId: string | null;
+  isEmpty: boolean;
   onChange: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -78,8 +85,8 @@ function ProjectPicker({
 
   const current = projects.find((p) => p.id === currentProjectId) ?? null;
 
-  // Linked state: static label, not interactive
-  if (current) {
+  // Linked state and has messages: static label, not interactive
+  if (current && !isEmpty) {
     return (
       <div
         ref={ref}
@@ -94,7 +101,7 @@ function ProjectPicker({
     );
   }
 
-  // Unlinked state: clickable picker that opens a dropdown
+  // Unlinked state or empty/new state: clickable picker that opens a dropdown
   const handleSelect = (id: string) => {
     onChange(id);
     setOpen(false);
@@ -105,13 +112,17 @@ function ProjectPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 items-center gap-1.5 rounded-lg px-2 font-ui text-xs transition-all duration-150 active:scale-95 text-charcoal hover:text-ink hover:bg-surface-bone"
-        title="Link this chat to a project"
-        aria-label="Link to a project"
+        className={`flex h-8 items-center gap-1.5 rounded-lg px-2 font-ui text-xs transition-all duration-150 active:scale-95 ${
+          current
+            ? "bg-primary/10 text-primary hover:bg-primary/20"
+            : "text-charcoal hover:text-ink hover:bg-surface-bone"
+        }`}
+        title={current ? `Linked to: ${current.title}. Click to change.` : "Link this chat to a project"}
+        aria-label={current ? "Change linked project" : "Link to a project"}
       >
-        <Folder size={14} weight="regular" className="shrink-0" />
+        <Folder size={14} weight={current ? "fill" : "regular"} className="shrink-0" />
         <span className="hidden sm:inline max-w-[120px] truncate font-medium">
-          Link project
+          {current ? current.title : "Link project"}
         </span>
         <CaretDown
           size={12}
@@ -130,7 +141,7 @@ function ProjectPicker({
             style={{ borderBottom: "1px solid var(--hairline)" }}
           >
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-ash">
-              Link to project
+              {current ? "Change project" : "Link to project"}
             </p>
           </div>
           <div className="max-h-[320px] overflow-y-auto p-1">
@@ -144,11 +155,15 @@ function ProjectPicker({
                   key={p.id}
                   type="button"
                   onClick={() => handleSelect(p.id)}
-                  className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left text-ink hover:bg-surface-bone"
+                  className={`flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 font-ui text-[13px] transition-colors text-left ${
+                    p.id === currentProjectId
+                      ? "bg-primary/10 text-primary font-semibold"
+                      : "text-ink hover:bg-surface-bone"
+                  }`}
                 >
-                  <Folder size={14} weight="regular" className="text-ash" />
+                  <Folder size={14} weight={p.id === currentProjectId ? "fill" : "regular"} className={p.id === currentProjectId ? "text-primary" : "text-ash"} />
                   <span className="truncate flex-1">{p.title}</span>
-                  <span className="font-ui text-[10px] text-ash">
+                  <span className={`font-ui text-[10px] ${p.id === currentProjectId ? "text-primary/75" : "text-ash"}`}>
                     {p.paper_count}p
                   </span>
                 </button>
