@@ -57,7 +57,7 @@ async def classification_node(
     Returns:
         Dict with current_intent and pending_events.
     """
-    if getattr(state, "current_intent", "unknown") != "unknown":
+    if state.current_intent is not None and state.current_intent != "unknown":
         return {
             "current_intent": state.current_intent,
             "pending_events": [IterationEvent(n=0, max=state.max_iterations, phase="reasoning")] if state.current_intent != "chitchat" else [],
