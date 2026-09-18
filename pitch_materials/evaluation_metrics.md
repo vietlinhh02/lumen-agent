@@ -9,8 +9,8 @@ To ensure Lumen provides a high-quality, reliable, and performant experience, we
 
 ## 2. LLM Extraction Cost (Per Paper)
 - **Metric:** API cost associated with extracting methodologies, findings, and metadata into the Literature Matrix per paper.
-- **Current Performance:** ~$0.015 per paper (using optimized Claude 3 Haiku / GPT-4o-mini).
-- **Baseline Target:** < $0.05 per paper.
+- **Current Performance:** ~$0.002 per paper (using optimized mimo-v2.5-pro / mimo-v2.5).
+- **Baseline Target:** < $0.01 per paper.
 
 ## 3. Hallucination Rate (Citation Accuracy)
 - **Metric:** Percentage of generated claims in reports that cite sources NOT present in the user's project corpus.
