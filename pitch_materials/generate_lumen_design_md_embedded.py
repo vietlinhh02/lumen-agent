@@ -802,7 +802,7 @@ html_content = f"""<!doctype html>
               <span class="brand-title">Lumen</span>
               <span class="brand-version">AUTONOMOUS AGENT v1.0</span>
             </div>
-            <h1 class="cover-h2">Trợ lý Tác tử Tự hành Nghiên cứu Khoa học Đa tài liệu</h1>
+            <h1 class="cover-h2">Hệ thống AI Tự hành Đọc hiểu & Đối chiếu Tài liệu Khoa học</h1>
             <p class="cover-tagline">Tự động hóa tổng quan tài liệu học thuật với cơ chế kiểm chứng trích dẫn cấp dòng tuyệt đối (Sentence-level Citation Grounding).</p>
             <p class="cover-lead">
               Hệ sinh thái Multi-Agent chuyên sâu giải quyết triệt để rủi ro ảo giác nguồn trích dẫn, tự động bóc tách cấu trúc tài liệu PDF phức tạp với Marker API và lập ma trận so sánh đối chiếu đa tài liệu với 100% trích dẫn được xác thực nguồn.
@@ -1036,7 +1036,7 @@ html_content = f"""<!doctype html>
           <div class="logo">lumen</div>
         </div>
         <h2 style="margin-top: 0.16in">Thiết kế Luồng Agent StateGraph & Tối ưu Trải nghiệm SSE</h2>
-        <p class="lead">Kiểm soát chặt chẽ trạng thái tác tử thông qua đồ thị trạng thái hữu hạn (StateGraph) của LangGraph, kết hợp truyền phát trạng thái thời gian thực bằng Server-Sent Events.</p>
+        <p class="lead">Kiểm soát chặt chẽ luồng thực thi hệ thống thông qua đồ thị trạng thái hữu hạn (StateGraph) của LangGraph, kết hợp truyền phát trạng thái thời gian thực bằng Server-Sent Events.</p>
 
         <div class="grid-3" style="margin-top: 0.22in">
           <article class="card">
@@ -1247,7 +1247,7 @@ html_content = f"""<!doctype html>
           <article class="card">
             <span class="number">1</span>
             <h3>State Machine Vượt trội hơn ReAct Tự do</h3>
-            <p>Việc kiểm soát chặt chẽ trạng thái bằng đồ thị hữu hạn (Finite StateGraph) mang lại tính ổn định và khả năng gỡ lỗi vượt trội so với các mô hình tác tử tự do (Autonomous ReAct Loops) vốn rất dễ rơi vào tình trạng lặp vô hạn hoặc suy diễn lạc đề.</p>
+            <p>Việc kiểm soát chặt chẽ trạng thái bằng đồ thị hữu hạn (Finite StateGraph) mang lại tính ổn định và khả năng gỡ lỗi vượt trội so với các mô hình vòng lặp Agent tự do (Autonomous ReAct Loops) vốn rất dễ rơi vào tình trạng lặp vô hạn hoặc suy diễn lạc đề.</p>
           </article>
           <article class="card">
             <span class="number">2</span>
@@ -1261,7 +1261,7 @@ html_content = f"""<!doctype html>
           </article>
         </div>
 
-        <div class="grid-2" style="margin-top: 0.2in">
+        <div class="grid-2" style="margin-top: 0.22in">
           <article class="card bone">
             <h3>Lộ trình Nâng cấp Tính năng Kỹ thuật</h3>
             <ul>
@@ -1281,12 +1281,12 @@ html_content = f"""<!doctype html>
         <div class="footer"><span>Lumen · Autonomous Literature Review Agent</span><span>09</span></div>
       </section>
 
-      <!-- ==================== SLIDE 10: CONCLUSION & TECH DISCUSSION ==================== -->
+      <!-- ==================== SLIDE 10: CONCLUSION & DISCUSSION ==================== -->
       <section class="slide thanks">
         <div style="max-width: 6.8in;">
           <h1 style="margin-top: 0.42in; color: #ffffff; font-size: 38px;">TỔNG KẾT & TRAO ĐỔI KỸ THUẬT</h1>
           <p style="margin-top: 0.14in; font-size: 14px; color: rgba(255,255,255,0.88); line-height: 1.45;">
-            Lumen - Nền tảng Tác tử Tự hành Chuyên sâu cho Nghiên cứu Học thuật Đa tài liệu
+            Lumen - Nền tảng AI Tự hành Chuyên sâu cho Nghiên cứu Học thuật Đa tài liệu
           </p>
           <p style="margin-top: 0.14in; font-size: 11.2px; color: rgba(255,255,255,0.72); line-height: 1.58;">
             Hệ thống giải quyết trọn vẹn bài toán trích xuất dữ liệu học thuật phức tạp, kết hợp luồng Multi-Agent kiểm soát trạng thái chặt chẽ và hệ thống Guardrails 3 tầng triệt tiêu hoàn toàn hiện tượng tạo trích dẫn ảo giác. Sẵn sàng cho triển khai và mở rộng quy mô.
@@ -1321,7 +1321,7 @@ html_content = f"""<!doctype html>
           </div>
 
           <div style="margin-top: 0.12in; padding: 0.12in 0.15in; border-radius: 8px; background: var(--surface-bone); border: 1px solid var(--hairline);">
-            <span style="display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--charcoal); letter-spacing: 0.5px; line-height: 1.3;">Video Minh họa Tác tử (Demo Screencast)</span>
+            <span style="display: block; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--charcoal); letter-spacing: 0.5px; line-height: 1.3;">Video Minh họa Hệ thống (Demo Screencast)</span>
             <a href="https://youtu.be/uNt316BZaY8" target="_blank" style="text-decoration: none; color: inherit; display: block;">
               <strong style="display: block; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--ink); margin-top: 5px;">youtu.be/uNt316BZaY8</strong>
             </a>
